@@ -15,7 +15,18 @@ jobs:
 
   windows-portable:
     runs-on: windows-latest
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: C:\vcpkg-bincache
     steps:
+      - name: Prepare vcpkg binary cache dir
+        run: New-Item -ItemType Directory -Force -Path "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
+        shell: powershell
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg-bincache
+          key: vcpkg-bin-${{ runner.os }}-${{ hashFiles('.github/workflows/windows-portable.yml', '.build/st-vcpkg-triplets/**') }}
+          restore-keys: vcpkg-bin-${{ runner.os }}-
       - name: Install Qt6
         uses: jurplel/install-qt-action@v4
         with:
@@ -38,6 +49,11 @@ jobs:
           VCPKG_BUILD_TYPE: Release
         run: |
           C:\vcpkg\vcpkg install boost-core boost-foreach boost-bind boost-multi-index boost-mpl boost-test boost-iterator boost-intrusive boost-random boost-range boost-type-traits --overlay-triplets "${{ github.workspace }}\.build\st-vcpkg-triplets" --triplet x64-windows-dynamic-boost-static
+      - name: List vcpkg DLLs (diagnostics)
+        shell: powershell
+        run: |
+          Get-ChildItem "C:\vcpkg\installed\x64-windows-dynamic-boost-static\bin" -Filter *.dll | Select-Object -ExpandProperty Name
+          Get-ChildItem "C:\vcpkg\installed\x64-windows-dynamic-boost-static\lib" -Filter z*.lib | Select-Object -ExpandProperty Name
       - name: build project
         env:
           QT_VER: 'Qt6'

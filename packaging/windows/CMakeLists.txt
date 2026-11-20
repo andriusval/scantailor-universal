@@ -97,10 +97,20 @@ ENDIF()
 install(FILES "${LIBTIFF_DLL}"  DESTINATION .)
 # Install zlib
 FIND_FILE(ZLIB_DLL
-        NAMES zdll.dll zlib.dll zlib1.dll z.dll libzlib.dll
+        NAMES zdll.dll zlib.dll zlib1.dll z.dll libzlib.dll zlib-ng2.dll zlib-ng.dll zlibng.dll z-ng.dll
         PATHS ${CMAKE_PREFIX_PATH}
         PATH_SUFFIXES bin lib
         NO_DEFAULT_PATH)
+IF(NOT ZLIB_DLL AND ZLIB_LIBRARY)
+        # Fallback: look next to the import library that find_package(ZLIB) picked (vcpkg: lib/ -> bin/)
+        LIST(GET ZLIB_LIBRARY -1 _zlib_lib)
+        GET_FILENAME_COMPONENT(_zlib_dir "${_zlib_lib}" DIRECTORY)
+        FILE(GLOB _zlib_cands "${_zlib_dir}/../bin/z*.dll" "${_zlib_dir}/z*.dll")
+        IF(_zlib_cands)
+                LIST(GET _zlib_cands 0 ZLIB_DLL)
+                MESSAGE(STATUS "zlib dll (fallback): ${ZLIB_DLL}")
+        ENDIF()
+ENDIF()
 IF(NOT ZLIB_DLL)
         MESSAGE(SEND_ERROR "Could not find ZLIB dll. You may specify it manually.")
 ENDIF()
