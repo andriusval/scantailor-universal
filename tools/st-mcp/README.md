@@ -64,9 +64,13 @@ Values are JSON when they parse as JSON (`10`, `true`, `["a","b"]`), else string
   by text, which puts `0100.jpg` before `011.jpg`.
 - DPI is always passed explicitly: the CLI assumes 600 DPI for files given as a
   list, which would make millimetre margins wrong.
-- `run_stages` always processes all pages (a CLI limitation); content/layout
-  re-runs are fast because ScanTailor caches, a full first pass is roughly
-  10–25 s per scan.
+- ScanTailor runs with **one OpenMP thread** (`OMP_NUM_THREADS=1`, override with
+  `ST_OMP_THREADS`). With the default (all cores) its OpenMP code is ~9× slower
+  (threads mostly spin) and output pixels differ slightly from run to run.
+  Whole 191-scan / 380-page book, all six stages: 54 min → 5 min 49 s, same
+  parameters, deterministic output.
+- `run_stages` always processes all pages (a CLI limitation); re-runs after
+  content/layout changes are faster because ScanTailor caches.
 - Heuristics (`check_pages`) report evidence; the agent is expected to look at
   `pages_preview` before changing anything. Page-number position detection
   works on a subset of pages and is used as a vote.

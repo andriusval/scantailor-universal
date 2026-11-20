@@ -47,7 +47,7 @@ miniatiūromis), po 8–9 (viršeliai ir iliustracijų puslapiai) ir prieš 11.
    - Paprašyti žmogaus patvirtinimo, parodyti peržiūrą.
 3. `run_stages(project, 1, 5, orientation=…, layout=…)`, tada
    `job_status(job_id, wait_s=60)`, kol `state` = `ok`.
-   Apytiksliai 10–25 s vienam skenui.
+   Apytiksliai 1–2 s vienam puslapiui.
 4. **Content (plotis):** `pages_list(sort_by="z_width", descending=true, limit=12)`
    ir tas pats didėjančia tvarka. Kandidatus peržiūrėti su `pages_preview`
    (iki 16 viename lape). Mėlynas rėmelis turi apimti visą spausdintą tekstą
@@ -118,7 +118,9 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 - CLI DPI nuskaito iš JPG; `--dpi` reikalingas tik kai jo nėra.
 - Peržiūrų geometrija atkartoja `ImageTransformation` ir pikselio tikslumu
   sutampa su ScanTailor `page-rect`.
-- Greitis: ~23 s / atvartas (14 branduolių), visi etapai.
+- Greitis: su `OMP_NUM_THREADS=1` (st-mcp numatytasis) visa knyga (191 skenas,
+  380 puslapių, visi etapai) — ~6 min; ScanTailor numatytas OpenMP
+  daugiagijis režimas buvo ~9 kartus lėtesnis (54 min) ir nedeterministinis.
 
 ## Įgyvendinimo planas
 

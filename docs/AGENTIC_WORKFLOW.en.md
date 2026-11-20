@@ -46,7 +46,7 @@ thumbnails), after 8–9 (covers and picture pages) and before 11.
    - Ask the person to confirm; show them the preview.
 3. `run_stages(project, 1, 5, orientation=…, layout=…)`, then
    `job_status(job_id, wait_s=60)` until `state` is `ok`.
-   Roughly 10–25 s per scan on a desktop CPU.
+   About 1–2 s per page on a desktop CPU.
 4. **Content (width):** `pages_list(sort_by="z_width", descending=true, limit=12)`
    and the same ascending. Preview candidates with `pages_preview` (up to 16
    per sheet). The blue box must cover all printed text (including page
@@ -118,7 +118,9 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 - The CLI reads DPI from the JPGs; `--dpi` only matters when it is missing.
 - Preview geometry re-implements `ImageTransformation` and matches
   ScanTailor's `page-rect` to the pixel.
-- Speed: ~23 s per spread (14 cores), all stages.
+- Speed: with `OMP_NUM_THREADS=1` (st-mcp default) the whole book (191 scans,
+  380 pages, all stages) takes ~6 min; ScanTailor's default OpenMP threading was
+  ~9× slower (54 min) and not deterministic.
 
 ## Implementation plan
 

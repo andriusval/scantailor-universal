@@ -45,6 +45,19 @@ def find_cli() -> str:
     raise FileNotFoundError("scantailor-universal-cli not found; set ST_CLI to its path")
 
 
+def cli_env() -> dict:
+    """Environment for scantailor-universal-cli.
+
+    ScanTailor's OpenMP code is ~8x slower with many threads (threads mostly spin) and its
+    output then differs slightly from run to run. One OpenMP thread is faster and deterministic
+    (measured 2026-11-20: 4 spreads, all stages, 88 s -> 11 s, bit-identical across runs).
+    Override with ST_OMP_THREADS.
+    """
+    env = dict(os.environ)
+    env["OMP_NUM_THREADS"] = os.environ.get("ST_OMP_THREADS", "1")
+    return env
+
+
 # ---------------------------------------------------------------- jobs
 
 class Job:
@@ -59,7 +72,7 @@ class Job:
         self.current_filter = start
         self.processed = 0
         self._split_done = start > 2
-        self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=cli_env(),
                                       text=True, encoding="utf-8", errors="replace")
         threading.Thread(target=self._pump, daemon=True).start()
 
@@ -190,7 +203,7 @@ def project_create(images_dir: str, project: str, output_dir: str | None = None,
     else:
         cmd += ["-", str(out)]
         stdin = "\n".join(str(f) for f in files) + "\n"
-    r = subprocess.run(cmd, input=stdin, capture_output=True,
+    r = subprocess.run(cmd, input=stdin, capture_output=True, env=cli_env(),
                        text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0 or not proj.exists():
         raise RuntimeError(f"CLI failed ({r.returncode}): {(r.stdout + r.stderr)[-1500:]}")
