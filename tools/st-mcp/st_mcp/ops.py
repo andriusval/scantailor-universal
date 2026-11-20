@@ -396,6 +396,8 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
 
     mode=auto: back to automatic detection. mode=full: whole page.
     mode=cover: detect the book cover on a darker scanner background and use its bounds (covers).
+    mode=tighten: shrink the box vertically to the text, dropping isolated specks at its top/bottom
+    edge (keeps page numbers). Check the preview afterwards.
     mode=manual: set x/y/width/height, and/or grow (+) or shrink (-) individual edges with expand_*.
     Afterwards run_stages(4, 5) (or (4, 6)) so margins/output pick it up.
     """
@@ -410,6 +412,10 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
         pr = before["page_rect_px"]
         if mode == "full":
             rect = dict(pr)
+        elif mode == "tighten":
+            rect = checks.tighten_rect(p, pg.id)
+            if rect is None:
+                raise RuntimeError("nothing to tighten (empty or unprocessed content)")
         elif mode == "cover":
             rect = checks.detect_cover_rect(p, pg.id)
             if rect is None:
@@ -424,7 +430,7 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
             rect["y"] -= expand_top
             rect["height"] += expand_top + expand_bottom
         else:
-            raise ValueError("mode must be auto|manual|full|cover")
+            raise ValueError("mode must be auto|manual|full|cover|tighten")
         # clamp to page
         rect["x"] = max(pr["x"], rect["x"])
         rect["y"] = max(pr["y"], rect["y"])

@@ -56,15 +56,17 @@ thumbnails), after 8–9 (covers and picture pages) and before 11.
 5. **Content (height / page numbers):** `check_pages(kind="content")`. For
    every `ink_below_box`/`ink_above_box` finding, preview the page; if it is a
    page number or a running head, extend the box to include it. For
-   `thin_*_line_isolated`, preview; if it is junk, shrink. For
+   `thin_*_line_isolated`, preview; if it is junk, `page_set_content(mode="tighten")`. For
    `empty_but_ink`, decide whether the page really is blank.
 6. `run_stages(4, 5)` to propagate content changes.
 7. **Margins:** `pages_set_layout("all", margin_left=10, margin_right=10, margin_top=5, margin_bottom=5, align_v=<suggested_align_v
    from check_pages>, align_h="center")`.
-8. **Layout outliers:** `pages_list(sort_by="z_height")` both ends; preview
-   chapter openings and short pages. Pages whose text starts lower than usual
-   in the original (chapter openings) should keep their position: use
-   `align_v="bottom"` when numbers are at the bottom, or `voriginal`.
+8. **Layout outliers:** pages whose content is much shorter than the median
+   (chapter endings, half-title, publisher lists) must keep the original
+   position: chapter endings and lists → `align_v="top"`; text that sits at the
+   bottom of the original page (colophon) → keep `bottom`. Full-height pages
+   (including chapter openings, whose box reaches the page number) are
+   unaffected by vertical alignment.
 9. **Covers:** for the front and back cover pages (flag `cover_candidate`;
    confirm with a preview) → `page_set_content(mode="full")`,
    `pages_set_layout([...], margins_mm=0, match_size=false)`,

@@ -46,9 +46,8 @@ def content_stats(project: Project) -> list[dict]:
 
 
 def _ink_mask(project: Project, page_id: str) -> tuple[np.ndarray, float]:
-    im = render_page(project, page_id, max_px=ANALYSIS_PX)
+    im = render_page(project, page_id, max_px=ANALYSIS_PX, overlay=False)
     g = np.asarray(im.convert("L"), dtype=np.float32)
-    g[:24, :] = 255  # label bar drawn by render_page
     # page background estimate: bright percentile; ink = clearly darker than paper
     paper = np.percentile(g, 90)
     ink = g < paper * 0.55
@@ -156,8 +155,8 @@ def check_page(project: Project, page_id: str) -> dict:
 def detect_cover_rect(project: Project, page_id: str) -> dict | None:
     """Bounding box of the book cover lying on a darker scanner background (page px)."""
     pg = project.page(page_id)
-    im = render_page(project, pg.id, max_px=ANALYSIS_PX)
-    g = np.asarray(im.convert("L"), dtype=np.float32)[24:, :]
+    im = render_page(project, pg.id, max_px=ANALYSIS_PX, overlay=False)
+    g = np.asarray(im.convert("L"), dtype=np.float32)
     pt = project.transform(pg.id)
     k = min(1.0, ANALYSIS_PX / max(pt.width, pt.height))
     bg = np.percentile(g, 10)
@@ -188,22 +187,20 @@ def detect_cover_rect(project: Project, page_id: str) -> dict | None:
     pad = 2
     x0, x1 = max(0, cols[0] - pad), min(g.shape[1], cols[1] + pad)
     y0, y1 = max(0, rows[0] - pad), min(g.shape[0], rows[1] + pad)
-    return {"x": x0 / k, "y": (y0 + 24) / k, "width": (x1 - x0) / k, "height": (y1 - y0) / k}
+    return {"x": x0 / k, "y": y0 / k, "width": (x1 - x0) / k, "height": (y1 - y0) / k}
 
 
 def picture_score(project: Project, page_id: str) -> dict:
     """Fraction of the content area that looks like a halftone/photo rather than text."""
     pg = project.page(page_id)
     c = project.content(pg.id)
-    im = render_page(project, pg.id, max_px=ANALYSIS_PX)
+    im = render_page(project, pg.id, max_px=ANALYSIS_PX, overlay=False)
     g = np.asarray(im.convert("L"), dtype=np.float32)
     pt = project.transform(pg.id)
     k = min(1.0, ANALYSIS_PX / max(pt.width, pt.height))
     if c.get("processed") and not c.get("empty"):
         r = c["content_rect_px"]
         g = g[int(r["y"] * k):int((r["y"] + r["height"]) * k), int(r["x"] * k):int((r["x"] + r["width"]) * k)]
-    else:
-        g = g[30:, :]
     if g.size == 0:
         return {"page_id": pg.id, "label": pg.label, "picture_fraction": 0.0}
     paper = np.percentile(g, 90)
@@ -215,3 +212,34 @@ def picture_score(project: Project, page_id: str) -> dict:
     mid = ((blocks > paper * 0.25) & (blocks < paper * 0.80)).mean(axis=1)
     pic = (mid > 0.5) & (mean < paper * 0.85)
     return {"page_id": pg.id, "label": pg.label, "picture_fraction": round(float(pic.mean()), 3)}
+
+
+def tighten_rect(project: Project, page_id: str) -> dict | None:
+    """Shrink the content box vertically to the text block: drop tiny isolated specks at the top or
+    bottom edge (scan junk) but keep page numbers and real text lines. Returns the new rect (page px)."""
+    pg = project.page(page_id)
+    c = project.content(pg.id)
+    if not c.get("processed") or c.get("empty"):
+        return None
+    ink, k = _ink_mask(project, pg.id)
+    r = c["content_rect_px"]
+    bx0, by0 = int(r["x"] * k), int(r["y"] * k)
+    bx1, by1 = int((r["x"] + r["width"]) * k), int((r["y"] + r["height"]) * k)
+    lines = _group(_rows_with_ink(ink, bx0, bx1, by0, by1, 0.004))
+    if not lines:
+        return None
+
+    def cols(a: int, b: int) -> int:
+        return int(ink[a:b + 1, bx0:bx1].any(axis=0).sum())
+
+    real = [ln for ln in lines if ln[1] - ln[0] + 1 >= 3]
+    line_h = statistics.median([b - a + 1 for a, b in real]) if real else 3
+    # a speck: very short in both directions compared with a text line
+    keep = [ln for ln in lines if not (ln[1] - ln[0] + 1 < 0.5 * line_h and cols(*ln) < 2 * line_h)]
+    if not keep:
+        return None
+    top, bottom = keep[0][0], keep[-1][1]
+    pad = max(2, int(0.2 * line_h))
+    y0 = max(by0, top - pad)
+    y1 = min(by1, bottom + pad)
+    return {"x": r["x"], "y": y0 / k, "width": r["width"], "height": (y1 - y0) / k}

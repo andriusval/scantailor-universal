@@ -61,10 +61,12 @@ miniatiūromis), po 8–9 (viršeliai ir iliustracijų puslapiai) ir prieš 11.
 6. `run_stages(4, 5)`, kad content pakeitimai pasiektų paraštes.
 7. **Paraštės:** `pages_set_layout("all", margin_left=10, margin_right=10, margin_top=5, margin_bottom=5, align_v=<suggested_align_v
    iš check_pages>, align_h="center")`.
-8. **Layout išskirtys:** `pages_list(sort_by="z_height")` abu galai; peržiūrėti
-   skyrių pradžias ir trumpus puslapius. Puslapiai, kurių tekstas originale
-   prasideda žemiau (skyrių pradžios), turi išlaikyti poziciją: `align_v="bottom"`,
-   kai numeriai apačioje, arba `voriginal`.
+8. **Layout išskirtys:** puslapiai, kurių turinys daug žemesnis už medianą
+   (skyrių pabaigos, antraštinis lapas, leidyklos sąrašai), turi išlaikyti
+   originalią poziciją: skyrių pabaigos ir sąrašai → `align_v="top"`; tekstas,
+   kuris originale yra puslapio apačioje (kolofonas) → palikti `bottom`.
+   Pilno aukščio puslapiams (taip pat skyrių pradžioms, kurių rėmelis siekia
+   puslapio numerį) vertikalus lygiavimas neturi įtakos.
 9. **Viršeliai:** priekinis ir galinis (vėliava `cover_candidate`; patvirtinti
    peržiūra) → `page_set_content(mode="full")`,
    `pages_set_layout([...], margins_mm=0, match_size=false)`,

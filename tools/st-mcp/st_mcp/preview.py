@@ -21,7 +21,8 @@ def _load(path: Path) -> Image.Image:
 
 def render_page(project: Project, page_id: str, max_px: int = 1200,
                 extra_rects: list[tuple[dict, tuple[int, int, int]]] | None = None,
-                show_outside_ink: bool = False) -> Image.Image:
+                overlay: bool = True) -> Image.Image:
+    """overlay=False returns the bare page (for analysis: no box outlines or label bar)."""
     pg = project.page(page_id)
     pt = project.transform(pg.id)
     src = _load(pg.image.path)
@@ -40,6 +41,8 @@ def render_page(project: Project, page_id: str, max_px: int = 1200,
     ImageDraw.Draw(mask).polygon([(x * k, y * k) for x, y in pt.outline], fill=255)
     page = Image.composite(page, Image.new("RGB", (w, h), (128, 128, 128)), mask)
 
+    if not overlay:
+        return page
     d = ImageDraw.Draw(page, "RGBA")
     c = project.content(pg.id)
     rects = []
