@@ -49,7 +49,7 @@ st-mcp check_pages project=book.ScanTailor kind=content
 st-mcp pages_preview project=book.ScanTailor 'pages=["011_2R","001"]' out=check.png
 st-mcp page_set_content project=book.ScanTailor page=011_2R expand_bottom=90
 st-mcp page_set_content project=book.ScanTailor page=001 mode=cover
-st-mcp pages_set_layout project=book.ScanTailor pages=all margins_mm=10 align_v=bottom align_h=center
+st-mcp pages_set_layout project=book.ScanTailor pages=all margin_left=10 margin_right=10 margin_top=5 margin_bottom=5 align_v=bottom align_h=center
 st-mcp pages_set_layout project=book.ScanTailor 'pages=["001","9999"]' margins_mm=0 match_size=false
 st-mcp pages_set_output project=book.ScanTailor 'pages=["001","9999"]' color_mode=color dpi=300
 st-mcp run_stages project=book.ScanTailor start=4 end=6

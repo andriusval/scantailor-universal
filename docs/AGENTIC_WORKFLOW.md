@@ -25,7 +25,7 @@ Principai (perimti iš craft-anything):
 | 3 | *Select Content*, rūšiuoja pagal **Width**, žiūri apačią (plačiausi) — content box dažnai apima šiukšles; mažina iki spausdinto teksto | Ima išskirtis pagal plotį (robust z-score), peržiūri su content box overlay, taiso | `pages_list(sort_by=z_width, descending=true)`, `pages_preview`, `page_set_content` |
 | 4 | Tas pats, žiūri **siauriausius** | Tas pats kitam sąrašo galui (nepilnas turinys, tušti puslapiai) | tie patys |
 | 5 | Rūšiuoja pagal **Height** — ar paimti puslapių numeriai apačioje | Ieško rašalo už content box ribų (virš/po); peržiūri ir praplečia | `check_pages(kind=content)`, `page_set_content(expand_bottom=…)` |
-| 6 | *Margins*: 10 mm iš visų pusių → *Apply → All pages*; lygiavimas pagal puslapio numerio vietą (viršus/apačia) | Numerių vietą ima iš 5 žingsnio „balsavimo“; taiko visiems | `pages_set_layout(all, margins_mm=10, align_v=top\|bottom)` |
+| 6 | *Margins*: kairė/dešinė 10 mm, viršus/apačia 5 mm → *Apply → All pages*; lygiavimas pagal puslapio numerio vietą (viršus/apačia) | Numerių vietą ima iš 5 žingsnio „balsavimo“; taiko visiems | `pages_set_layout(all, margin_left=10, margin_right=10, margin_top=5, margin_bottom=5, align_v=top\|bottom)` |
 | 7 | Rūšiuoja pagal aukštį, tikrina aukščiausius — ar atitinka knygos layoutą; kai kuriuos centruoja, kai kuriuos lygiuoja į viršų | Peržiūri išskirtis (skyrių pradžios, trumpi puslapiai, iliustracijos) ir parenka lygiavimą | `pages_preview`, `pages_set_layout` |
 | 8 | Viršeliai: margins 0, nuimti *Match size with other pages*, content apima visą viršelį | Pirmas/paskutinis vaizdas (ar žmogaus nurodyti) → content = visas puslapis, margins 0, `match_size=false` | `page_set_content(mode=full)`, `pages_set_layout` |
 | 9 | *Output*: tekstas B/W 600 DPI; viršeliai ir paveikslėlių puslapiai Color/Grayscale 300 DPI arba *Mixed* | Numatytai B/W 600; viršeliai color 300; aptinka iliustracijas ir siūlo mixed/color | `check_pages(kind=pictures)`, `pages_set_output` |
@@ -59,7 +59,7 @@ miniatiūromis), po 8–9 (viršeliai ir iliustracijų puslapiai) ir prieš 11.
    numeris ar antraštė — praplėsti. `thin_*_line_isolated` — peržiūrėti; jei
    šiukšlė — sumažinti. `empty_but_ink` — nuspręsti, ar puslapis tikrai tuščias.
 6. `run_stages(4, 5)`, kad content pakeitimai pasiektų paraštes.
-7. **Paraštės:** `pages_set_layout("all", margins_mm=10, align_v=<suggested_align_v
+7. **Paraštės:** `pages_set_layout("all", margin_left=10, margin_right=10, margin_top=5, margin_bottom=5, align_v=<suggested_align_v
    iš check_pages>, align_h="center")`.
 8. **Layout išskirtys:** `pages_list(sort_by="z_height")` abu galai; peržiūrėti
    skyrių pradžias ir trumpus puslapius. Puslapiai, kurių tekstas originale

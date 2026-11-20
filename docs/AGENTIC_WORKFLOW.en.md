@@ -23,7 +23,7 @@ Principles (borrowed from craft-anything):
 | 3 | *Select Content*, sort by **Width**, look at the bottom (widest) — the box often includes scan junk; shrink it to the printed text | Takes outliers by width (robust z-score), previews them with the content box overlay, fixes | `pages_list(sort_by=z_width, descending=true)`, `pages_preview`, `page_set_content` |
 | 4 | Same, looking at the **narrowest** | Same for the other end of the list (incomplete content, empty pages) | same |
 | 5 | Sort by **Height** — are page numbers at the bottom included? | Checks for ink outside the box (above/below); previews and extends | `check_pages(kind=content)`, `page_set_content(expand_bottom=…)` |
-| 6 | *Margins*: 10 mm on all sides → *Apply → All pages*; align to where page numbers are (top/bottom) | Takes the page-number position from step 5 votes; applies to all | `pages_set_layout(all, margins_mm=10, align_v=top\|bottom)` |
+| 6 | *Margins*: 10 mm left/right, 5 mm top/bottom → *Apply → All pages*; align to where page numbers are (top/bottom) | Takes the page-number position from step 5 votes; applies to all | `pages_set_layout(all, margin_left=10, margin_right=10, margin_top=5, margin_bottom=5, align_v=top\|bottom)` |
 | 7 | Sort by height, check the tallest — does it match the book's layout? Some pages need centring, some top alignment | Previews the outliers (chapter openings, short pages, illustrations) and picks alignment | `pages_preview`, `pages_set_layout` |
 | 8 | Covers: margins 0, untick *Match size with other pages*, content covers the whole cover | First/last image (or as the person says) → content = full page, margins 0, `match_size=false` | `page_set_content(mode=full)`, `pages_set_layout` |
 | 9 | *Output*: text B/W 600 DPI; covers and picture pages Color/Grayscale 300 DPI or *Mixed* | Default B/W 600; covers color 300; detects illustrations and proposes mixed/color | `check_pages(kind=pictures)`, `pages_set_output` |
@@ -59,7 +59,7 @@ thumbnails), after 8–9 (covers and picture pages) and before 11.
    `thin_*_line_isolated`, preview; if it is junk, shrink. For
    `empty_but_ink`, decide whether the page really is blank.
 6. `run_stages(4, 5)` to propagate content changes.
-7. **Margins:** `pages_set_layout("all", margins_mm=10, align_v=<suggested_align_v
+7. **Margins:** `pages_set_layout("all", margin_left=10, margin_right=10, margin_top=5, margin_bottom=5, align_v=<suggested_align_v
    from check_pages>, align_h="center")`.
 8. **Layout outliers:** `pages_list(sort_by="z_height")` both ends; preview
    chapter openings and short pages. Pages whose text starts lower than usual
