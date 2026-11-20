@@ -1,0 +1,92 @@
+name: windows portable build (Qt6)
+
+# Builds GUI + CLI on Windows and uploads a portable zip
+# (exe files + Qt runtime via windeployqt + vcpkg DLLs).
+# Based on windows-Qt6.yml.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - master
+      - 'agentic/**'
+
+jobs:
+
+  windows-portable:
+    runs-on: windows-latest
+    steps:
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.9.0'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          install-deps: 'true'
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: build deps
+        env:
+          VCPKG_BUILD_TYPE: Release
+        run: |
+          C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          C:\vcpkg\vcpkg install zlib tiff libpng openjpeg libjpeg-turbo exiv2 opengl pkgconf libmupdf mujs harfbuzz[freetype] gumbo freetype jbig2dec --overlay-triplets "${{ github.workspace }}\.build\st-vcpkg-triplets" --triplet x64-windows-dynamic-boost-static
+      - name: Install boost
+        env:
+          VCPKG_BUILD_TYPE: Release
+        run: |
+          C:\vcpkg\vcpkg install boost-core boost-foreach boost-bind boost-multi-index boost-mpl boost-test boost-iterator boost-intrusive boost-random boost-range boost-type-traits --overlay-triplets "${{ github.workspace }}\.build\st-vcpkg-triplets" --triplet x64-windows-dynamic-boost-static
+      - name: build project
+        env:
+          QT_VER: 'Qt6'
+          CMAKE_BUILD_TYPE: Release
+          CMAKE_BUILD_PARALLEL_LEVEL: 8
+          QT_ROOT_DIR: '${{ github.workspace }}\Qt\6.9.0\msvc2022_64\'
+          CMAKE_PREFIX_PATH: '${{ github.workspace }}\Qt\6.9.0\msvc2022_64\'
+          CMAKE_TOOLCHAIN_FILE: 'C:\vcpkg\scripts\buildsystems\vcpkg.cmake'
+          VCPKG_OVERLAY_TRIPLETS: '${{ github.workspace }}\.build\st-vcpkg-triplets'
+          VCPKG_TARGET_TRIPLET: 'x64-windows-dynamic-boost-static'
+        run: |
+          .build\build.ps1 -DPath "C:\vcpkg\installed\${{ env.VCPKG_TARGET_TRIPLET }}" -ReleaseType "${{ env.CMAKE_BUILD_TYPE }}" -DCMAKE_CXX_STANDARD=11 -DENABLE_TESTS=on -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF -DQtPkgList="${{ env.QT_VER }}" -DVCPKG_TARGET_TRIPLET="${{ env.VCPKG_TARGET_TRIPLET }}"
+        shell: powershell
+      - name: Run autotests
+        env:
+          QT_QPA_PLATFORM: 'offscreen'
+          CMAKE_BUILD_TYPE: Release
+        run: .build\test.ps1 -ReleaseType "${{ env.CMAKE_BUILD_TYPE }}"
+        shell: powershell
+      - name: Collect portable bundle
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = "${{ github.workspace }}\dist\scantailor-universal"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $exes = Get-ChildItem -Path build -Recurse -Filter *.exe |
+                  Where-Object { $_.FullName -notmatch '\\(tests?|CMakeFiles)\\' -and $_.Name -notmatch '^(test|.*_tests?)' }
+          if (-not $exes) { throw "No executables found in build tree" }
+          $exes | ForEach-Object { Write-Host "exe: $($_.FullName)"; Copy-Item $_.FullName $out }
+          Copy-Item "C:\vcpkg\installed\x64-windows-dynamic-boost-static\bin\*.dll" $out
+          Get-ChildItem -Path build -Recurse -Filter *.dll |
+              Where-Object { $_.FullName -notmatch '\\CMakeFiles\\' } |
+              ForEach-Object { Copy-Item $_.FullName $out -Force }
+          Get-ChildItem -Path build -Recurse -Filter *.qm | ForEach-Object { Copy-Item $_.FullName $out -Force }
+          $windeployqt = "${{ github.workspace }}\Qt\6.9.0\msvc2022_64\bin\windeployqt.exe"
+          Get-ChildItem $out -Filter *.exe | ForEach-Object {
+              & $windeployqt --release --no-compiler-runtime --dir $out $_.FullName
+              if ($LastExitCode -ne 0) { throw "windeployqt failed for $($_.Name)" }
+          }
+          Get-ChildItem $out | Select-Object Name, Length | Format-Table -AutoSize
+      - name: Smoke-test CLI
+        shell: powershell
+        run: |
+          $cli = Get-ChildItem "${{ github.workspace }}\dist\scantailor-universal" -Filter *cli*.exe | Select-Object -First 1
+          if (-not $cli) { throw "CLI executable not found in bundle" }
+          & $cli.FullName --help
+          Write-Host "CLI exit code: $LastExitCode"
+      - name: Upload portable bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: scantailor-universal-windows-x64-qt6
+          path: dist/scantailor-universal
