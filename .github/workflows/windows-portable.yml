@@ -92,7 +92,7 @@ jobs:
               Where-Object { $_.FullName -notmatch '\\CMakeFiles\\' } |
               ForEach-Object { Copy-Item $_.FullName $out -Force }
           Get-ChildItem -Path build -Recurse -Filter *.qm | ForEach-Object { Copy-Item $_.FullName $out -Force }
-          $windeployqt = "${{ github.workspace }}\Qt\6.9.0\msvc2022_64\bin\windeployqt.exe"
+          $windeployqt = Join-Path $env:QT_ROOT_DIR "bin\windeployqt.exe"  # set by install-qt-action
           Get-ChildItem $out -Filter *.exe | ForEach-Object {
               & $windeployqt --release --no-compiler-runtime --dir $out $_.FullName
               if ($LastExitCode -ne 0) { throw "windeployqt failed for $($_.Name)" }
