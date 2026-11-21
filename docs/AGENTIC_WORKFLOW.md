@@ -115,6 +115,31 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
     lapas, beveik tušti puslapiai) ir peržiūros sąrašą (aukšti puslapiai su
     mažai eilučių: pasuktos lentelės) — nešalinti, sprendžia žmogus.
 
+## Pataisymų žurnalas
+
+Kai žmogus knygą pataisė GUI, paleisti
+`corrections_record("<knyga>/agentas.orig.ScanTailor", "<knyga>/agentas.ScanTailor")`.
+Jis įrašo po vieną JSONL įrašą kiekvienam pakeistam puslapio parametrui:
+knygos katalogas, puslapis, etapas, laukas, agento reikšmė, žmogaus reikšmė ir
+kategorija. Žurnalas — `~/.local/share/st-mcp/corrections.jsonl`; kitą failą
+nurodo `ST_CORRECTIONS_LOG`. Pakeitimas, kuris tai knygai jau yra žurnale,
+antrą kartą neįrašomas, todėl įrankį galima leisti po kiekvienos peržiūros.
+
+Kategorijos:
+- puslapiai ir geometrija: `page_removed`, `page_added`, `split`, `rotation`,
+  `deskew_picture`, `deskew_text`, `page_box`;
+- content box: `content_empty`, `content_box_trim` (rėmelis sumažintas),
+  `content_box_extend`, `content_box_numbers` (pridėta siaura juosta viršuje ar apačioje);
+- viršeliai: `cover` (rėmelio, maketo ar išvesties pakeitimas viršelyje);
+- maketas: `margins`, `alignment`, `match_size`;
+- išvestis: `output_mode`, `dpi`, `picture_zones`; visa kita: `other`.
+
+Content box pakeitimas neįrašomas, jei to puslapio pasukimas, padalijimas ar
+kampas irgi pakeistas: tada rėmelio koordinatės nepalyginamos.
+
+`corrections_stats()` rodo dažniausias kategorijas ir workflow taisyklę,
+į kurią kiekviena rodo. Pirma taisyti tą taisyklę.
+
 Vienetai: content box — ištiesinto puslapio pikseliais (tie patys, kaip
 `page_preview`); paraštės — mm; DPI — sveikieji skaičiai.
 
@@ -136,7 +161,9 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
 | `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5 |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
-| `project_diff(original, corrected)` | Skirtumai tarp agento projekto ir žmogaus pataisyto, puslapiais |
+| `project_diff(original, corrected, record?)` | Skirtumai tarp agento projekto ir žmogaus pataisyto, puslapiais; `record=true` juos dar įrašo į pataisymų žurnalą |
+| `corrections_record(original, corrected, book?, log?)` | Prideda žmogaus pataisymus į pataisymų žurnalą (JSONL): vienas įrašas kiekvienam pakeistam puslapio parametrui, be pasikartojimų |
+| `corrections_stats(log?, book?, top?)` | Pataisymai pagal kategoriją ir knygą, dažniausios kategorijos su workflow taisykle |
 | `pages_fit_width(project, margin_mm?, percentile?)` | Vienas puslapio plotis: mažesnės šoninės paraštės už tipinį teksto bloką platesniems puslapiams |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertikalus lygiavimas visiems teksto puslapiams ir šalinimo kandidatai ataskaitai |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?)` | `output` |

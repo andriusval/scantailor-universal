@@ -19,7 +19,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from . import checks
+from . import checks, corrections
 from .preview import contact_sheet, render_image, render_page
 from .project import Project
 
@@ -1007,11 +1007,17 @@ def _keep_original(proj: Path) -> dict:
     return {"path": str(orig), "replaced_older_copy": replaced}
 
 
-def project_diff(original: str, corrected: str, limit: int = 60) -> dict:
+def project_diff(original: str, corrected: str, limit: int = 60, record: bool = False) -> dict:
     """Compare the project the agent made (e.g. agentas.orig.ScanTailor) with the same project after a
     person corrected it in the GUI. Lists, per kind, the pages that differ: images removed or added,
     rotation, split, deskew angle, content box and mode, empty pages, margins, alignment, match size,
-    output mode and DPI. Use it to learn rules for the workflow from the corrections."""
+    output mode and DPI. Use it to learn rules for the workflow from the corrections.
+    record=true also appends the changes to the corrections log (as corrections_record does)."""
+    if record:
+        rec = corrections.record(original, corrected)
+        res = project_diff(original, corrected, limit)
+        res["corrections_log"] = rec
+        return res
     a, b = Project(Path(original).resolve()), Project(Path(corrected).resolve())
 
     def page_state(p: Project, pg) -> dict:
@@ -1055,6 +1061,25 @@ def project_diff(original: str, corrected: str, limit: int = 60) -> dict:
         "counts": {k: len(v) for k, v in by_kind.items()},
         "differences": {k: v[:limit] for k, v in by_kind.items()},
     }
+
+
+def corrections_record(original: str, corrected: str, book: str | None = None, log: str | None = None) -> dict:
+    """Append the person's corrections to the corrections log: one JSONL record per changed page
+    parameter (book, page, stage, field, agent value, user value, category). original: the agent's
+    project (agentas.orig.ScanTailor); corrected: the same project after the person's GUI corrections.
+    A change that is already in the log for this book is not written again, so run it after each review.
+    book: the book folder (default: the folder of `corrected`). log: default $ST_CORRECTIONS_LOG or
+    ~/.local/share/st-mcp/corrections.jsonl. Categories: page_removed, page_added, split, rotation,
+    deskew_picture, deskew_text, page_box, content_empty, content_box_trim, content_box_extend,
+    content_box_numbers, cover, margins, alignment, match_size, output_mode, dpi, picture_zones, other."""
+    return corrections.record(original, corrected, book, log)
+
+
+def corrections_stats(log: str | None = None, book: str | None = None, top: int = 5) -> dict:
+    """Summary of the corrections log: changes per category and per book, and the `top` most frequent
+    categories with the workflow rule each one points to (the rule that fails most comes first).
+    book: only this book folder. log: as in corrections_record."""
+    return corrections.stats(log, book, top)
 
 
 def project_for_windows(project: str, relative: bool = False) -> dict:
@@ -1120,7 +1145,7 @@ def workflow_guide() -> dict:
     return {"workflow": text}
 
 
-TOOLS = [project_create, project_for_windows, project_diff, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
+TOOLS = [project_create, project_for_windows, project_diff, corrections_record, corrections_stats, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
          pages_preview, image_preview, page_set_content, pages_snap_content, pages_set_layout, pages_fit_width, pages_align_auto, pages_set_output,
          check_pages, export_summary, workflow_guide]
 IMAGE_TOOLS = {"page_preview", "pages_preview", "image_preview"}

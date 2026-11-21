@@ -70,9 +70,27 @@ st-mcp pages_set_layout project=book.ScanTailor 'pages=["001","9999"]' margins_m
 st-mcp pages_set_output project=book.ScanTailor 'pages=["001","9999"]' color_mode=color dpi=300
 st-mcp run_stages project=book.ScanTailor start=4 end=6
 st-mcp export_summary project=book.ScanTailor
+st-mcp corrections_record original=book/agentas.orig.ScanTailor corrected=book/agentas.ScanTailor
+st-mcp corrections_stats
 ```
 
 Values are JSON when they parse as JSON (`10`, `true`, `["a","b"]`), else strings.
+
+## Tests
+
+```sh
+.venv/bin/python -m unittest discover -s tests
+```
+
+The tests use a finished agent project as a sample (`ST_TEST_PROJECT`, default:
+the Zweig book in `C:\nes\Serijos_HIGH`) and skip when it is not there.
+
+## Corrections log
+
+`corrections_record` appends the corrections of the person (agent project
+against the corrected project) to `~/.local/share/st-mcp/corrections.jsonl`,
+one JSON line per changed page parameter. `ST_CORRECTIONS_LOG` sets another
+file. `corrections_stats` counts them by category and by book.
 
 ## Notes and known limits (P1)
 

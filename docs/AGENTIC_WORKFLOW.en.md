@@ -115,6 +115,31 @@ GUI.
     full-height pages with few text lines, such as rotated tables. Do not
     remove them: the person decides.
 
+## Corrections log
+
+After the person corrects a book in the GUI, run
+`corrections_record("<book>/agentas.orig.ScanTailor", "<book>/agentas.ScanTailor")`.
+It writes one JSONL record for each changed page parameter: book folder, page,
+stage, field, agent value, user value and category. The log is
+`~/.local/share/st-mcp/corrections.jsonl`; set `ST_CORRECTIONS_LOG` to use a
+different file. The tool skips a change that is already in the log for the
+same book, so you can run it after each review.
+
+Categories:
+- pages and geometry: `page_removed`, `page_added`, `split`, `rotation`,
+  `deskew_picture`, `deskew_text`, `page_box`;
+- content box: `content_empty`, `content_box_trim` (a smaller box),
+  `content_box_extend`, `content_box_numbers` (a small band at the top or bottom);
+- covers: `cover` (a box, layout or output change on a cover page);
+- layout: `margins`, `alignment`, `match_size`;
+- output: `output_mode`, `dpi`, `picture_zones`; all else: `other`.
+
+The tool skips a content box change after a new rotation, split or
+deskew angle, because the box coordinates then do not compare.
+
+`corrections_stats()` shows the categories that occur most, and the workflow
+rule that each one points to. Improve that rule first.
+
 Units: content boxes are in page pixels of the deskewed page (same as
 `page_preview`); margins in mm; DPI integers.
 
@@ -136,7 +161,9 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
 | `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5 |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
-| `project_diff(original, corrected)` | Per-page differences between the agent's project and a corrected one |
+| `project_diff(original, corrected, record?)` | Per-page differences between the agent's project and a corrected one; `record=true` also writes them to the corrections log |
+| `corrections_record(original, corrected, book?, log?)` | Appends the person's corrections to the corrections log (JSONL), one record per changed page parameter, without repeats |
+| `corrections_stats(log?, book?, top?)` | Corrections per category and per book, and the most frequent categories with their workflow rule |
 | `pages_fit_width(project, margin_mm?, percentile?)` | One page width: smaller side margins for pages wider than the typical text block |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertical alignment for all body pages, plus removal candidates for the report |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?)` | `output` |
