@@ -66,6 +66,14 @@ public:
 
     QString skewEstimator(PageId const& page_id) const;
 
+    // A page without a choice follows the global setting, so old projects keep their behaviour.
+    void setPictureEdges(PageId const& page_id, bool use_picture_edges);
+
+    bool getPictureEdges(PageId const& page_id, bool* use_picture_edges) const;
+
+    // The page choice wins over the CLI option, and the CLI option wins over the global setting.
+    bool usePictureEdges(PageId const& page_id) const;
+
     double maxDeviation() const
     {
         return m_maxDeviation;
@@ -100,6 +108,7 @@ private:
     PerPageParams m_perPageParams;
     std::map<PageId, bool> m_perPageBlackOnWhite;
     std::map<PageId, QString> m_perPageSkewEstimator;
+    std::map<PageId, bool> m_perPagePictureEdges;
     double m_avg;
     double m_sigma;
     double m_maxDeviation;

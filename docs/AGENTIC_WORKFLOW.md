@@ -92,7 +92,10 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
      white_margins=true, equalize_illumination=true, grayscale_first=<žr. žemiau>)` ir
      `pages_set_layout(<nuotraukų puslapiai>, margin_left=0, margin_right=0)`.
      Jei CLI turi `--deskew-pictures`, įrankis kampą matuoja pagal nuotraukos
-     kraštus C++ kode.
+     kraštus C++ kode. Šio fork'o CLI nuo 2026-11-22 tai daro 3 etape pagal
+     nutylėjimą, todėl nauji projektai nuotraukos kampą gauna iš karto.
+     Įrankis lieka naudingas puslapiams, kurie kampą jau turi, ir senesniems
+     build'ams.
    - `grayscale_first` yra GUI parinktis „Convert to grayscale first“: skenas
      paverčiamas pilku prieš visus kitus išvesties žingsnius, todėl spalvoto
      JPG popieriaus atspalvis negadina paraščių, apšvietimo išlyginimo ir
@@ -297,6 +300,16 @@ Jei puslapio kaukių nepavyko įrašyti, `--json-progress` duoda įvykį `warnin
     sprendimo), `confidence` (0–1) ir `reason`.
     `--detect-orientation=<sąrašo failas>` kiekvienam vaizdui išspausdina vieną
     JSON eilutę ir nieko nekeičia.
+  - nuotraukų tiesinimas (2026-11-22): puslapyje, kurį beveik visą užima
+    nuotrauka ar įklija, 3 etapas automatinį kampą randa pagal tiesius
+    nuotraukos kraštus. Įjungta pagal nutylėjimą (`--deskew-pictures`);
+    `--deskew-pictures=false` (arba `=0`) išjungia. Puslapiai, kurie jau turi
+    deskew parametrus, savo kampą išlaiko. GUI nustatymas: „Deskew picture
+    pages by the picture edges“ (Settings, Deskew).
+    `deskew/page@pictureEdges="0|1"` saugo vieno puslapio pasirinkimą (jei
+    atributo nėra, galioja bendras nustatymas), o
+    `deskew/page/params@estimator` (`text`, `picture` arba `none`) rodo, kuris
+    būdas davė automatinį kampą.
 - Numatyti nustatymai šiai knygai netinka: skenai pasukti 90° (reikia
   `orientation=right, layout=2`). Be peržiūros agentas to nepastebėtų.
 - CLI DPI nuskaito iš JPG; `--dpi` reikalingas tik kai jo nėra.

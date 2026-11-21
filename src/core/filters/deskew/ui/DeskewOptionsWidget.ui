@@ -120,6 +120,29 @@
        </layout>
       </item>
       <item>
+       <widget class="QLabel" name="estimatorLabel">
+        <property name="text">
+         <string notr="true"/>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="pictureEdgesCB">
+        <property name="toolTip">
+         <string>On a page that is mostly a photo or a plate, find the automatic angle from the straight edges of the picture. Clear it to use the text lines on this page.</string>
+        </property>
+        <property name="text">
+         <string>Use picture edges</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <layout class="QHBoxLayout" name="horizontalLayout">
         <item>
          <spacer name="horizontalSpacer_9">

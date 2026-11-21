@@ -79,9 +79,13 @@ public:
     {
         return contains("json-progress");
     }
-    bool isDeskewPictures() const
+    bool hasDeskewPictures() const
     {
         return contains("deskew-pictures");
+    }
+    bool isDeskewPictures() const
+    {
+        return m_deskewPictures;
     }
     bool isError() const
     {
@@ -597,6 +601,7 @@ private:
     output::DewarpingMode m_dewarpingMode;
     int m_outputRotation = 0;
     bool m_outputRotationAuto = false;
+    bool m_deskewPictures = false;
     output::DespeckleLevel m_despeckleLevel;
     output::DepthPerception m_depthPerception;
     float m_matchLayoutTolerance;
@@ -639,6 +644,7 @@ private:
     int fetchEndFilterIdx();
     output::DewarpingMode fetchDewarpingMode();
     int fetchOutputRotation();
+    bool fetchDeskewPictures();
     output::DespeckleLevel fetchDespeckleLevel();
     output::DepthPerception fetchDepthPerception();
     float fetchMatchLayoutTolerance();

@@ -305,6 +305,7 @@ CommandLine::setup()
     m_matchLayoutTolerance = fetchMatchLayoutTolerance();
     m_dewarpingMode = fetchDewarpingMode();
     m_outputRotation = fetchOutputRotation();
+    m_deskewPictures = fetchDeskewPictures();
     m_compressionBW = fetchCompressionBW();
     m_compressionColor = fetchCompressionColor();
     m_language = fetchLanguage();
@@ -396,8 +397,10 @@ CommandLine::printHelp()
     std::cout << "\t\t\t\t\t\t   auto: find the rotation of each image from its text; an image without a clear result keeps its rotation" << std::endl;
     std::cout << "\t--rotate=<0.0...360.0>\t\t\t-- it also sets deskew to manual mode" << std::endl;
     std::cout << "\t--deskew=<auto|manual>\t\t\t-- default: auto" << std::endl;
-    std::cout << "\t--deskew-pictures\t\t\t-- default: off; on a page that is mostly a photo or a plate, find the" << std::endl;
-    std::cout << "\t\t\t\t\t\t   auto deskew angle from the straight edges of the picture, not from text lines" << std::endl;
+    std::cout << "\t--deskew-pictures[=<true|false|1|0>]\t-- default: " << (_key_deskew_picture_edges_def ? "true" : "false")
+              << "; on a page that is mostly a photo or a plate, find the" << std::endl;
+    std::cout << "\t\t\t\t\t\t   auto deskew angle from the straight edges of the picture, not from text lines;" << std::endl;
+    std::cout << "\t\t\t\t\t\t   pages that have a deskew angle in the project keep it" << std::endl;
     std::cout << "\t--skew-deviation=<0.0...)\t\t-- default: 5.0; pages with bigger skew deviation will be painted in red" << std::endl;
     std::cout << "\t--disable-content-detection\t\t-- default: enabled" << std::endl;
     std::cout << "\t--enable-page-detection\t\t\t-- default: disabled" << std::endl;
@@ -902,6 +905,26 @@ CommandLine::fetchOutputRotation()
     }
 
     return degrees;
+}
+
+bool
+CommandLine::fetchDeskewPictures()
+{
+    if (!hasDeskewPictures()) {
+        return _key_deskew_picture_edges_def;
+    }
+
+    // A switch without a value gets "true" from the parser.
+    QString const value = m_options.value("deskew-pictures");
+    if (value == "true" || value == "1") {
+        return true;
+    }
+    if (value == "false" || value == "0") {
+        return false;
+    }
+    std::cout << "Wrong --deskew-pictures value " << value.toLocal8Bit().constData()
+              << ", use true, false, 1 or 0" << std::endl;
+    exit(1);
 }
 
 output::DewarpingMode

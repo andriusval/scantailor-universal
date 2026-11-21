@@ -157,10 +157,12 @@ Task::process(TaskStatus const& status, FilterData const& data)
         if (!not_match) {
             ui_data.setEffectiveDeskewAngle(params->deskewAngle());
             ui_data.setMode(params->mode());
+            ui_data.setEstimator(params->mode() == MODE_AUTO ? params->estimator() : QString());
 
             Params new_params(
                 ui_data.effectiveDeskewAngle(), deps, ui_data.mode()
             );
+            new_params.setEstimator(ui_data.estimator());
             new_params.computeDeviation(m_ptrSettings->avg());
             m_ptrSettings->setPageParams(m_pageId, new_params);
         }
@@ -229,7 +231,7 @@ Task::process(TaskStatus const& status, FilterData const& data)
             ui_data.setMode(MODE_AUTO);
 
             QString estimator = text_found ? QStringLiteral("text") : QStringLiteral("none");
-            if (cli.isDeskewPictures()) {
+            if (m_ptrSettings->usePictureEdges(m_pageId)) {
                 PictureSkew const picture(
                     findPictureSkew(next_data.grayImageBlackOnWhite(), data.xform(),
                                     bounded_image_area, Dpi(Dpm(data.origImage())))
@@ -247,10 +249,12 @@ Task::process(TaskStatus const& status, FilterData const& data)
                 }
             }
             m_ptrSettings->setSkewEstimator(m_pageId, estimator);
+            ui_data.setEstimator(estimator);
 
             Params new_params(
                 ui_data.effectiveDeskewAngle(), deps, ui_data.mode()
             );
+            new_params.setEstimator(estimator);
             new_params.computeDeviation(m_ptrSettings->avg());
             m_ptrSettings->setPageParams(m_pageId, new_params);
 

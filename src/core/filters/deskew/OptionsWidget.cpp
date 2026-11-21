@@ -35,6 +35,7 @@ OptionsWidget::OptionsWidget(IntrusivePtr<Settings> const& settings,
     :   m_ptrSettings(settings),
         m_ignoreAutoManualToggle(0),
         m_ignoreSpinBoxChanges(0),
+        m_ignorePictureEdgesToggle(0),
         m_pageSelectionAccessor(page_selection_accessor)
 {
     setupUi(this);
@@ -52,6 +53,8 @@ OptionsWidget::OptionsWidget(IntrusivePtr<Settings> const& settings,
         applyDeskewBtn, SIGNAL(clicked()),
         this, SLOT(showDeskewDialog())
     );
+    connect(pictureEdgesCB, SIGNAL(toggled(bool)), this, SLOT(pictureEdgesToggled(bool)));
+    estimatorLabel->hide();
 }
 
 OptionsWidget::~OptionsWidget()
@@ -118,6 +121,7 @@ OptionsWidget::manualDeskewAngleSetExternally(double const degrees)
     m_uiData.setEffectiveDeskewAngle(degrees);
     m_uiData.setMode(MODE_MANUAL);
     updateModeIndication(MODE_MANUAL);
+    updateEstimatorIndication();
     setSpinBoxKnownState(degreesToSpinBox(degrees));
     commitCurrentParams();
 
@@ -133,6 +137,8 @@ OptionsWidget::preUpdateUI(PageId const& page_id)
     setSpinBoxUnknownState();
     autoBtn->setEnabled(false);
     manualBtn->setEnabled(false);
+    pictureEdgesCB->setEnabled(false);
+    estimatorLabel->hide();
 }
 
 void
@@ -142,7 +148,12 @@ OptionsWidget::postUpdateUI(UiData const& ui_data)
     autoBtn->setEnabled(true);
     manualBtn->setEnabled(true);
     updateModeIndication(ui_data.mode());
+    updateEstimatorIndication();
     setSpinBoxKnownState(degreesToSpinBox(ui_data.effectiveDeskewAngle()));
+
+    ScopedIncDec<int> guard(m_ignorePictureEdgesToggle);
+    pictureEdgesCB->setChecked(m_ptrSettings->usePictureEdges(m_pageId));
+    pictureEdgesCB->setEnabled(true);
 }
 
 void
@@ -156,6 +167,7 @@ OptionsWidget::spinBoxValueChanged(double const value)
     m_uiData.setEffectiveDeskewAngle(degrees);
     m_uiData.setMode(MODE_MANUAL);
     updateModeIndication(MODE_MANUAL);
+    updateEstimatorIndication();
     commitCurrentParams();
 
     emit manualDeskewAngleSet(degrees);
@@ -175,8 +187,42 @@ OptionsWidget::modeChanged(bool const auto_mode)
         emit reloadRequested();
     } else {
         m_uiData.setMode(MODE_MANUAL);
+        updateEstimatorIndication();
         commitCurrentParams();
     }
+}
+
+void
+OptionsWidget::pictureEdgesToggled(bool const checked)
+{
+    if (m_ignorePictureEdgesToggle) {
+        return;
+    }
+
+    m_ptrSettings->setPictureEdges(m_pageId, checked);
+    // A manual angle stays, and the choice applies at the next automatic detection.
+    if (m_uiData.mode() == MODE_AUTO) {
+        m_ptrSettings->clearPageParams(m_pageId);
+        emit reloadRequested();
+    }
+}
+
+void
+OptionsWidget::updateEstimatorIndication()
+{
+    QString text;
+    if (m_uiData.mode() == MODE_MANUAL) {
+        text = tr("Angle from: manual");
+    } else if (m_uiData.estimator() == "picture") {
+        text = tr("Angle from: picture edges");
+    } else if (m_uiData.estimator() == "text") {
+        text = tr("Angle from: text lines");
+    } else if (m_uiData.estimator() == "none") {
+        text = tr("Angle from: nothing found");
+    }
+    estimatorLabel->setText(text);
+    // Old projects have no estimator name, so the label stays hidden for their pages.
+    estimatorLabel->setVisible(!text.isEmpty());
 }
 
 void
@@ -289,6 +335,18 @@ AutoManualMode
 OptionsWidget::UiData::mode() const
 {
     return m_mode;
+}
+
+void
+OptionsWidget::UiData::setEstimator(QString const& estimator)
+{
+    m_estimator = estimator;
+}
+
+QString const&
+OptionsWidget::UiData::estimator() const
+{
+    return m_estimator;
 }
 
 } // namespace deskew
