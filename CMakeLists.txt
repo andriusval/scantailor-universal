@@ -133,9 +133,17 @@ else()
         find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Core Widgets Gui Xml Network Svg LinguistTools REQUIRED)
 endif()
 
-SET(QT_MIN_VERSION 5.7.0)
+# Oldest Qt still maintained somewhere: 6.4 is what Debian 12 / Ubuntu 24.04 ship (with
+# distribution security backports); 5.15 is the last Qt5 and the only one distributions
+# still patch. Builds that bundle Qt (Windows, macOS, AppImage) should use a supported
+# release with all advisories fixed (6.12 LTS at the time of writing).
+if (QT_VERSION_MAJOR EQUAL 5)
+        SET(QT_MIN_VERSION 5.15.0)
+else()
+        SET(QT_MIN_VERSION 6.4.0)
+endif()
 if (QT_VERSION VERSION_LESS ${QT_MIN_VERSION})
-        message(FATAL_ERROR "Minimum supported Qt version is ${QT_MIN_VERSION}!")
+        message(FATAL_ERROR "Minimum supported Qt version is ${QT_MIN_VERSION} (found ${QT_VERSION})!")
 endif()
 
 

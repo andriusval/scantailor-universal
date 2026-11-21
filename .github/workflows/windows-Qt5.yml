@@ -1,11 +1,9 @@
 name: windows 2022 Qt5
 
+# Disabled (manual runs only): this build bundles Qt 5.15.2, which gets no fixes for
+# the 2026 Qt security advisories. Use the Qt6 workflows.
 on:
-  push:
-    branches:
-      - master
-      - CI
-  pull_request: {}
+  workflow_dispatch: {}
 
 jobs:
 
