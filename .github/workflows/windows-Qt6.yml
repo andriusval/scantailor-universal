@@ -5,7 +5,8 @@ on:
     branches:
       - master
       - CI
-  pull_request: {}
+  # The fork runs the Windows build of a PR only on request, because the portable build covers Windows.
+  workflow_dispatch: {}
 
 jobs:
 
