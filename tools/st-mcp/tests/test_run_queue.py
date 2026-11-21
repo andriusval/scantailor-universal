@@ -20,6 +20,13 @@ with open(here.parent / "calls.txt", "a") as fh:
 assert "-p" in sys.argv and "--mcp-config" in sys.argv
 if "fail" in here.name:
     sys.exit(3)
+if "slow" in here.name:
+    import subprocess, time
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    (here / "child.pid").write_text(str(child.pid))
+    time.sleep(60)
+if "stale" in here.name:
+    sys.exit(0)
 if "noreport" not in here.name:
     (here / "out-agentas" / "review").mkdir(parents=True, exist_ok=True)
     (here / "out-agentas" / "review" / "report.md").write_text("ok")
@@ -96,6 +103,23 @@ class QueueTest(unittest.TestCase):
         self.run_queue("--retry-failed")
         self.assertEqual(sorted(self.calls()[5:]), ["Book fail", "Book noreport"])
         self.assertFalse((self.tmp / "books.lock").exists())
+
+    def test_old_report_and_timeout(self):
+        import os
+        for name in ("Book stale", "Book slow"):
+            (self.tmp / name / "out-agentas" / "review").mkdir(parents=True)
+            (self.tmp / name / "out-agentas" / "review" / "report.md").write_text("old")
+            os.utime(self.tmp / name / "out-agentas" / "review" / "report.md", (1, 1))
+        self.queue.write_text(f"{self.tmp / 'Book stale'}\n{self.tmp / 'Book slow'}\n", encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            run_queue.main([str(self.queue), "--command", self.cmd, "--timeout-min", "0.03"])
+        st = self.state()
+        self.assertIn("wrote no", st["Book stale"]["error"])
+        self.assertIn("timeout", st["Book slow"]["error"])
+        pid = int((self.tmp / "Book slow" / "child.pid").read_text())
+        self.assertFalse(run_queue.pid_alive(pid) and Path(f"/proc/{pid}").exists()
+                         and "Z" not in Path(f"/proc/{pid}/stat").read_text().split()[2])
 
     def test_lock_blocks_a_second_runner(self):
         import os

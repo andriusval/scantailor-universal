@@ -25,6 +25,14 @@ def decisions_path(p: Project) -> Path:
     return review_dir(p) / "decisions.json"
 
 
+# A label repeats for the pages of a multi-page file or for scans with one name, so then the key adds the page id.
+def page_key(p: Project, page_id: str) -> str:
+    pg = p.pages_by_id[str(page_id)]
+    if sum(1 for x in p.pages if x.label == pg.label) > 1:
+        return f"{pg.label} (id {pg.id})"
+    return pg.label
+
+
 def load(p: Project) -> dict:
     path = decisions_path(p)
     if path.exists():
@@ -44,17 +52,17 @@ class Notes:
         self.data = load(p)
         self.dirty = False
 
-    def add(self, page: str, source: str, decision: str, confidence: float, reason: str = "",
+    def add(self, page_id: str, source: str, decision: str, confidence: float, reason: str = "",
             check: bool | None = None) -> None:
         conf = round(max(0.0, min(1.0, float(confidence))), 2)
-        self.data["pages"].setdefault(page, {})[source] = {
+        self.data["pages"].setdefault(page_key(self.p, page_id), {})[source] = {
             "decision": decision, "confidence": conf, "reason": reason,
             "check": conf < CHECK_BELOW if check is None else bool(check),
             "time": _dt.datetime.now().isoformat(timespec="seconds")}
         self.dirty = True
 
-    def clear(self, pages, source: str) -> None:
-        for page in pages:
+    def clear(self, page_ids, source: str) -> None:
+        for page in (page_key(self.p, i) for i in page_ids):
             entry = self.data["pages"].get(page)
             if entry and entry.pop(source, None) is not None:
                 self.dirty = True

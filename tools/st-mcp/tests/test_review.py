@@ -38,17 +38,31 @@ class ReviewTest(unittest.TestCase):
         shutil.rmtree(self.tmp)
 
     def test_notes_replace_and_clear(self):
+        a, b = self.p.pages[0], self.p.pages[1]
         with review.Notes(self.p) as n:
-            n.add("001", "content", "content box: cover", 0.8, "a")
-            n.add("001", "content", "content box: manual", 0.3, "b")
-            n.add("002", "pictures", "picture page: grayscale", 0.9)
+            n.add(a.id, "content", "content box: cover", 0.8, "a")
+            n.add(a.id, "content", "content box: manual", 0.3, "b")
+            n.add(b.id, "pictures", "picture page: grayscale", 0.9)
         data = review.load(self.p)
-        self.assertEqual(data["pages"]["001"]["content"]["decision"], "content box: manual")
-        self.assertTrue(data["pages"]["001"]["content"]["check"])
-        self.assertFalse(data["pages"]["002"]["pictures"]["check"])
+        self.assertEqual(data["pages"][a.label]["content"]["decision"], "content box: manual")
+        self.assertTrue(data["pages"][a.label]["content"]["check"])
+        self.assertFalse(data["pages"][b.label]["pictures"]["check"])
         with review.Notes(self.p) as n:
-            n.clear(["002"], "pictures")
-        self.assertNotIn("002", review.load(self.p)["pages"])
+            n.clear([b.id], "pictures")
+        self.assertNotIn(b.label, review.load(self.p)["pages"])
+
+    def test_agent_notes_with_other_decisions_stay(self):
+        lab = self.labels[2]
+        ops.review_note(str(self.proj), [lab], "cover chosen", "dark edge", 0.5)
+        ops.review_note(str(self.proj), [lab], "orientation none", "upright text", 0.9)
+        self.assertEqual(len(review.load(self.p)["pages"][lab]), 2)
+
+    def test_bw_output_clears_the_output_note(self):
+        lab = self.labels[3]
+        ops.pages_set_output(str(self.proj), [lab], color_mode="color", dpi=300)
+        self.assertIn("output", review.load(self.p)["pages"][lab])
+        ops.pages_set_output(str(self.proj), [lab], color_mode="bw", dpi=600)
+        self.assertNotIn("output", review.load(self.p)["pages"].get(lab, {}))
 
     def test_sheet_puts_doubtful_pages_first(self):
         sel = self.labels[:8]

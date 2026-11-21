@@ -134,6 +134,16 @@ class State:
 
 
 def pid_alive(pid: int) -> bool:
+    # On Windows, os.kill with signal 0 sends CTRL_C_EVENT, so the check opens the process instead.
+    if os.name == "nt":
+        import ctypes
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return code.value == 259
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -160,6 +170,20 @@ def take_lock(lock: Path) -> None:
     os.close(fd)
 
 
+def stop_tree(proc: subprocess.Popen) -> None:
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+        return
+    import signal
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+        proc.wait(timeout=20)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
 def run_book(args, book: dict, st: dict, log: Path, cfg: Path) -> None:
     folder = book["folder"]
     st.update({"status": "running", "started": now(), "finished": None, "exit_code": None, "error": None,
@@ -173,16 +197,20 @@ def run_book(args, book: dict, st: dict, log: Path, cfg: Path) -> None:
     with open(log, "a", encoding="utf-8") as fh:
         fh.write(f"# {now()} start, attempt {st['attempts']}: {folder}\n")
         fh.flush()
-        proc = subprocess.Popen(cmd, cwd=str(folder), stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+        # A new process group lets the runner stop claude together with the MCP server and its CLI jobs.
+        group = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
+                 else {"start_new_session": True})
+        proc = subprocess.Popen(cmd, cwd=str(folder), stdout=fh, stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL, **group)
         try:
             code = proc.wait(timeout=args.timeout_min * 60 if args.timeout_min else None)
             error = None
         except subprocess.TimeoutExpired:
-            proc.kill()
+            stop_tree(proc)
             code = proc.wait()
             error = f"timeout after {args.timeout_min} min"
         except BaseException:
-            proc.kill()
+            stop_tree(proc)
             proc.wait()
             raise
         fh.write(f"\n# {now()} end, exit code {code}\n")
@@ -191,8 +219,8 @@ def run_book(args, book: dict, st: dict, log: Path, cfg: Path) -> None:
         st.update({"status": "failed", "error": error})
     elif code != 0:
         st.update({"status": "failed", "error": f"exit code {code}"})
-    elif not (folder / REPORT).exists():
-        st.update({"status": "failed", "error": f"no {REPORT.as_posix()}"})
+    elif not (folder / REPORT).exists() or (folder / REPORT).stat().st_mtime < t0 - 1:
+        st.update({"status": "failed", "error": f"this run wrote no {REPORT.as_posix()}"})
     else:
         st["status"] = "done"
 

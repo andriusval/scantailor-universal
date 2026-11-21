@@ -199,6 +199,20 @@ def _changed(field: str, a, b) -> bool:
     return a != b
 
 
+# Pages of one multi-page file, and scans with one name in different folders, need more than the file name.
+def _image_keys(p: Project) -> dict:
+    out, seen = {}, {}
+    for im in p.images.values():
+        base = (im.path.name, im.file_page)
+        seen[base] = seen.get(base, 0) + 1
+        out[base + (seen[base],)] = im
+    return out
+
+
+def _image_name(im) -> str:
+    return im.path.stem + (f" (page {im.file_page})" if im.file_page else "")
+
+
 def diff_records(original: str | os.PathLike, corrected: str | os.PathLike) -> list[dict]:
     a, b = Project(Path(original).resolve()), Project(Path(corrected).resolve())
     recs: list[dict] = []
@@ -207,28 +221,28 @@ def diff_records(original: str | os.PathLike, corrected: str | os.PathLike) -> l
         recs.append({"page": page, "stage": STAGE_OF.get(field, "other"), "field": field, "agent": va, "user": vb,
                      "category": _category(field, va, vb, cover, picture, page_h)})
 
-    ia = {im.path.name: im for im in a.images.values()}
-    ib = {im.path.name: im for im in b.images.values()}
+    ia, ib = _image_keys(a), _image_keys(b)
     for n in sorted(set(ia) - set(ib)):
-        add(Path(n).stem, "image", n, None)
+        add(_image_name(ia[n]), "image", ia[n].path.name, None)
     for n in sorted(set(ib) - set(ia)):
-        add(Path(n).stem, "image", None, n)
+        add(_image_name(ib[n]), "image", None, ib[n].path.name)
     # Rotation and split belong to a scan, so the log gets one record per scan.
     geo_changed: set[str] = set()
     for n in sorted(set(ia) & set(ib), key=lambda x: ia[x].index):
         ra, rb = a.rotation(ia[n].id), b.rotation(ib[n].id)
         if ra != rb:
-            add(Path(n).stem, "rotation", ra, rb)
-            geo_changed.add(n)
+            add(_image_name(ia[n]), "rotation", ra, rb)
+            geo_changed.add(ia[n].id)
         sa, sb = _split_state(a, ia[n].id), _split_state(b, ib[n].id)
         if _changed("split", sa, sb):
-            add(Path(n).stem, "split", sa, sb)
-            geo_changed.add(n)
+            add(_image_name(ia[n]), "split", sa, sb)
+            geo_changed.add(ia[n].id)
 
-    def keyed(p: Project) -> dict:
-        return {(pg.image.path.name, pg.image.file_page, pg.side): pg for pg in p.pages}
+    def keyed(p: Project, images: dict) -> dict:
+        key_of = {im.id: k for k, im in images.items()}
+        return {key_of[pg.image.id] + (pg.side,): pg for pg in p.pages}
 
-    ka, kb = keyed(a), keyed(b)
+    ka, kb = keyed(a, ia), keyed(b, ib)
     for key in sorted(set(ka) & set(kb), key=lambda k: ka[k].index):
         pa, pb = ka[key], kb[key]
         sa, sb = _page_state(a, pa), _page_state(b, pb)
@@ -236,7 +250,7 @@ def diff_records(original: str | os.PathLike, corrected: str | os.PathLike) -> l
         cover = _is_cover(a, pa) or _is_cover(b, pb)
         picture = sa["color_mode"] in ("colorOrGray", "mixed") or sb["color_mode"] in ("colorOrGray", "mixed")
         pr = (a.content(pa.id).get("page_rect_px") or {})
-        geo = pa.image.path.name in geo_changed or _changed("deskew", sa["deskew"], sb["deskew"])
+        geo = pa.image.id in geo_changed or _changed("deskew", sa["deskew"], sb["deskew"])
         for f in sa:
             # Box coordinates depend on rotation, split and deskew, so after such a change only that change counts.
             if geo and f in ("content", "page_box"):
@@ -298,7 +312,11 @@ def record(original: str, corrected: str, book: str | None = None, log: str | No
 
 
 def stats(log: str | None = None, book: str | None = None, top: int = 5) -> dict:
-    recs = read_log(log)
+    # A later correction of the same field replaces the earlier one, so each field counts once.
+    latest: dict = {}
+    for r in read_log(log):
+        latest[(r.get("book"), r.get("page"), r.get("stage"), r.get("field"))] = r
+    recs = list(latest.values())
     if book:
         bid = book_id(book)
         recs = [r for r in recs if r.get("book") == bid]
