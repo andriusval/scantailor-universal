@@ -87,6 +87,11 @@ public:
         return (m_mask & BLACK_FILLING) != 0;
     }
 
+    bool convertToGrayscale() const
+    {
+        return (m_mask & CONVERT_TO_GRAYSCALE) != 0;
+    }
+
     bool anyLayer() const
     {
         return autoLayer() || pictureZonesLayer() || foregroundLayer();
@@ -103,7 +108,8 @@ private:
         FOREGROUND_LAYER = 64,
         FILL_OFFCUT = 128,
         WHITE_FILLING = 256,
-        BLACK_FILLING = 512
+        BLACK_FILLING = 512,
+        CONVERT_TO_GRAYSCALE = 1024
     };
 
     int m_mask;

@@ -487,7 +487,8 @@ Task::process(
         } else {
             deleteMutuallyExclusiveOutputFiles();
 #ifdef HAVE_EXIV2
-            if (GlobalStaticSettings::m_output_copy_icc_metadata) {
+            // A color profile does not fit a grayscale output that the page made from a color original.
+            if (GlobalStaticSettings::m_output_copy_icc_metadata && !render_params.convertToGrayscale()) {
                 ImageMetadataCopier::copyMetadata(m_pageId.imageId().filePath(), out_file_path);
             }
 #endif

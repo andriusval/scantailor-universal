@@ -320,10 +320,13 @@ OutputGenerator::process(
     IntrusivePtr<Settings>* p_settings
 ) const
 {
+    // A paper tint must not change the margins, the illumination or the pictures, so the color goes before all other steps.
+    FilterData const source(RenderParams(m_colorParams).convertToGrayscale() ? input.grayscaled() : input);
+
     QImage image;
     if (m_blackOnWhite) {
         image = processImpl(
-                    status, input, picture_zones, fill_zones,
+                    status, source, picture_zones, fill_zones,
                     dewarping_mode, distortion_model, depth_perception,
                     keep_orig_fore_subscan,
                     auto_layer_mask, speckles_image, dbg,
@@ -332,7 +335,7 @@ OutputGenerator::process(
     } else {
         // Process an inverted page and invert the result again, because the algorithms work only with dark content on a light background.
         image = processImpl(
-                    status, input.inverted(), picture_zones, fill_zones,
+                    status, source.inverted(), picture_zones, fill_zones,
                     dewarping_mode, distortion_model, depth_perception,
                     keep_orig_fore_subscan,
                     auto_layer_mask, speckles_image, dbg,
@@ -348,6 +351,22 @@ OutputGenerator::process(
     image.setDotsPerMeterY(output_dpm.vertical());
 
     return image;
+}
+
+bool
+OutputGenerator::keepsIccColorSpace(FilterData const& input) const
+{
+#ifdef HAVE_EXIV2
+    // A grayscale output must not get the color profile of the original image.
+    if (RenderParams(m_colorParams).convertToGrayscale()) {
+        return false;
+    }
+    return GlobalStaticSettings::m_output_copy_icc_metadata
+           && ImageMetadataCopier::iccProfileDefined(input.origImageFilename());
+#else
+    (void)input;
+    return false;
+#endif
 }
 
 QSize
@@ -646,8 +665,7 @@ OutputGenerator::processAsIs(
 
     if (input.origImage().allGray() && !cli.hasTiffForceKeepColorSpace()
         #ifdef HAVE_EXIV2
-            && !( GlobalStaticSettings::m_output_copy_icc_metadata &&
-                  ImageMetadataCopier::iccProfileDefined(input.origImageFilename()) )
+            && !keepsIccColorSpace(input)
         #endif
             ) {
         if (m_outRect.isEmpty()) {
@@ -908,8 +926,7 @@ OutputGenerator::processWithoutDewarping(TaskStatus const& status, FilterData co
         QImage tmp;
         if (!input.origImage().allGray()
 #ifdef HAVE_EXIV2
-                || ( GlobalStaticSettings::m_output_copy_icc_metadata &&
-                 ImageMetadataCopier::iccProfileDefined(input.origImageFilename()) )
+                || keepsIccColorSpace(input)
 #endif
                 ) {
             assert(maybe_normalized.format() == QImage::Format_Indexed8);
@@ -1159,8 +1176,7 @@ OutputGenerator::processWithDewarping(TaskStatus const& status, FilterData const
 
     bool const color_original = !input.origImage().allGray()
 #ifdef HAVE_EXIV2
-            || ( GlobalStaticSettings::m_output_copy_icc_metadata &&
-                 ImageMetadataCopier::iccProfileDefined(input.origImageFilename()) )
+            || keepsIccColorSpace(input)
 #endif
             ;
 
