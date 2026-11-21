@@ -102,18 +102,68 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    `export_summary`, patikrinti, ar visi teksto puslapiai vienodo dydžio
    (`pages_list(sort_by="content_width", descending=true)`). Peržiūrėti 8–16
    išvesties puslapių.
-10. `project_for_windows(project)`, jei apdorota per WSL — kad projektą
+10. **Peržiūros lapas:** `review_sheet(project)` įrašo
+    `out-agentas/review/index.html`. Puslapyje — kiekvieno išvesties
+    puslapio miniatiūra ir content box peržiūra kiekvienam puslapiui su
+    agento sprendimu. Kiekvienas sprendimas turi patikimumą ir priežastį.
+    Puslapiai su mažu patikimumu ar vėliava eina pirmi, su žyma
+    „CHECK IN GUI“. Įrankiai savo sprendimus įrašo į
+    `out-agentas/review/decisions.json`. Savo sprendimus (orientacija,
+    viršeliai, B/W paliekami iliustracijų puslapiai) įrašyti per
+    `review_note(project, pages, decision, reason, confidence)`. Lapą daryti
+    prieš `project_for_windows`, nes CLI peržiūroms reikia kelių, kuriuos CLI
+    gali atidaryti.
+11. `project_for_windows(project)`, jei apdorota per WSL — kad projektą
     atidarytų Windows GUI. Su šios šakos Windows buildu naudoti
     `relative=true`: tada projektas atsidaro ir WSL, ir Windows.
     Jis taip pat išsaugo `agentas.orig.ScanTailor` — baigto projekto kopiją.
     Išvalyti agento žurnalus ir paleidimų atsargines kopijas, bet niekada ne
     `.orig`: `project_diff(orig, pataisytas)` vėliau palygina jį su žmogaus
     pataisymais, kad rastume naujų taisyklių.
-11. Suvestinė: kas pakeista ir kodėl, iliustracijų sprendimai, kas liko
+12. Suvestinė: kas pakeista ir kodėl, iliustracijų sprendimai, kas liko
     žmogui (pvz. antspaudai ar dėmės tekste). Išvardyti `pages_align_auto`
     šalinimo kandidatus (tušti priešlapiai, titulinį kartojantis antraštinis
     lapas, beveik tušti puslapiai) ir peržiūros sąrašą (aukšti puslapiai su
     mažai eilučių: pasuktos lentelės) — nešalinti, sprendžia žmogus.
+    Išvardyti tikrintinus puslapius iš `review_sheet` (`to_check`) ir nurodyti
+    peržiūros lapo kelią. Suvestinę įrašyti į `out-agentas/review/report.md`.
+
+## Knygų eilė (naktiniai paleidimai)
+
+`tools/st-mcp/run_queue.py books.txt` paleidžia šį workflow kiekvienam
+knygos katalogui iš `books.txt`: po vieną headless Claude Code sesiją
+(`claude -p`) knygai. Užduotyje (prompt) — taisyklės ir aukščiau esantis
+žingsnių sąrašas, ataskaita prašoma į `out-agentas/review/report.md`. Failas
+`books.state.json` saugo kiekvienos knygos būseną, todėl po strigties naujas
+paleidimas tęsia ir praleidžia baigtas knygas. Kiekviena knyga turi savo
+žurnalą `books-logs/`. Pabaigoje `books-summary.md` — po eilutę knygai su
+nuoroda į jos peržiūros lapą. Komandas pirma pažiūrėti su `--dry-run`.
+Smulkiau — `tools/st-mcp/README.md`.
+
+## Pataisymų žurnalas
+
+Kai žmogus knygą pataisė GUI, paleisti
+`corrections_record("<knyga>/agentas.orig.ScanTailor", "<knyga>/agentas.ScanTailor")`.
+Jis įrašo po vieną JSONL įrašą kiekvienam pakeistam puslapio parametrui:
+knygos katalogas, puslapis, etapas, laukas, agento reikšmė, žmogaus reikšmė ir
+kategorija. Žurnalas — `~/.local/share/st-mcp/corrections.jsonl`; kitą failą
+nurodo `ST_CORRECTIONS_LOG`. Pakeitimas, kuris tai knygai jau yra žurnale,
+antrą kartą neįrašomas, todėl įrankį galima leisti po kiekvienos peržiūros.
+
+Kategorijos:
+- puslapiai ir geometrija: `page_removed`, `page_added`, `split`, `rotation`,
+  `deskew_picture`, `deskew_text`, `page_box`;
+- content box: `content_empty`, `content_box_trim` (rėmelis sumažintas),
+  `content_box_extend`, `content_box_numbers` (pridėta siaura juosta viršuje ar apačioje);
+- viršeliai: `cover` (rėmelio, maketo ar išvesties pakeitimas viršelyje);
+- maketas: `margins`, `alignment`, `match_size`;
+- išvestis: `output_mode`, `dpi`, `picture_zones`; visa kita: `other`.
+
+Content box pakeitimas neįrašomas, jei to puslapio pasukimas, padalijimas ar
+kampas irgi pakeistas: tada rėmelio koordinatės nepalyginamos.
+
+`corrections_stats()` rodo dažniausias kategorijas ir workflow taisyklę,
+į kurią kiekviena rodo. Pirma taisyti tą taisyklę.
 
 Vienetai: content box — ištiesinto puslapio pikseliais (tie patys, kaip
 `page_preview`); paraštės — mm; DPI — sveikieji skaičiai.
@@ -136,12 +186,16 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
 | `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5 |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
-| `project_diff(original, corrected)` | Skirtumai tarp agento projekto ir žmogaus pataisyto, puslapiais |
+| `project_diff(original, corrected, record?)` | Skirtumai tarp agento projekto ir žmogaus pataisyto, puslapiais; `record=true` juos dar įrašo į pataisymų žurnalą |
+| `corrections_record(original, corrected, book?, log?)` | Prideda žmogaus pataisymus į pataisymų žurnalą (JSONL): vienas įrašas kiekvienam pakeistam puslapio parametrui, be pasikartojimų |
+| `corrections_stats(log?, book?, top?)` | Pataisymai pagal kategoriją ir knygą, dažniausios kategorijos su workflow taisykle |
 | `pages_fit_width(project, margin_mm?, percentile?)` | Vienas puslapio plotis: mažesnės šoninės paraštės už tipinį teksto bloką platesniems puslapiams |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertikalus lygiavimas visiems teksto puslapiams ir šalinimo kandidatai ataskaitai |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?)` | `output` |
 | `check_pages(project, pages, kind=content\|pictures)` | Heuristikos su įrodymais |
 | `export_summary(project)` | Išvesties TIFF sąrašas ir kas trūksta |
+| `review_note(project, pages, decision, reason?, confidence?, topic?)` | Įrašo agento sprendimą peržiūros lapui |
+| `review_sheet(project, pages?, thumb_px?, engine?)` | Įrašo `out-agentas/review/index.html`: miniatiūros, sprendimai su patikimumu, abejotini puslapiai pirmi |
 | `pages_straighten_pictures(project, pages)` | Nuotraukų puslapių kampas pagal spaudos stačiakampius |
 | `project_for_windows(project, relative?)` | /mnt/c keliai → C:/ Windows GUI arba reliatyvūs nuo projekto (paskutinis žingsnis per WSL) |
 
