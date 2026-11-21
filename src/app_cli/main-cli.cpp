@@ -21,6 +21,8 @@
 #include "settings/ini_keys.h"
 #include <QString>
 #include <QStringList>
+#include <QFileInfo>
+#include <QJsonObject>
 #include <iostream>
 
 #include "CommandLine.h"
@@ -36,6 +38,20 @@
 #include "GenericMetadataLoader.h"
 #include "ConsoleBatch.h"
 #include "config.h"
+
+static void
+printRunError(QString const& message, ConsoleBatch const* batch = nullptr)
+{
+    QJsonObject ev;
+    ev["event"] = QStringLiteral("run_end");
+    ev["status"] = QStringLiteral("error");
+    ev["error"] = message;
+    if (batch) {
+        ev["page_errors"] = batch->pageErrorCount();
+        ev["warnings"] = batch->warningCount();
+    }
+    ConsoleBatch::printJsonLine(ev);
+}
 
 int main(int argc, char** argv)
 {
@@ -66,17 +82,29 @@ int main(int argc, char** argv)
     // the last one: it loads the whole image
     GenericMetadataLoader::registerMyself();
 
+    // The parser can write text, thus send that text to stderr before parsing when stdout must carry only JSON lines.
+    bool const json = app.arguments().contains(QStringLiteral("--json-progress"));
+    if (json) {
+        std::cout.rdbuf(std::cerr.rdbuf());
+    }
+
     // parse command line arguments
     CommandLine cli(app.arguments(), false);
     CommandLine::set(cli);
 
     if (cli.isError()) {
         cli.printHelp();
+        if (json) {
+            printRunError(QStringLiteral("invalid command line"));
+        }
         return 1;
     }
 
     if (cli.hasHelp() || cli.outputDirectory().isEmpty() || (cli.images().size() == 0 && cli.projectFile().isEmpty())) {
         cli.printHelp();
+        if (json && !cli.hasHelp()) {
+            printRunError(QStringLiteral("no input images or no output directory"));
+        }
         return 0;
     }
 
@@ -99,24 +127,53 @@ int main(int argc, char** argv)
             cbatch.reset(new ConsoleBatch(cli.images(), cli.outputDirectory(), cli.getLayoutDirection()));
         }
         cbatch->process();
+        if (cli.hasOutputProject() && !cbatch->saveProject(cli.outputProjectFile()) && json) {
+            printRunError(QStringLiteral("cannot write the project file"), cbatch.get());
+            return 1;
+        }
     } catch (std::exception const& e) {
         std::cerr << e.what() << std::endl;
+        if (json) {
+            printRunError(QString::fromLocal8Bit(e.what()), cbatch.get());
+        }
         exit(1);
     }
 
-    if (cli.hasOutputProject()) {
-        cbatch->saveProject(cli.outputProjectFile());
-    }
-
     // Write the previews after the project, because a preview error must not prevent the project save.
+    int preview_failures = 0;
+    QString preview_error;
     if (cli.hasRenderPreview()) {
         try {
-            if (cbatch->renderPreviews(cli.getRenderPreviewDirectory(), cli.getRenderPreviewSize()) > 0) {
-                return 1;
-            }
+            preview_failures = cbatch->renderPreviews(cli.getRenderPreviewDirectory(), cli.getRenderPreviewSize());
         } catch (std::exception const& e) {
             std::cerr << e.what() << std::endl;
-            return 1;
+            preview_error = QString::fromLocal8Bit(e.what());
         }
     }
+    bool const preview_failed = preview_failures > 0 || !preview_error.isEmpty();
+
+    if (json) {
+        // The status is "error" only when the exit code is not zero, and a warning does not change the exit code.
+        QJsonObject ev;
+        ev["event"] = QStringLiteral("run_end");
+        ev["status"] = preview_failed ? QStringLiteral("error")
+                       : (cbatch->warningCount() > 0 ? QStringLiteral("warning") : QStringLiteral("ok"));
+        ev["pages"] = cbatch->pageCount();
+        ev["page_errors"] = cbatch->pageErrorCount();
+        ev["warnings"] = cbatch->warningCount();
+        if (cli.hasOutputProject()) {
+            ev["project"] = QFileInfo(cli.outputProjectFile()).absoluteFilePath();
+        }
+        if (cli.hasRenderPreview()) {
+            ev["preview_failures"] = preview_failures;
+        }
+        if (!preview_error.isEmpty()) {
+            ev["error"] = preview_error;
+        } else if (preview_failed) {
+            ev["error"] = QStringLiteral("%1 preview(s) failed").arg(preview_failures);
+        }
+        ConsoleBatch::printJsonLine(ev);
+    }
+
+    return preview_failed ? 1 : 0;
 }

@@ -22,6 +22,7 @@
 #define CONSOLEBATCH_H_
 
 #include <QString>
+#include <QJsonObject>
 #include <set>
 #include <vector>
 
@@ -54,11 +55,24 @@ public:
     ConsoleBatch(QString const project_file);
 
     void process();
-    void saveProject(QString const project_file);
+    bool saveProject(QString const project_file);
     int renderPreviews(QString const& directory, int max_size);
+    int pageCount() const;
+    int pageErrorCount() const
+    {
+        return m_pageErrors;
+    }
+    int warningCount() const
+    {
+        return m_warnings;
+    }
+
+    static void printJsonLine(QJsonObject const& obj);
 private:
     bool batch;
     bool debug;
+    int m_pageErrors;
+    int m_warnings;
     IntrusivePtr<FileNameDisambiguator> m_ptrDisambiguator;
     IntrusivePtr<ProjectPages> m_ptrPages;
     IntrusivePtr<StageSequence> m_ptrStages;
@@ -80,7 +94,10 @@ private:
     void setupPageLayout(std::set<PageId> allPages);
     void setupOutput(std::set<PageId> allPages);
 
-    void checkImageFiles() const;
+    void checkImageFiles();
+
+    QString stageName(int idx) const;
+    QJsonObject pageResult(int idx, PageId const& page_id) const;
 
     IntrusivePtr<LoadFileTask> createCompositeTask(
         PageInfo const& page,
