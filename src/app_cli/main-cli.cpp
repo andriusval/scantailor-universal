@@ -109,7 +109,8 @@ int main(int argc, char** argv)
     }
 
     // The parser gives "true" for an option without a value, and that is not a directory.
-    if (cli.hasRenderPreview() && cli.getRenderPreviewDirectory() == "true") {
+    if (cli.renderPreviewGiven()
+            && (!cli.hasRenderPreview() || cli.getRenderPreviewDirectory() == "true")) {
         std::cerr << "Use --render-preview=<directory>." << std::endl;
         return 1;
     }
@@ -127,10 +128,6 @@ int main(int argc, char** argv)
             cbatch.reset(new ConsoleBatch(cli.images(), cli.outputDirectory(), cli.getLayoutDirection()));
         }
         cbatch->process();
-        if (cli.hasOutputProject() && !cbatch->saveProject(cli.outputProjectFile()) && json) {
-            printRunError(QStringLiteral("cannot write the project file"), cbatch.get());
-            return 1;
-        }
     } catch (std::exception const& e) {
         std::cerr << e.what() << std::endl;
         if (json) {
@@ -139,7 +136,7 @@ int main(int argc, char** argv)
         exit(1);
     }
 
-    // Write the previews after the project, because a preview error must not prevent the project save.
+    // Previews come before the save, so that the saved project holds what they read, but a preview error does not stop the save.
     int preview_failures = 0;
     QString preview_error;
     if (cli.hasRenderPreview()) {
@@ -150,6 +147,20 @@ int main(int argc, char** argv)
             preview_error = QString::fromLocal8Bit(e.what());
         }
     }
+
+    try {
+        if (cli.hasOutputProject() && !cbatch->saveProject(cli.outputProjectFile()) && json) {
+            printRunError(QStringLiteral("cannot write the project file"), cbatch.get());
+            return 1;
+        }
+    } catch (std::exception const& e) {
+        std::cerr << e.what() << std::endl;
+        if (json) {
+            printRunError(QString::fromLocal8Bit(e.what()), cbatch.get());
+        }
+        return 1;
+    }
+
     bool const preview_failed = preview_failures > 0 || !preview_error.isEmpty();
 
     if (json) {
