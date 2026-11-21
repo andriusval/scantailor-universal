@@ -165,7 +165,8 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
   daugiagijis režimas buvo ~9 kartus lėtesnis (54 min) ir nedeterministinis.
 - CLI `--threads=<N>` apdoroja N vieno etapo puslapių vienu metu; kitas etapas
   prasideda tik po visų puslapių. Kiekvienas puslapis naudoja vieną OpenMP giją,
-  todėl rezultatas toks pat kaip su viena gija (TIFF baitas į baitą).
+  todėl rezultatas toks pat kaip su viena gija (TIFF baitas į baitą). Jei 6 etape
+  pasikeičia bendras puslapių dydis, CLI duoda įspėjimą: tada paleiskite 5–6 etapus.
   36 skenai, 72 puslapiai, visi etapai: N=1 ~100 s, N=4 ~38 s, N=8 ~25 s,
   N=14 ~22 s. Kiekvienam puslapiui reikia ~170 MB atminties.
   st-mcp perduoda `--threads` su pusės branduolių skaičiumi (`ST_CLI_THREADS`).

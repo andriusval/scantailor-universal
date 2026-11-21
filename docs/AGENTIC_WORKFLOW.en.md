@@ -165,7 +165,8 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
   ~9× slower (54 min) and not deterministic.
 - CLI `--threads=<N>` processes N pages of a stage at the same time; the next
   stage starts only after all pages. Each page uses one OpenMP thread, so the
-  result is the same as with one thread (TIFFs byte for byte).
+  result is the same as with one thread (TIFFs byte for byte). If the aggregate
+  page size changes in stage 6, the CLI gives a warning: then run stages 5-6.
   36 scans, 72 pages, all stages: N=1 ~100 s, N=4 ~38 s, N=8 ~25 s,
   N=14 ~22 s. Each parallel page needs about 170 MB of memory.
   st-mcp passes `--threads` with half of the cores (`ST_CLI_THREADS`).

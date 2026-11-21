@@ -460,7 +460,8 @@ CommandLine::printHelp()
     std::cout << "\t\t\t\t\t\t   example: --pages=\"0100.jpg:L;0101.jpg;#12\"" << std::endl;
     std::cout << "\t--threads=<N|auto>\t\t\t-- process N pages of a filter at the same time; 0 or auto: one per CPU core;" << std::endl;
     std::cout << "\t\t\t\t\t\t   default: 1. With N > 1, each page uses one OpenMP thread," << std::endl;
-    std::cout << "\t\t\t\t\t\t   the next filter starts after all pages, and the output is the same as with 1" << std::endl;
+    std::cout << "\t\t\t\t\t\t   the next filter starts after all pages, and the output is the same as with 1;" << std::endl;
+    std::cout << "\t\t\t\t\t\t   a warning tells when the aggregate page size changes in filter 6" << std::endl;
     std::cout << "\t--tiff-compression=<lzw|deflate|packbits|jpeg|none>\t-- default: lzw" << std::endl;
     std::cout << "\t--tiff-force-rgb\t\t\t-- all output tiffs will be rgb" << std::endl;
     std::cout << "\t--tiff-force-grayscale\t\t\t-- all output tiffs will be grayscale" << std::endl;

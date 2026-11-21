@@ -606,7 +606,7 @@ ConsoleBatch::process()
     bool const json = cli.isJsonProgress();
     int const num_threads = cli.getThreads();
     if (num_threads > 1) {
-        // Pages already run in parallel, and OpenMP threads in each page would compete with them.
+        // The main thread runs no pages here, but one OpenMP thread keeps its later work, such as previews, as with OMP_NUM_THREADS=1.
         useOneOpenMpThread();
     }
 
@@ -662,12 +662,16 @@ ConsoleBatch::process()
             );
         }
 
-        if (check_agg_size &&
-                agg_size_before != m_ptrStages->pageLayoutFilter()->getSettings()->getAggregateHardSizeMM()) {
+        QSizeF const agg_size_after = (check_agg_size || check_parallel_agg_size)
+                                      ? m_ptrStages->pageLayoutFilter()->getSettings()->getAggregateHardSizeMM()
+                                      : QSizeF();
+        if (agg_size_before != agg_size_after) {
             ++m_warnings;
-            std::cerr << "Warning: the aggregate page size changed. The pages that are not in --pages"
-                      << " keep their old output size. Run stages 5-6 on all pages to make the sizes equal again."
-                      << std::endl;
+            QString const text = check_agg_size
+                                 ? QStringLiteral("The pages that are not in --pages keep their old output size.")
+                                 : QStringLiteral("With --threads, some pages can have an old output size.");
+            std::cerr << "Warning: the aggregate page size changed. " << text.toLocal8Bit().constData()
+                      << " Run stages 5-6 on all pages to make the sizes equal again." << std::endl;
             if (json) {
                 QJsonObject ev;
                 ev["event"] = QStringLiteral("warning");
@@ -676,23 +680,6 @@ ConsoleBatch::process()
                 ev["warning"] = QStringLiteral("aggregate_size_changed");
                 ev["message"] = QStringLiteral(
                     "The aggregate page size changed. Run stages 5-6 on all pages to make the sizes equal again.");
-                printJsonLine(ev);
-            }
-        }
-
-        if (check_parallel_agg_size &&
-                agg_size_before != m_ptrStages->pageLayoutFilter()->getSettings()->getAggregateHardSizeMM()) {
-            ++m_warnings;
-            std::cerr << "Warning: the aggregate page size changed in filter 6. With --threads, some pages"
-                      << " can have an old output size. Run stages 5-6 again to make the sizes equal." << std::endl;
-            if (json) {
-                QJsonObject ev;
-                ev["event"] = QStringLiteral("warning");
-                ev["stage"] = j + 1;
-                ev["name"] = stageName(j);
-                ev["warning"] = QStringLiteral("aggregate_size_changed");
-                ev["message"] = QStringLiteral(
-                    "The aggregate page size changed in filter 6. Run stages 5-6 again to make the sizes equal.");
                 printJsonLine(ev);
             }
         }
