@@ -47,18 +47,19 @@ GUI.
      letters in a zoomed crop only for the scans that step 3 flags;
    - **layout**: `2` for open-book spreads, `1` for single pages;
    - covers and other one-image scans (`001`, `9999`, …) usually
-     `orientation=none, layout=1`: `images_set_geometry` for them;
+     `orientation=none, layout=1`: `images_set_geometry` for them after the auto run of step 3;
    - look at each such scan. An endpaper scan (`002`, `9998`: the inside
      cover with a map and the flyleaf) is usually a spread. Give it
      `layout=2` and the orientation that the scan shows.
-3. `run_stages(project, 1, 5, orientation="auto", layout=…)` (about 0.5 s
-   per page). Then `check_pages(kind="orientation")` and preview each flagged
-   scan: "no decision" (covers, photos, blank pages), "low confidence", "the
-   EXIF tag disagrees", or "text runs across the book". The last one is
-   usually a sideways table: the scan keeps the rotation of the book, and
-   step 5 turns only its output. Fix a wrong scan with
-   `images_set_geometry(orientation=…)` and `run_stages(1, 5)` without
-   `orientation`.
+3. `run_stages(project, 1, 1, orientation="auto", layout=…)` first, because
+   `orientation="auto"` writes the rotation of every scan with a decision.
+   Then `check_pages(kind="orientation")` and preview each flagged scan: "no
+   decision" (covers, photos, blank pages), "low confidence", "the EXIF tag
+   disagrees", or "text runs across the book". The last one is usually a
+   sideways table: the scan keeps the rotation of the book, and step 5 turns
+   only its output. After that, set the covers, the endpapers and each wrong
+   scan with `images_set_geometry`, and run `run_stages(project, 1, 5)`
+   without `orientation` (about 0.5 s per page).
 4. **Content:** `check_pages(kind="content")` and the widest/tallest pages
    from `pages_list`. Preview what is flagged (`pages_preview`, zoom on edges
    when unsure). Then:

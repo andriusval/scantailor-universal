@@ -49,18 +49,19 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
      pažymi 3 žingsnis;
    - **layout**: `2` atvartams, `1` pavieniams puslapiams;
    - viršeliai ir kiti pavieniai skenai (`001`, `9999`, …) dažniausiai
-     `orientation=none, layout=1` (`images_set_geometry`);
+     `orientation=none, layout=1` (`images_set_geometry` po 3 žingsnio auto paleidimo);
    - kiekvieną tokį skeną peržiūrėti: priešlapio skenas (vidinis viršelis su
      žemėlapiu ir priešlapis, pvz. `002`, `9998`) paprastai yra atvartas →
      `layout=2`, orientacija tokia, kokią rodo skenas.
-3. `run_stages(project, 1, 5, orientation="auto", layout=…)` (~0,5 s
-   puslapiui). Tada `check_pages(kind="orientation")` ir peržiūrėti kiekvieną
-   pažymėtą skeną: „no decision“ (viršeliai, nuotraukos, tušti lapai), „low
-   confidence“, „EXIF žymė prieštarauja tekstui“ arba „text runs across the
-   book“. Paskutinis dažniausiai yra šonu išspausdinta lentelė: skenas lieka
-   knygos pasukimo, o 5 žingsnis pasuka tik jo išvestį. Neteisingą skeną
-   pataisyti su `images_set_geometry(orientation=…)` ir `run_stages(1, 5)` be
-   `orientation`.
+3. Pirma `run_stages(project, 1, 1, orientation="auto", layout=…)`, nes
+   `orientation="auto"` įrašo kiekvieno skeno su sprendimu pasukimą. Tada
+   `check_pages(kind="orientation")` ir peržiūrėti kiekvieną pažymėtą skeną:
+   „no decision“ (viršeliai, nuotraukos, tušti lapai), „low confidence“,
+   „EXIF žymė prieštarauja tekstui“ arba „text runs across the book“.
+   Paskutinis dažniausiai yra šonu išspausdinta lentelė: skenas lieka knygos
+   pasukimo, o 5 žingsnis pasuka tik jo išvestį. Po to viršelius, priešlapius
+   ir neteisingus skenus nustatyti su `images_set_geometry` ir paleisti
+   `run_stages(project, 1, 5)` be `orientation` (~0,5 s puslapiui).
 4. **Content:** `check_pages(kind="content")` ir plačiausi/aukščiausi iš
    `pages_list`. Pažymėtus peržiūrėti, tada:
    - šiukšlės prie rėmelio kraštų (`thin_*_column_isolated`,

@@ -1057,9 +1057,18 @@ ConsoleBatch::setupAutoOrientation(std::set<PageId> const& pages)
             images.insert(page.imageId());
         }
     }
+    // With --pages, the other scans still vote for the book rotation, so that a sideways table keeps that rotation.
+    std::set<ImageId> voters(images);
+    if (m_hasPageFilter) {
+        for (PageInfo const& page : m_ptrPages->toPageSequence(IMAGE_VIEW)) {
+            if (!isResourcePath(page.imageId().filePath())) {
+                voters.insert(page.imageId());
+            }
+        }
+    }
 
     // The detector sees the whole scan before the split, so both pages of a spread get the same rotation.
-    std::vector<ImageId> const ids(images.begin(), images.end());
+    std::vector<ImageId> const ids(voters.begin(), voters.end());
     std::vector<OrientationResult> results;
     for (ImageId const& image_id : ids) {
         QImage const image(ImageLoader::load(image_id));
@@ -1074,6 +1083,9 @@ ConsoleBatch::setupAutoOrientation(std::set<PageId> const& pages)
     fix_orientation::Settings* const settings = m_ptrStages->fixOrientationFilter()->getSettings();
     for (size_t i = 0; i < ids.size(); ++i) {
         OrientationResult const& result = results[i];
+        if (images.count(ids[i]) == 0) {
+            continue;
+        }
         m_orientationResults[ids[i]] = result;
         if (!result.isDecided()) {
             continue;
@@ -1100,8 +1112,8 @@ ConsoleBatch::detectOutputRotation(PageId const& page_id)
         ? OrientationResult(0, 0.0, false, QStringLiteral("no output file"))
         : OrientationDetector::detect(out_image)
     );
-    m_outputRotationResults[page_id] = result;
     if (!result.isDecided()) {
+        m_outputRotationResults[page_id] = result;
         return false;
     }
 
@@ -1110,6 +1122,8 @@ ConsoleBatch::detectOutputRotation(PageId const& page_id)
     int const current = settings->getParams(page_id).outputRotation();
     int const file_rotation = stored.get() ? stored->outputImageParams().outputRotation() : current;
     int const target = (file_rotation + result.angle()) % 360;
+    // The JSON reports the rotation that the page needs, because a value relative to the file would mislead the agent.
+    m_outputRotationResults[page_id] = OrientationResult(target, result.confidence(), true, result.reason());
     if (target == current) {
         return false;
     }

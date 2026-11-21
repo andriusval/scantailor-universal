@@ -34,7 +34,7 @@ public:
     OrientationResult(int angle, double confidence, bool decided, QString const& reason)
         : m_angle(angle), m_confidence(confidence), m_decided(decided), m_reason(reason) {}
 
-    // The clockwise rotation in degrees (0, 90, 180 or 270) that makes the content upright.
+    // A clockwise angle matches OrthogonalRotation and the CLI options, so callers need no conversion.
     int angle() const
     {
         return m_angle;

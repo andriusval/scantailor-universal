@@ -60,7 +60,7 @@ struct Box {
     }
 };
 
-// One cue collects the votes for upright text and for upside-down text.
+// Separate counts per cue let one cue that votes against the others stop a decision.
 struct Cue {
     int up;
     int down;
@@ -138,7 +138,7 @@ private:
     std::vector<std::vector<int> > m_cells;
 };
 
-// Turns a box by 90 degrees clockwise inside an image of the given height.
+// A turn of the boxes is faster than a turn of the image, and the vertical text axis needs only the boxes.
 Box rotateBoxCw(Box const& b, int height)
 {
     Box r;

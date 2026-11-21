@@ -997,17 +997,19 @@ DETECT_THRESHOLD = 0.5
 
 
 # One CLI call for many files is faster than one call per file, and it changes no project.
-def _detect_orientation(paths: list[Path]) -> dict[str, dict]:
-    if not paths:
+def _detect_orientation(items: list[tuple[Path, int]]) -> dict[tuple[str, int], dict]:
+    if not items:
         return {}
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:
-        f.write("\n".join(str(x) for x in paths) + "\n")
+        f.write("".join(f"{path}\t{page}\n" for path, page in items))
         list_file = f.name
     try:
         r = subprocess.run([find_cli(), f"--detect-orientation={list_file}"], capture_output=True, env=cli_env(),
                            text=True, encoding="utf-8", errors="replace")
     finally:
         os.unlink(list_file)
+    if r.returncode != 0:
+        raise RuntimeError(f"--detect-orientation failed ({r.returncode}): {r.stderr.strip()[-500:]}")
     res = {}
     for line in r.stdout.splitlines():
         try:
@@ -1015,7 +1017,7 @@ def _detect_orientation(paths: list[Path]) -> dict[str, dict]:
         except ValueError:
             continue
         if ev.get("event") == "orientation":
-            res[ev["image"]] = ev
+            res[(ev["image"], int(ev.get("page", 0)))] = ev
     return res
 
 
@@ -1040,15 +1042,16 @@ def _check_orientation(p: Project, ids: list[str]) -> dict:
         raise RuntimeError(f"{find_cli()} does not know --detect-orientation: build a newer CLI")
     pages = [p.page(i) for i in ids]
     image_ids = list(dict.fromkeys(pg.image_id for pg in pages))
-    scan_paths = [p.images[i].path for i in image_ids]
+    # ScanTailor counts the pages of a multi-page file from 1, and the CLI list file counts them from 0.
+    scan_items = [(p.images[i].path, max(0, p.images[i].file_page - 1)) for i in image_ids]
     outputs = {}
     for pg in pages:
         f = p.output_dir / (p.output_name(pg.id) + ".tif")
         if f.exists():
             outputs[pg.id] = f
-    det = _detect_orientation(scan_paths + list(outputs.values()))
+    det = _detect_orientation(scan_items + [(f, 0) for f in outputs.values()])
     missing = {"orientation_detected": None, "confidence": 0, "reason": "no result from the CLI"}
-    scans = [dict(det.get(str(path), missing)) for path in scan_paths]
+    scans = [dict(det.get((str(path), page), missing)) for path, page in scan_items]
     _apply_book_rotation(scans)
 
     flagged, scans_ok = [], 0
@@ -1077,7 +1080,7 @@ def _check_orientation(p: Project, ids: list[str]) -> dict:
 
     outputs_ok = 0
     for pid, f in outputs.items():
-        r = det.get(str(f), missing)
+        r = det.get((str(f), 0), missing)
         o = p.output(pid)
         cur = o.get("output_rotation", 0)
         rel, reason = r.get("orientation_detected"), r["reason"]
@@ -1114,9 +1117,9 @@ def _add_sideways_direction(p: Project, flagged: list[dict]) -> None:
         f = p.output_dir / (p.output_name(r["page_id"]) + ".tif")
         if f.exists():
             files[r["page_id"]] = f
-    det = _detect_orientation(list(files.values()))
+    det = _detect_orientation([(f, 0) for f in files.values()])
     for r in sideways:
-        ev = det.get(str(files.get(r["page_id"], "")))
+        ev = det.get((str(files.get(r["page_id"], "")), 0))
         if not ev or ev.get("orientation_detected") is None:
             continue
         need = (p.output(r["page_id"]).get("file_rotation", 0) + ev["orientation_detected"]) % 360

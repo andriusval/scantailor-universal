@@ -449,7 +449,7 @@ CommandLine::printHelp()
     std::cout << "\t\t\t\t\t\t   filters 1-5 keep the book orientation. With 90 or 270, width and height swap. default: 0" << std::endl;
     std::cout << "\t\t\t\t\t\t   auto: find the rotation from the text of each output page; a page without a clear result keeps its rotation" << std::endl;
     std::cout << "\t--detect-orientation=<list file>\t-- print one JSON line with the detected rotation for each image path in the file," << std::endl;
-    std::cout << "\t\t\t\t\t\t   one path per line, and stop; it needs no project and no output directory" << std::endl;
+    std::cout << "\t\t\t\t\t\t   one path (or path, tab, page) per line, and stop; it needs no project and no output directory" << std::endl;
     std::cout << "\t--start-filter=<1...6>\t\t\t-- default: 4" << std::endl;
     std::cout << "\t--end-filter=<1...6>\t\t\t-- default: 6" << std::endl;
     std::cout << "\t--output-project=, -o=<project_name>" << std::endl;

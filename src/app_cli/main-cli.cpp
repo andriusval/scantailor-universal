@@ -68,23 +68,32 @@ detectOrientation(QString const& list_file)
     QFile file(list_file);
     if (!file.open(QIODevice::ReadOnly)) {
         std::cerr << "Cannot read the list file " << list_file.toLocal8Bit().constData() << std::endl;
+        printRunError(QStringLiteral("cannot read the list file"));
         return 1;
     }
     QStringList const lines(QString::fromUtf8(file.readAll()).split(QLatin1Char('\n')));
     for (QString const& line : lines) {
-        QString const path(line.trimmed());
+        // A multi-page file needs the page number, thus a line can hold the path, a tab and the zero-based page.
+        QStringList const parts(line.trimmed().split(QLatin1Char('\t')));
+        QString const path(parts.value(0).trimmed());
         if (path.isEmpty()) {
             continue;
         }
-        QImage const image(ImageLoader::load(path, 0));
-        int const exif = OrientationDetector::exifRotation(path);
-        OrientationResult const result(
-            image.isNull() ? OrientationResult(0, 0.0, false, QStringLiteral("cannot load the image"))
-            : OrientationDetector::detect(image, exif)
-        );
+        int const page = parts.size() > 1 ? parts[1].trimmed().toInt() : 0;
+        OrientationResult result;
+        int exif = -1;
+        try {
+            QImage const image(ImageLoader::load(path, page));
+            exif = OrientationDetector::exifRotation(path);
+            result = image.isNull() ? OrientationResult(0, 0.0, false, QStringLiteral("cannot load the image"))
+                     : OrientationDetector::detect(image, exif);
+        } catch (std::exception const& e) {
+            result = OrientationResult(0, 0.0, false, QString::fromLocal8Bit(e.what()));
+        }
         QJsonObject ev;
         ev["event"] = QStringLiteral("orientation");
         ev["image"] = path;
+        ev["page"] = page;
         ev["orientation_detected"] = result.isDecided() ? QJsonValue(result.angle()) : QJsonValue();
         ev["confidence"] = std::round(result.confidence() * 1000.0) / 1000.0;
         ev["reason"] = result.reason();
@@ -143,6 +152,14 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    // The parser gives "true" for an option without a value, and that is not a list file.
+    if (cli.hasDetectOrientation() && cli.getDetectOrientationList() == "true") {
+        std::cerr << "Use --detect-orientation=<list file>." << std::endl;
+        if (json) {
+            printRunError(QStringLiteral("--detect-orientation needs a list file"));
+        }
+        return 1;
+    }
     if (cli.hasDetectOrientation() && !cli.hasHelp()) {
         return detectOrientation(cli.getDetectOrientationList());
     }
