@@ -96,12 +96,14 @@ class Job:
             self._split_done = True
         elif kind == "page_done":
             self.processed += 1
-            if ev.get("chroma") is not None:
-                margin = float(ev["chroma"]) - checks.GRAY_CHROMA_THRESHOLD
+            if "grayscale_detected" in ev:
+                chroma = ev.get("chroma")
+                margin = None if chroma is None else round(float(chroma) - checks.GRAY_CHROMA_THRESHOLD, 1)
                 self.grayscale_auto.append({
-                    "image": ev.get("image"), "side": ev.get("side"), "chroma": round(float(ev["chroma"]), 1),
-                    "grayscale_detected": ev.get("grayscale_detected"), "margin": round(margin, 1),
-                    "confidence": "low" if abs(margin) < checks.GRAY_CHROMA_NEAR else "high"})
+                    "image": ev.get("image"), "side": ev.get("side"),
+                    "chroma": None if chroma is None else round(float(chroma), 1),
+                    "grayscale_detected": ev.get("grayscale_detected"), "margin": margin,
+                    "confidence": "low" if margin is None or abs(margin) < checks.GRAY_CHROMA_NEAR else "high"})
         elif kind == "page_error":
             self.processed += 1
             self.page_errors.append({k: ev.get(k) for k in ("stage", "image", "side", "error") if k in ev})
@@ -979,8 +981,9 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
         for r in flagged:
             r["likely"] = "grayscale" if r["picture_fraction"] > 0.05 else "line_art"
         return {"checked": len(res), "flagged": flagged,
-                "rule": "preview each: grayscale illustrations (photos, halftones) -> color_mode=color, "
-                        "white_margins=true, equalize_illumination=true, grayscale_first=true; "
+                "rule": "preview each: photos, halftones and color plates -> color_mode=color, "
+                        "white_margins=true, equalize_illumination=true, then check_pages(kind=grayscale): "
+                        "gray pictures -> grayscale_first=auto, color plates -> grayscale_first=false; "
                         "black-and-white line art -> keep bw 600"}
     if kind == "grayscale":
         res = [checks.grayscale_score(p, i) for i in ids]

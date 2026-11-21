@@ -356,13 +356,14 @@ GRAY_CHROMA_NEAR = 3.0
 _GRAY_MAX_TINT = 10.0
 
 
-def gray_chroma(rgb: np.ndarray) -> float:
+def gray_chroma(rgb: np.ndarray) -> float | None:
     a = rgb.reshape(-1, 3).astype(np.float64)
     r, g, b = a[:, 0], a[:, 1], a[:, 2]
     y = 0.299 * r + 0.587 * g + 0.114 * b
     m = (y > 30) & (y < 200)
+    # Too few mid-tones give no measurement, because a pale or dark plate in color must not become gray.
     if m.sum() < 100:
-        return 0.0
+        return None
     cb = (-0.168736 * r - 0.331264 * g + 0.5 * b)[m]
     cr = (0.5 * r - 0.418688 * g - 0.081312 * b)[m]
     tb, tr = cb.mean(), cr.mean()
@@ -377,18 +378,26 @@ def gray_chroma(rgb: np.ndarray) -> float:
 def grayscale_score(project: Project, page_id: str) -> dict:
     pg = project.page(page_id)
     c = project.content(pg.id)
-    im = np.asarray(render_page(project, pg.id, max_px=ANALYSIS_PX, overlay=False).convert("RGB"))
+    # A black pad is outside the mid-tones, so the area outside the page does not lower the value.
+    im = np.asarray(render_page(project, pg.id, max_px=ANALYSIS_PX, overlay=False, pad=(0, 0, 0)).convert("RGB"))
     pt = project.transform(pg.id)
     k = min(1.0, ANALYSIS_PX / max(pt.width, pt.height))
     if c.get("processed") and not c.get("empty") and c.get("content_rect_px"):
         r = c["content_rect_px"]
         im = im[int(r["y"] * k):int((r["y"] + r["height"]) * k), int(r["x"] * k):int((r["x"] + r["width"]) * k)]
-    chroma = gray_chroma(im) if im.size else 0.0
-    out = {"page_id": pg.id, "label": pg.label, "chroma_estimate": round(chroma, 1)}
+    chroma = gray_chroma(im) if im.size else None
+    out = {"page_id": pg.id, "label": pg.label,
+           "chroma_estimate": None if chroma is None else round(chroma, 1), "source": "estimate"}
     stored = project.grayscale_detection(pg.id)
-    if stored:
-        out["chroma_output_stage"] = round(stored["grayscale_chroma"], 1)
-        chroma = stored["grayscale_chroma"]
+    # The stored value is current only while the page uses auto, because stage 6 measures only then.
+    if stored and project.output(pg.id).get("grayscale_first") == "auto":
+        chroma = stored.get("grayscale_chroma")
+        out["chroma_output_stage"] = None if chroma is None else round(chroma, 1)
+        out["source"] = "output_stage"
+    if chroma is None:
+        out.update({"grayscale": False, "margin": None, "near_threshold": True,
+                    "note": "too few mid-tones to measure; auto keeps the color"})
+        return out
     margin = chroma - GRAY_CHROMA_THRESHOLD
     out.update({"grayscale": margin < 0, "margin": round(margin, 1),
                 "near_threshold": abs(margin) < GRAY_CHROMA_NEAR})

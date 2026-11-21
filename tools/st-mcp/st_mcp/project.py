@@ -253,9 +253,10 @@ class Project:
         # The last stage 6 run stores the result of the automatic detection in output-params/image.
         f = self.filter_el("output")
         img = f.find(f"./page[@id='{page_id}']/output-params/image") if f is not None else None
-        if img is None or img.get("grayscaleChroma") is None:
+        if img is None or img.get("grayscaleDetected") is None:
             return {}
-        return {"grayscale_chroma": float(img.get("grayscaleChroma")),
+        chroma = img.get("grayscaleChroma")
+        return {"grayscale_chroma": None if chroma is None else float(chroma),
                 "grayscale_detected": img.get("grayscaleDetected") == "1"}
 
     # ------------------------------------------------------------------ write
