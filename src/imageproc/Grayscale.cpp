@@ -488,12 +488,26 @@ GrayscaleHistogram::fromGrayscaleImage(QImage const& img)
     int const w = img.width();
     int const h = img.height();
     int const bpl = img.bytesPerLine();
+    uint8_t const* const data = img.bits();
 
-    #pragma omp parallel for
-    for (int y = 0; y < h; ++y) {
-        uint8_t const* line = img.bits() + y * bpl;
-        for (int x = 0; x < w; ++x) {
-            ++m_pixels[line[x]];
+    // Each thread counts into its own array, because concurrent increments of m_pixels lose counts.
+    #pragma omp parallel
+    {
+        int local_pixels[256] = {0};
+
+        #pragma omp for
+        for (int y = 0; y < h; ++y) {
+            uint8_t const* line = data + y * bpl;
+            for (int x = 0; x < w; ++x) {
+                ++local_pixels[line[x]];
+            }
+        }
+
+        #pragma omp critical
+        {
+            for (int i = 0; i < 256; ++i) {
+                m_pixels[i] += local_pixels[i];
+            }
         }
     }
 }
