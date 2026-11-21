@@ -91,6 +91,25 @@ public:
     void rollbackChanges();
 
     void requestStatusUpdate(QModelIndex const& index);
+
+    struct FolderSearchResult {
+        int relinked;   /**< missing paths for which one match was found */
+        int ambiguous;  /**< several files/folders of that name and no way to choose */
+        int notFound;   /**< still missing */
+        FolderSearchResult() : relinked(0), ambiguous(0), notFound(0) {}
+    };
+
+    /**
+     * \brief Looks for every missing file / folder by its name in \p folder and its
+     *        subfolders and relinks it (uncommitted) to the match found there.
+     *
+     * With several matches, the one whose parent folder has the same name as before wins;
+     * otherwise the path is left alone and counted as ambiguous.
+     */
+    FolderSearchResult relinkMissingFromFolder(QString const& folder);
+
+    /** Number of paths with the given (uncommitted) status. */
+    int countWithStatus(Status status) const;
 protected:
     virtual void customEvent(QEvent* event);
 private:

@@ -17,6 +17,9 @@
 */
 
 #include "RelinkingModel.h"
+#include <QMultiHash>
+#include <QFileInfo>
+#include <QDirIterator>
 #include "PayloadEvent.h"
 #include "OutOfMemoryHandler.h"
 #include <QFile>
@@ -192,6 +195,85 @@ RelinkingModel::addPath(RelinkablePath const& path)
     endInsertRows();
 
     requestStatusUpdate(index(m_items.size() - 1));
+}
+
+int
+RelinkingModel::countWithStatus(Status const status) const
+{
+    int count = 0;
+    for (Item const& item : m_items) {
+        if (item.uncommittedStatus == status) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+static QString
+nameKey(QString const& name)
+{
+#ifdef Q_OS_WIN
+    return name.toLower(); // Windows file names are case-insensitive
+#else
+    return name;
+#endif
+}
+
+RelinkingModel::FolderSearchResult
+RelinkingModel::relinkMissingFromFolder(QString const& folder)
+{
+    FolderSearchResult result;
+
+    QMultiHash<QString, QString> files;
+    QMultiHash<QString, QString> dirs;
+    QString const root(RelinkablePath::normalize(folder));
+    dirs.insert(nameKey(QFileInfo(root).fileName()), root);
+    QDirIterator it(
+        folder, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories
+    );
+    while (it.hasNext()) {
+        QString const path(RelinkablePath::normalize(it.next()));
+        QFileInfo const fi(it.fileInfo());
+        (fi.isDir() ? dirs : files).insert(nameKey(fi.fileName()), path);
+    }
+
+    int row = -1;
+    for (Item& item : m_items) {
+        ++row;
+        if (QFileInfo::exists(item.uncommittedPath)) {
+            continue;
+        }
+
+        QFileInfo const old_fi(item.uncommittedPath);
+        QList<QString> candidates(
+            (item.type == RelinkablePath::Dir ? dirs : files).values(nameKey(old_fi.fileName()))
+        );
+        if (candidates.size() > 1) {
+            // prefer the one in a folder of the same name as before (book/001.jpg)
+            QString const old_parent(nameKey(QFileInfo(old_fi.path()).fileName()));
+            QList<QString> same_parent;
+            for (QString const& c : candidates) {
+                if (nameKey(QFileInfo(QFileInfo(c).path()).fileName()) == old_parent) {
+                    same_parent.append(c);
+                }
+            }
+            candidates = same_parent.size() == 1 ? same_parent : candidates;
+        }
+
+        if (candidates.isEmpty()) {
+            ++result.notFound;
+        } else if (candidates.size() > 1) {
+            ++result.ambiguous;
+        } else {
+            item.uncommittedPath = candidates.front();
+            m_haveUncommittedChanges = true;
+            ++result.relinked;
+            emit dataChanged(index(row), index(row));
+            requestStatusUpdate(index(row));
+        }
+    }
+
+    return result;
 }
 
 void

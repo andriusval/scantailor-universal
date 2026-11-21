@@ -25,8 +25,15 @@ class RelinkingSortingModel : public QSortFilterProxyModel
 {
 public:
     RelinkingSortingModel(QObject* parent = 0);
+
+    /** Show only paths that are missing (or still being checked). */
+    void setOnlyMissing(bool only_missing);
 protected:
     virtual bool lessThan(QModelIndex const& left, QModelIndex const& right) const;
+
+    virtual bool filterAcceptsRow(int source_row, QModelIndex const& source_parent) const;
+private:
+    bool m_onlyMissing;
 };
 
 #endif

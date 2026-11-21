@@ -60,6 +60,8 @@
 #include "LoadFilesStatusDialog.h"
 #include "SettingsDialog.h"
 #include "AbstractRelinker.h"
+#include "RelinkablePath.h"
+#include "VirtualFunction.h"
 #include "RelinkingDialog.h"
 #include "OutOfMemoryHandler.h"
 #include "OutOfMemoryDialog.h"
@@ -528,9 +530,33 @@ MainWindow::switchToNewProject(
     updateWindowTitle();
     updateMainArea();
 
-    if (!QDir(out_dir).exists()) {
+    if (!QDir(out_dir).exists() || haveMissingImages()) {
         showRelinkingDialog();
     }
+}
+
+bool
+MainWindow::haveMissingImages() const
+{
+    // Some scans can't be found (folder moved / renamed): offer relinking right away
+    // instead of showing empty thumbnails.
+    class Checker : public VirtualFunction1<void, RelinkablePath const&>
+    {
+    public:
+        bool missing = false;
+        virtual void operator()(RelinkablePath const& path)
+        {
+            if (!missing && !QFileInfo::exists(path.normalizedPath())) {
+                missing = true;
+            }
+        }
+    };
+    if (!m_ptrPages) {
+        return false;
+    }
+    Checker checker;
+    m_ptrPages->listRelinkablePaths(checker);
+    return checker.missing;
 }
 
 void
