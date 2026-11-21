@@ -22,7 +22,10 @@ def _robust_z(values: dict[str, float]) -> dict[str, float]:
     if len(vals) < 3:
         return {k: 0.0 for k in values}
     med = statistics.median(vals)
-    mad = statistics.median(abs(v - med) for v in vals) or 1e-9
+    dev = [abs(v - med) for v in vals]
+    mad = statistics.median(dev)
+    if mad == 0:  # more than half the values are identical: use the mean deviation, floored at 1 % of the median
+        mad = max(statistics.fmean(dev) * 0.6745 / 0.7979, 0.01 * abs(med) * 0.6745, 1e-9)
     return {k: 0.6745 * (v - med) / mad for k, v in values.items()}
 
 
@@ -226,6 +229,8 @@ def check_page(project: Project, page_id: str) -> dict:
 
     if number_pos is None:  # a small isolated block right outside the box also tells where numbers sit
         for f in findings:
+            if f["kind"] not in ("ink_above_box", "ink_below_box"):
+                continue  # marks beside the text say nothing about where page numbers sit
             b = f.get("band_px")
             if b and line_h and b["height"] * k <= 2 * line_h and b["width"] * k < 0.15 * (bx1 - bx0):
                 number_pos = "bottom" if f["kind"] == "ink_below_box" else "top"
@@ -389,6 +394,11 @@ def tighten_rect(project: Project, page_id: str) -> dict | None:
     x1, y1 = min(bx1, tb["right"] + pad), min(by1, tb["bottom"] + pad)
     ink, _ = _ink_mask(project, page_id)
     lines = [ln for ln in _group(_rows_with_ink(ink, bx0, bx1, by0, by1, 0.004)) if ln[1] - ln[0] + 1 >= 3]
+    # isolated thin edge columns (spine shadow, page-edge line) cross every line but are not text:
+    # leave them out of the safety rule, otherwise the side they sit on could never be trimmed
+    ink = ink.copy()
+    for j in _side_junk(ink, bx0, bx1, by0, by1, tb["line_h"]):
+        ink[by0:by1, j["x0"]:j["x1"] + 1] = False
     kept = []
     for side, (c0, c1) in (("left", (bx0, x0)), ("right", (x1, bx1))):
         if c1 > c0 and sum(1 for a, b in lines if ink[a:b + 1, c0:c1].any()) >= 3:

@@ -17,7 +17,8 @@ Start with workflow_guide and follow it step by step. Look at previews before
 deciding anything. Run the whole workflow to the end without asking for approval;
 report every decision (pages + why) in the final summary.
 Long stages run in the background: run_stages returns a job, poll job_status(wait_s=60).
-Pages can be referred to by id ("9") or label ("0100_2R").
+Pages can be referred to by id ("9", "id:9") or label ("0100_2R", "label:001"); images by
+file name/stem ("001.jpg", "001") or 0-based index given as a number (3, -1) or "#3".
 """
 
 

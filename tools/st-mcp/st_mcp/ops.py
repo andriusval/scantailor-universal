@@ -135,16 +135,19 @@ def _proj(project: str) -> Project:
 def _resolve_pages(p: Project, pages) -> list[str]:
     if pages in (None, "all"):
         return [pg.id for pg in p.pages]
-    if isinstance(pages, (str, int)):
-        pages = [x.strip() for x in str(pages).split(",") if x.strip()]
-    return [p.page(x).id for x in pages]
+    if isinstance(pages, int):
+        pages = [pages]
+    elif isinstance(pages, str):
+        pages = [x.strip() for x in pages.split(",") if x.strip()]
+    return [p.find_page(x).id for x in pages]
 
 
 def _image_dpi(path: Path) -> tuple[float, float] | None:
     try:
         with Image.open(path) as im:
             d = im.info.get("dpi")
-            if d and d[0] and d[0] > 1:
+            # 72/96 are what cameras, phones and screen tools write when they know no DPI: not a scan DPI
+            if d and d[0] and d[0] > 1 and round(float(d[0])) not in (72, 96):
                 return float(d[0]), float(d[1])
     except Exception:
         pass
@@ -219,11 +222,12 @@ def project_create(images_dir: str, project: str, output_dir: str | None = None,
                     "then run_stages(1, 5, orientation=..., layout=...)"}
 
 
-def _check_inputs_reachable(p: Project) -> None:
+def _check_inputs_reachable(p: Project, cli: str) -> None:
     """The CLI silently 'processes' missing images (exit 0) and then saves a broken project, so check
     first that it will be able to open every scan with the paths written in the project."""
     raw = [d.get("path", "") for d in p.root.findall("./directories/directory")]
-    if os.name != "nt" and any(re.match(r"^[A-Za-z]:[\\/]", d) for d in raw):
+    windows_cli = os.name == "nt" or cli.lower().endswith(".exe")
+    if not windows_cli and any(re.match(r"^[A-Za-z]:[\\/]", d) for d in raw):
         raise RuntimeError(f"project has Windows paths {raw}: the Linux CLI cannot open them; run it with the "
                            "Windows CLI (ST_CLI=...scantailor-universal-cli.exe) or fix the paths")
     missing = [str(im.path) for im in p.images.values() if not im.path.exists()]
@@ -259,7 +263,7 @@ def run_stages(project: str, start: int = 1, end: int = 5, orientation: str | No
         cmd.append(f"--content-detection={content_detection}")
     cmd += [f"--output-project={proj}", str(proj), str(p.output_dir)]
     shutil.copy2(proj, proj.with_suffix(proj.suffix + f".before-run{start}-{end}"))
-    _check_inputs_reachable(p)
+    _check_inputs_reachable(p, cmd[0])
     job = Job(cmd, proj, start, end, len(p.images) if start <= 2 else len(p.pages))
     _jobs[job.id] = job
     return job_status(job.id, wait_s) if wait_s else job.status()
@@ -340,7 +344,7 @@ def pages_list(project: str, sort_by: str = "index", descending: bool = False,
 def page_preview(project: str, page: str, max_px: int = 1200) -> Image.Image:
     """The page as in the GUI's Select Content view (deskewed, cropped) with the content box in blue."""
     p = _proj(project)
-    return render_page(p, p.page(page).id, max_px=max_px)
+    return render_page(p, p.find_page(page).id, max_px=max_px)
 
 
 def pages_preview(project: str, pages: str | list[str], cell_px: int = 400, cols: int = 4) -> Image.Image:
@@ -375,11 +379,16 @@ def _resolve_images(p: Project, images) -> list[str]:
     ims = list(p.images.values())
     if images in (None, "all"):
         return [im.id for im in ims]
-    if isinstance(images, (str, int)):
-        images = [x.strip() for x in str(images).split(",") if x.strip()]
+    if isinstance(images, int):
+        images = [images]
+    elif isinstance(images, str):
+        images = [x.strip() for x in images.split(",") if x.strip()]
     out = []
     for x in images:
-        sx = str(x)
+        sx = str(x).strip()
+        if isinstance(x, int) or sx.startswith("#"):  # an index, never a file name (files may be 1.jpg, 2.jpg...)
+            out.append(ims[int(sx.lstrip("#"))].id)
+            continue
         match = [im for im in ims if im.path.name == sx or im.path.stem == sx]
         if match:
             out.append(match[0].id)
@@ -394,7 +403,7 @@ def images_set_geometry(project: str, images: str | list[str], orientation: str 
                         layout: str | None = None) -> dict:
     """Per-image orientation and page layout, for books where scans differ (e.g. covers upright as single
     pages, inner scans rotated two-page spreads). images: 'all', file names ('001.jpg'), stems ('001') or
-    0-based indexes (-1 = last). orientation: none|right|left|upsidedown (right = 90° clockwise).
+    0-based indexes (-1 = last) given as numbers or '#3' (a string such as '3' is a file stem first). orientation: none|right|left|upsidedown (right = 90° clockwise).
     layout: 1 (single page) | 1.5 (single, cut) | 2 (two-page spread) | auto.
     Afterwards run_stages(1, 5) WITHOUT orientation/layout arguments (those would reset every image)."""
     proj = Path(project).resolve()
@@ -437,7 +446,7 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
-    pg = p.page(page)
+    pg = p.find_page(page)
     before = p.content(pg.id)
     if mode == "auto":
         p.set_content(pg.id, None)
@@ -489,11 +498,11 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
             rect["height"] += expand_top + expand_bottom
         else:
             raise ValueError("mode must be auto|empty|manual|full|cover|tighten|include_numbers|all_content")
-        # clamp to page
-        rect["x"] = max(pr["x"], rect["x"])
-        rect["y"] = max(pr["y"], rect["y"])
-        rect["width"] = min(rect["width"], pr["x"] + pr["width"] - rect["x"])
-        rect["height"] = min(rect["height"], pr["y"] + pr["height"] - rect["y"])
+        # clamp to page: clip each edge on its own (moving x/y must not push the far edge outwards)
+        rx0, ry0 = max(pr["x"], rect["x"]), max(pr["y"], rect["y"])
+        rx1 = min(pr["x"] + pr["width"], rect["x"] + rect["width"])
+        ry1 = min(pr["y"] + pr["height"], rect["y"] + rect["height"])
+        rect = {"x": rx0, "y": ry0, "width": rx1 - rx0, "height": ry1 - ry0}
         if rect["width"] <= 0 or rect["height"] <= 0:
             raise ValueError(f"resulting box is empty: {rect}")
         p.set_content(pg.id, rect)
@@ -502,8 +511,15 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
            "after": Project(proj).content(pg.id).get("content_rect_px"), "mode": mode,
            "next": "run_stages(4, 5) to propagate"}
     if mode == "tighten" and note:
-        res["kept_sides"] = note
-        res["warning"] = "these sides were not trimmed: the strip had ink in 3+ text lines; check the preview"
+        kept = [s for s in dict.fromkeys(note) if ":" not in s]
+        widened = [s.split(":")[0] for s in dict.fromkeys(note) if s.endswith(":line")]
+        res["kept_sides"] = kept + [f"{s}:line" for s in widened]
+        msgs = []
+        if kept:
+            msgs.append(f"not trimmed: {', '.join(kept)} (the strip had ink in 3+ text lines)")
+        if widened:
+            msgs.append(f"trimmed but widened for a single overhanging line: {', '.join(widened)}")
+        res["warning"] = "; ".join(msgs) + "; check the preview"
     return res
 
 
@@ -582,7 +598,7 @@ def export_summary(project: str) -> dict:
     p = _proj(project)
     out = p.output_dir
     files = {f.stem: f for f in out.glob("*.tif")}
-    missing = [pg.label for pg in p.pages if pg.label not in files]
+    missing = [pg.label for pg in p.pages if p.output_name(pg.id) not in files]
     return {"output_dir": str(out), "tif_files": len(files), "missing": missing[:50],
             "total_mb": round(sum(f.stat().st_size for f in files.values()) / 1e6, 1)}
 
@@ -618,7 +634,8 @@ def project_for_windows(project: str) -> dict:
         if not m:
             return path
         rest = m.group(2).replace("/", "\\") if backslash else m.group(2)
-        return f"{m.group(1).upper()}:{'\\' if backslash else '/'}{rest}"
+        sep = "\\" if backslash else "/"
+        return f"{m.group(1).upper()}:{sep}{rest}"
 
     changed = []
     out = p.root.get("outputDirectory", "")

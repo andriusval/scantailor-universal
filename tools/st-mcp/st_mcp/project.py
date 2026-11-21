@@ -53,6 +53,8 @@ class ImageInfo:
     dpi_y: float
     sub_pages: int
     index: int
+    file_id: str = ""
+    file_page: int = 0   # ScanTailor ImageId page: 0 = single-image file, else 1-based page of a multi-page file
 
 
 @dataclass
@@ -81,6 +83,7 @@ class Project:
         r = self.root
         dirs = {d.get("id"): self.local_path(d.get("path")) for d in r.findall("./directories/directory")}
         files = {f.get("id"): dirs[f.get("dirId")] / f.get("name") for f in r.findall("./files/file")}
+        compat = {f.get("id"): f.get("compatMultiPage") in ("1", "true") for f in r.findall("./files/file")}
         self.images: dict[str, ImageInfo] = {}
         for i, im in enumerate(r.findall("./images/image")):
             size, dpi = im.find("size"), im.find("dpi")
@@ -88,7 +91,8 @@ class Project:
                 id=im.get("id"), path=files[im.get("fileId")],
                 width=int(_f(size, "width")), height=int(_f(size, "height")),
                 dpi_x=_f(dpi, "horizontal", 300), dpi_y=_f(dpi, "vertical", 300),
-                sub_pages=int(im.get("subPages", "1")), index=i)
+                sub_pages=int(im.get("subPages", "1")), index=i, file_id=im.get("fileId"),
+                file_page=int(im.get("fileImage", "0")) + int(compat.get(im.get("fileId"), False)))
         self.pages: list[PageInfo] = []
         for i, p in enumerate(r.findall("./pages/page")):
             img = self.images[p.get("imageId")]
@@ -113,13 +117,57 @@ class Project:
         return self.root.find(f"./filters/{name}")
 
     def page(self, page_id: str | int) -> PageInfo:
+        """A page by internal id; also accepts a label. For ids/labels typed by a user use find_page."""
         pid = str(page_id)
         if pid in self.pages_by_id:
             return self.pages_by_id[pid]
-        for p in self.pages:  # also accept labels such as "0100_2R"
-            if p.label == pid:
-                return p
-        raise KeyError(f"unknown page: {page_id}")
+        return self.find_page(pid)
+
+    def find_page(self, ref: str | int) -> PageInfo:
+        """A page as a user names it: id (number, "9" or "id:9") or label ("0100_2R", "001" or
+        "label:001"). A bare string that is the id of one page and the label of another is refused."""
+        if isinstance(ref, int):
+            if str(ref) in self.pages_by_id:
+                return self.pages_by_id[str(ref)]
+            raise KeyError(f"unknown page id: {ref}")
+        pid = str(ref).strip()
+        if pid.startswith("id:"):
+            return self.find_page(int(pid[3:]))
+        by_label = [p for p in self.pages if p.label == pid.removeprefix("label:")]
+        if pid.startswith("label:"):
+            if by_label:
+                return by_label[0]
+            raise KeyError(f"unknown page label: {pid[6:]}")
+        by_id = self.pages_by_id.get(pid)
+        if by_id and by_label and by_label[0] is not by_id:
+            raise KeyError(f"'{pid}' is the id of page {by_id.label} and the label of page id "
+                           f"{by_label[0].id}: write 'id:{pid}' or 'label:{pid}'")
+        if by_id or by_label:
+            return by_id or by_label[0]
+        raise KeyError(f"unknown page: {ref}")
+
+    def output_name(self, page_id: str) -> str:
+        """Output file name (without .tif) the way ScanTailor's OutputFileNameGenerator builds it:
+        disambiguation label / overridden name, multi-page suffix, and _1L/_2R swapped to _2L/_1R for
+        right-to-left books."""
+        pg = self.page(page_id)
+        im = pg.image
+        name = im.path.stem
+        for m in self.root.findall("./file-name-disambiguation/mapping"):
+            if m.get("file") == im.file_id and int(m.get("page", "0")) == im.file_page:
+                over = m.get("overriden") or ""
+                if over:
+                    name = over.replace("%1", name) if "%1" in over else over
+                if int(m.get("label", "0")):
+                    name += f"({m.get('label')})"
+                break
+        if im.file_page > 0:
+            name += f"_page{im.file_page:04d}"
+        if pg.side != "single":
+            ltr = self.root.get("layoutDirection", "LTR") != "RTL"
+            left = pg.side == "left"
+            name += f"_{'1' if ltr == left else '2'}{'L' if left else 'R'}"
+        return name
 
     def _page_params(self, filter_name: str, page_id: str) -> ET.Element | None:
         f = self.filter_el(filter_name)
