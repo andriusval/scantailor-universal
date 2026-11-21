@@ -42,7 +42,12 @@ class ProjectReader
 public:
     typedef IntrusivePtr<AbstractFilter> FilterPtr;
 
-    ProjectReader(QDomDocument const& doc);
+    /**
+     * \p project_file, when given, is where \p doc was read from: relative directory and
+     * output paths in the project are then taken from the project file's folder (not from
+     * the working directory). Absolute paths are used as they are.
+     */
+    ProjectReader(QDomDocument const& doc, QString const& project_file = QString());
 
     ~ProjectReader();
 
@@ -97,6 +102,8 @@ private:
     typedef std::map<int, ImageInfo> ImageMap;
     typedef std::map<int, PageId> PageMap;
 
+    QString resolvePath(QString const& path) const;
+
     void processDirectories(QDomElement const& dirs_el);
 
     void processFiles(QDomElement const& files_el);
@@ -118,6 +125,7 @@ private:
 
     QDomDocument m_doc;
     QString m_outDir;
+    QString m_projectDir;
     QString m_inputDir;
     DirMap m_dirMap;
     FileMap m_fileMap;

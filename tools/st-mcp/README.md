@@ -73,8 +73,10 @@ Values are JSON when they parse as JSON (`10`, `true`, `["a","b"]`), else string
   project file, or Windows paths (`C:/nes/book`, written by the Windows GUI);
   under WSL the latter are read from `/mnt/c/...`. Reading/previews/checks work
   on such projects; `run_stages` from WSL still needs paths the Linux CLI can open.
-- `run_stages` starts the CLI in the project's folder (ScanTailor resolves
-  relative paths against the working directory) and first checks that every
+- Relative paths in a project are taken from the project file's folder by
+  ScanTailor builds from this fork (GUI and CLI); older builds resolve them
+  against the working directory, so `run_stages` still starts the CLI in the
+  project's folder. It first checks that every
   scan can be opened: the CLI itself "processes" missing images with exit 0 and
   then saves a project pointing at the wrong folder.
 - `pages_snap_content` uses the CLI option `--content-snap`, which exists only
