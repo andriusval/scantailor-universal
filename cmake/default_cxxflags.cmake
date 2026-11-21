@@ -9,5 +9,4 @@ IF(MSVC)
 ELSE()
 	# Set only the initial value, because a normal variable hides the cached flags when CMake runs again.
 	SET(CMAKE_CXX_FLAGS_INIT "${CMAKE_CXX_FLAGS_INIT} -std=c++0x")
-	SET(QMAKE_CXX_FLAGS "-std=c++0x")
 ENDIF()
