@@ -90,7 +90,9 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    `pages_list(sort_by="content_width", descending=true)`, pataisyti, paleisti
    iš naujo. Peržiūrėti 8–16 išvesties puslapių.
 10. `project_for_windows(project)`, jei apdorota per WSL — kad projektą
-    atidarytų Windows GUI. Išvalyti agento žurnalus ir atsargines kopijas.
+    atidarytų Windows GUI. Su šios šakos Windows buildu naudoti
+    `relative=true`: tada projektas atsidaro ir WSL, ir Windows.
+    Išvalyti agento žurnalus ir atsargines kopijas.
 11. Suvestinė: kas pakeista ir kodėl, iliustracijų sprendimai, kas liko
     žmogui (pvz. antspaudai ar dėmės tekste).
 
@@ -119,7 +121,7 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `check_pages(project, pages, kind=content\|pictures)` | Heuristikos su įrodymais |
 | `export_summary(project)` | Išvesties TIFF sąrašas ir kas trūksta |
 | `pages_straighten_pictures(project, pages)` | Nuotraukų puslapių kampas pagal spaudos stačiakampius |
-| `project_for_windows(project)` | /mnt/c keliai → C:/ Windows GUI (paskutinis žingsnis per WSL) |
+| `project_for_windows(project, relative?)` | /mnt/c keliai → C:/ Windows GUI arba reliatyvūs nuo projekto (paskutinis žingsnis per WSL) |
 
 ## Kas jau patikrinta (2026-11-20, Onetti „Trumpas gyvenimas“, 300 DPI JPG)
 

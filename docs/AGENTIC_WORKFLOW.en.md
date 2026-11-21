@@ -88,7 +88,9 @@ GUI.
    `pages_list(sort_by="content_width", descending=true)`, fix, re-run. Look
    at 8–16 output pages (corrected ones, picture pages, covers).
 10. `project_for_windows(project)` when the project was processed under WSL,
-    so the Windows GUI opens it. Remove the agent's job logs and backups.
+    so that the Windows GUI opens it. With a Windows build from this branch,
+    use `relative=true`: the project then opens under WSL and Windows.
+    Remove the job logs and the backups of the agent.
 11. Summarise: pages changed and why, picture decisions, anything left for a
     person (e.g. stamps or stains inside the text).
 
@@ -117,7 +119,7 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `check_pages(project, pages, kind=content\|pictures)` | Heuristics with evidence |
 | `export_summary(project)` | Output TIFF list and anything missing |
 | `pages_straighten_pictures(project, pages)` | Re-measure skew of photo pages from the printed rectangles |
-| `project_for_windows(project)` | Rewrite /mnt/c paths to C:/ for the Windows GUI (last step under WSL) |
+| `project_for_windows(project, relative?)` | Write /mnt/c paths as C:/ for the Windows GUI, or as paths relative to the project (last step under WSL) |
 
 ## Verified so far (2026-11-20, Onetti "Trumpas gyvenimas", 300 DPI JPG)
 

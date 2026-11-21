@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 import uuid
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from PIL import Image
@@ -72,7 +73,7 @@ class Job:
         self.current_filter = start
         self.processed = 0
         self._split_done = start > 2
-        # cwd = project folder: ScanTailor resolves relative paths in the project against the cwd
+        # Older builds read relative project paths from the current directory, so the job starts in the project folder.
         self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=cli_env(),
                                       cwd=str(project.parent), text=True, encoding="utf-8", errors="replace")
         threading.Thread(target=self._pump, daemon=True).start()
@@ -186,18 +187,22 @@ def project_create(images_dir: str, project: str, output_dir: str | None = None,
     out.mkdir(parents=True, exist_ok=True)
     dpis = {f.name: _image_dpi(f) for f in files}
     missing = [n for n, d in dpis.items() if d is None]
-    found = [round(d[0]) for d in dpis.values() if d]
-    # Older CLI builds ignore the DPI in listed files, so the tool always gives one DPI.
-    if force_dpi or not found:
-        use_dpi = dpi
-        dpi_note = f"DPI set to {dpi}" + (" (forced)" if force_dpi else " (images have no DPI)")
+    # Each image keeps its own DPI, and an image without a usable DPI gets the dpi argument.
+    want = {n: (float(dpi), float(dpi)) if force_dpi or d is None else d for n, d in dpis.items()}
+    if force_dpi:
+        dpi_note = f"DPI {dpi} forced on all images"
     else:
-        use_dpi = max(set(found), key=found.count)
-        dpi_note = f"DPI {use_dpi} read from image files"
-        if len(set(found)) > 1 or missing:
-            dpi_note += (f"; WARNING mixed/missing DPI: {sorted(set(found))}, {len(missing)} without DPI"
-                         " - all pages treated as " + str(use_dpi))
-    cmd = [find_cli(), "--end-filter=1", f"--dpi={use_dpi}", f"--output-project={proj}"]
+        counts: dict[int, int] = {}
+        for d in dpis.values():
+            if d:
+                counts[round(d[0])] = counts.get(round(d[0]), 0) + 1
+        dpi_note = "DPI from the image files: " + (", ".join(f"{k} x{v}" for k, v in sorted(counts.items()))
+                                                   or "none")
+        if missing:
+            dpi_note += f"; {len(missing)} image(s) without a usable DPI set to {dpi}"
+    cmd = [find_cli(), "--end-filter=1", f"--output-project={proj}"]
+    if force_dpi:
+        cmd.insert(2, f"--dpi={dpi}")
     # Give the files as arguments to keep the order, and use stdin only for a very long list.
     stdin = None
     if sum(len(str(f)) + 3 for f in files) < 28000:
@@ -210,7 +215,20 @@ def project_create(images_dir: str, project: str, output_dir: str | None = None,
     if r.returncode != 0 or not proj.exists():
         raise RuntimeError(f"CLI failed ({r.returncode}): {(r.stdout + r.stderr)[-1500:]}")
     p = Project(proj)
-    got = [im.path.name for im in p.images.values()]
+    # Older CLI builds give all images one default DPI, so the tool writes each DPI into the project.
+    for el in p.root.findall("./images/image"):
+        im = p.images[el.get("id")]
+        d = el.find("dpi")
+        if d is None:
+            d = ET.SubElement(el, "dpi")
+        h, v = want.get(im.path.name, (float(dpi), float(dpi)))
+        d.set("horizontal", str(round(h)))
+        d.set("vertical", str(round(v)))
+    p.save()
+    p = Project(proj)
+    # A multi-page file gives one image per page, so compare the files in order without repeats.
+    got = [n for i, n in enumerate(im.path.name for im in p.images.values())
+           if i == 0 or n != list(p.images.values())[i - 1].path.name]
     if got != [f.name for f in files]:
         raise RuntimeError(f"ScanTailor changed the page order: {got[:10]}…")
     return {"project": str(proj), "output_dir": str(out), "images": len(p.images),
@@ -269,6 +287,19 @@ def run_stages(project: str, start: int = 1, end: int = 5, orientation: str | No
     return job_status(job.id, wait_s) if wait_s else job.status()
 
 
+_cli_help_cache: dict[str, str] = {}
+
+
+def _cli_supports(option: str) -> bool:
+    """True when the CLI help lists the option (builds before 2026-11-21 do not know --content-snap)."""
+    cli = find_cli()
+    if cli not in _cli_help_cache:
+        r = subprocess.run([cli, "--help"], capture_output=True, env=cli_env(),
+                           text=True, encoding="utf-8", errors="replace")
+        _cli_help_cache[cli] = r.stdout + r.stderr
+    return f"--{option}" in _cli_help_cache[cli]
+
+
 def pages_snap_content(project: str, pages: str | list[str], sides: str | list[str] = "auto",
                        wait_s: float = 0) -> dict:
     """Shrink content boxes to the text with ScanTailor's own double-click adjustment (the GUI
@@ -278,6 +309,9 @@ def pages_snap_content(project: str, pages: str | list[str], sides: str | list[s
     sides (thin_*_column_isolated, thin_*_line_isolated, box_exceeds_text).
     sides: 'auto' (the sides check_pages flags as junk), 'all', or a list of left|right|top|bottom.
     Runs stages 4-5 in the background (returns a job, like run_stages); preview the pages afterwards."""
+    if not _cli_supports("content-snap"):
+        raise RuntimeError(f"{find_cli()} does not know --content-snap: build the CLI from branch "
+                           "agentic/windows-build (2026-11-21 or later), or use page_set_content(mode=tighten)")
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
@@ -687,13 +721,34 @@ def pages_straighten_pictures(project: str, pages: str | list[str], min_change: 
     return {"changed": changed, "next": "run_stages(3, 5), then page_set_content(mode=all_content) on these pages"}
 
 
-def project_for_windows(project: str) -> dict:
+def project_for_windows(project: str, relative: bool = False) -> dict:
     """Last step when the project was processed under WSL: rewrite /mnt/<drive>/... paths in the
     project (scan folder, output folder) to Windows form (C:/..., C:\\...) so the Windows GUI opens it.
-    Run it only after all stages are done (the Linux CLI cannot use the rewritten project)."""
+    Run it only after all stages are done (the Linux CLI cannot use the rewritten project).
+    relative=true instead writes the folders inside the project folder as relative paths ("."
+    "out-agentas"): such a project opens under WSL and Windows alike, but only in ScanTailor builds from
+    branch agentic/windows-build (2026-11-21 or later); older builds read relative paths from the
+    current directory."""
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
+    if relative:
+        changed = []
+        targets = [(p.root, "outputDirectory")] + [(d, "path") for d in p.root.findall("./directories/directory")]
+        for el, attr in targets:
+            here = p.local_path(el.get(attr, ""))
+            try:
+                rel = here.resolve().relative_to(proj.parent).as_posix()
+            except ValueError:
+                continue
+            new = rel if rel not in ("", ".") else "."
+            if new != el.get(attr):
+                el.set(attr, new)
+                changed.append(new)
+        p.save()
+        return {"project": str(proj), "rewritten": changed,
+                "note": "relative paths: the project opens under WSL and Windows, in builds from branch "
+                        "agentic/windows-build only"}
 
     def win(path: str, backslash: bool) -> str:
         m = re.match(r"^/mnt/([a-zA-Z])/(.*)$", path or "")

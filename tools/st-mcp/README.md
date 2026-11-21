@@ -62,8 +62,9 @@ Values are JSON when they parse as JSON (`10`, `true`, `["a","b"]`), else string
 
 - File order is **natural** (`009 < 0100 < 9999`); ScanTailor on its own sorts
   by text, which puts `0100.jpg` before `011.jpg`.
-- DPI is always passed explicitly: the CLI assumes 600 DPI for files given as a
-  list, which would make millimetre margins wrong.
+- `project_create` writes the DPI of each image into the project. An image
+  without a usable DPI (none, 72 or 96) gets the `dpi` argument (300). Older CLI
+  builds give all listed files one DPI, so the tool does not rely on the CLI.
 - ScanTailor runs with **one OpenMP thread** (`OMP_NUM_THREADS=1`, override with
   `ST_OMP_THREADS`). With the default (all cores) its OpenMP code is ~9× slower
   (threads mostly spin) and output pixels differ slightly from run to run.
