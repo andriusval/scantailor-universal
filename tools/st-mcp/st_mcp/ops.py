@@ -60,15 +60,16 @@ def cli_env() -> dict:
     return env
 
 
+# Half of the cores leaves CPU time for the agent and the previews, and each parallel page needs its own memory.
 def cli_threads() -> int:
-    """Pages that the CLI processes at the same time: env ST_CLI_THREADS, else half of the cores."""
     value = os.environ.get("ST_CLI_THREADS", "").strip()
-    if value:
-        if value == "auto":
-            return 0
-        if value.isdigit():
-            return int(value)
-    return max(1, (os.cpu_count() or 2) // 2)
+    if not value:
+        return max(1, (os.cpu_count() or 2) // 2)
+    if value == "auto":
+        return 0
+    if not value.isdigit():
+        raise ValueError(f"ST_CLI_THREADS={value!r}: use a number from 0, or auto")
+    return int(value)
 
 
 def _cli_threads_args() -> list[str]:
