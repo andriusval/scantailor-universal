@@ -110,9 +110,12 @@ jobs:
               if ($LastExitCode -ne 0) { throw "windeployqt failed for $($_.Name)" }
           }
           # The bundle must start on a PC without the Visual C++ Redistributable, so it carries the CRT and OpenMP DLLs.
-          $cache = Get-Content "${{ github.workspace }}\build\CMakeCache.txt"
-          $cl = ($cache | Select-String '^CMAKE_CXX_COMPILER:FILEPATH=(.+)$').Matches[0].Groups[1].Value -replace '/', '\'
-          if (-not $cl -or $cl -notmatch '^(.+\\VC)\\Tools\\MSVC\\(\d+\.\d+)[^\\]*\\') { throw "MSVC compiler path not found in CMakeCache.txt: '$cl'" }
+          $ccFile = Get-ChildItem "${{ github.workspace }}\build\CMakeFiles" -Recurse -Filter CMakeCXXCompiler.cmake | Select-Object -First 1
+          if (-not $ccFile) { throw "CMakeCXXCompiler.cmake not found under build\CMakeFiles" }
+          # The Visual Studio generator keeps the compiler path in this file, not in CMakeCache.txt.
+          $m = Select-String -Path $ccFile.FullName -Pattern 'set\(CMAKE_CXX_COMPILER "([^"]+)"\)' | Select-Object -First 1
+          $cl = if ($m) { $m.Matches[0].Groups[1].Value -replace '/', '\' } else { '' }
+          if (-not $cl -or $cl -notmatch '^(.+\\VC)\\Tools\\MSVC\\(\d+\.\d+)[^\\]*\\') { throw "MSVC compiler path not found in $($ccFile.FullName): '$cl'" }
           $vcRoot = $Matches[1]
           $toolset = [version]$Matches[2]
           Write-Host "Compiler: $cl (toolset $toolset)"
