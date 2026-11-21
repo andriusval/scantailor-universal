@@ -23,7 +23,13 @@
 #include "Settings.h"
 #include "ProjectPages.h"
 #include "ImageId.h"
+#include "ImageLoader.h"
 #include "PageId.h"
+#include "imageproc/OrientationDetector.h"
+#include <QApplication>
+#include <QChar>
+#include <QImage>
+#include <QProgressDialog>
 #include <vector>
 #include <assert.h>
 
@@ -42,6 +48,9 @@ OptionsWidget::OptionsWidget(
     connect(rotateRightBtn, SIGNAL(clicked()), this, SLOT(rotateRight()));
     connect(resetBtn, SIGNAL(clicked()), this, SLOT(resetRotation()));
     connect(applyToBtn, SIGNAL(clicked()), this, SLOT(showApplyToDialog()));
+    connect(autoBtn, SIGNAL(clicked()), this, SLOT(autoRotation()));
+    connect(autoApplyBtn, SIGNAL(clicked()), this, SLOT(showAutoApplyDialog()));
+    showAutoResult(QString());
 }
 
 OptionsWidget::~OptionsWidget()
@@ -55,6 +64,10 @@ OptionsWidget::preUpdateUI(
     m_pageId = page_id;
     m_rotation = rotation;
     setRotationPixmap();
+    // The result of an automatic rotation belongs to one page, so another page must not show it.
+    if (m_autoResultPage != page_id) {
+        showAutoResult(QString());
+    }
 }
 
 void
@@ -125,6 +138,134 @@ OptionsWidget::appliedToAllPages(std::set<PageId> const& pages)
 {
     m_ptrSettings->applyRotation(pages, m_rotation);
     emit invalidateAllThumbnails();
+}
+
+namespace
+{
+
+OrthogonalRotation rotationFromDegrees(int const degrees)
+{
+    OrthogonalRotation rotation;
+    for (int i = 0; i < degrees / 90; ++i) {
+        rotation.nextClockwiseDirection();
+    }
+    return rotation;
+}
+
+imageproc::OrientationResult detectRotation(ImageId const& image_id)
+{
+    using imageproc::OrientationDetector;
+    QImage const image(ImageLoader::load(image_id));
+    if (image.isNull()) {
+        return imageproc::OrientationResult(0, 0.0, false, QStringLiteral("cannot load the image"));
+    }
+    return OrientationDetector::detect(image, OrientationDetector::exifRotation(image_id.filePath()));
+}
+
+} // namespace
+
+void
+OptionsWidget::autoRotation()
+{
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    imageproc::OrientationResult const result(detectRotation(m_pageId.imageId()));
+    QApplication::restoreOverrideCursor();
+
+    m_autoResultPage = m_pageId;
+    if (!result.isDecided()) {
+        showAutoResult(tr("Auto: no decision (%1)").arg(result.reason()));
+        return;
+    }
+    showAutoResult(
+        tr("Auto: %1%2 (%3, %4)").arg(result.angle()).arg(QChar(0x00B0))
+        .arg(result.reason()).arg(result.confidence(), 0, 'f', 2)
+    );
+    setRotation(rotationFromDegrees(result.angle()));
+}
+
+void
+OptionsWidget::showAutoApplyDialog()
+{
+    ApplyToDialog* dialog = new ApplyToDialog(
+        this, m_pageId, m_pageSelectionAccessor, PageView::IMAGE_VIEW
+    );
+
+    dialog->setWindowTitle(tr("Automatic Orientation"));
+
+    connect(dialog, &ApplyToDialog::accepted, this, [ = ]() {
+        std::vector<PageId> vec = dialog->getPageRangeSelectorWidget().result();
+        std::set<PageId> pages(vec.begin(), vec.end());
+        autoAppliedTo(pages);
+    });
+
+    dialog->show();
+}
+
+void
+OptionsWidget::autoAppliedTo(std::set<PageId> const& pages)
+{
+    std::set<ImageId> image_set;
+    for (PageId const& page_id : pages) {
+        image_set.insert(page_id.imageId());
+    }
+    std::vector<ImageId> const images(image_set.begin(), image_set.end());
+    if (images.empty()) {
+        return;
+    }
+
+    QProgressDialog progress(tr("Finding the rotation of the scans..."), tr("Cancel"), 0, int(images.size()), this);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(500);
+
+    std::vector<imageproc::OrientationResult> results;
+    for (size_t i = 0; i < images.size(); ++i) {
+        progress.setValue(int(i));
+        if (progress.wasCanceled()) {
+            return;
+        }
+        results.push_back(detectRotation(images[i]));
+    }
+    progress.setValue(int(images.size()));
+
+    imageproc::OrientationDetector::applyBookRotation(results);
+
+    int turned = 0;
+    int undecided = 0;
+    QStringList undecided_names;
+    for (size_t i = 0; i < images.size(); ++i) {
+        imageproc::OrientationResult const& result = results[i];
+        if (!result.isDecided()) {
+            ++undecided;
+            undecided_names.append(images[i].filePath().section(QLatin1Char('/'), -1));
+            continue;
+        }
+        OrthogonalRotation const rotation(rotationFromDegrees(result.angle()));
+        if (rotation != m_ptrSettings->getRotationFor(images[i])) {
+            ++turned;
+        }
+        m_ptrSettings->applyRotation(images[i], rotation);
+        if (images[i] == m_pageId.imageId() && rotation != m_rotation) {
+            m_rotation = rotation;
+            setRotationPixmap();
+            emit rotated(rotation);
+        }
+    }
+
+    m_autoResultPage = m_pageId;
+    showAutoResult(
+        tr("Auto: %1 scans, %2 turned, %3 without a decision")
+        .arg(images.size()).arg(turned).arg(undecided)
+    );
+    autoResultLabel->setToolTip(undecided_names.join(QLatin1Char('\n')));
+    emit invalidateAllThumbnails();
+}
+
+void
+OptionsWidget::showAutoResult(QString const& text)
+{
+    autoResultLabel->setText(text);
+    autoResultLabel->setToolTip(QString());
+    autoResultLabel->setVisible(!text.isEmpty());
 }
 
 void

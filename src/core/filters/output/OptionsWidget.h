@@ -32,6 +32,7 @@
 #include "ImageViewTab.h"
 #include "Params.h"
 #include <set>
+#include <QImage>
 #include <QMenu>
 
 namespace dewarping
@@ -58,6 +59,9 @@ public:
     void preUpdateUI(PageId const& page_id);
 
     void postUpdateUI();
+
+    // The Auto button looks at the finished page without its output rotation.
+    void setAutoRotationImage(PageId const& page_id, QImage const& image);
 
     ImageViewTab lastTab() const
     {
@@ -163,6 +167,8 @@ private slots:
 
     void outputRotationReset();
 
+    void outputRotationAuto();
+
     void on_outputRotationApplyButton_linkActivated(const QString&);
 
 private:
@@ -236,6 +242,8 @@ private:
     ColorParams::ColorMode m_currentMode;
     bool m_ignore_system_wheel_settings;
     int m_outputRotation;
+    PageId m_autoRotationPage;
+    QImage m_autoRotationImage;
 };
 
 } // namespace output

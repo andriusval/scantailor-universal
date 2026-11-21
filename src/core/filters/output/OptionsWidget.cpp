@@ -33,6 +33,9 @@
 #include "config.h"
 #include "StatusBarProvider.h"
 #include "VirtualZoneProperty.h"
+#include "imageproc/OrientationDetector.h"
+#include <QApplication>
+#include <QChar>
 #include <QtGlobal>
 #include <QVariant>
 #include <QColorDialog>
@@ -172,6 +175,8 @@ OptionsWidget::OptionsWidget(
     connect(outputRotateLeftBtn, SIGNAL(clicked()), this, SLOT(outputRotateLeft()));
     connect(outputRotateRightBtn, SIGNAL(clicked()), this, SLOT(outputRotateRight()));
     connect(outputRotationResetBtn, SIGNAL(clicked()), this, SLOT(outputRotationReset()));
+    connect(outputRotationAutoBtn, SIGNAL(clicked()), this, SLOT(outputRotationAuto()));
+    outputRotationAutoResult->setVisible(false);
     updateOutputRotationDisplay();
 
     addAction(actionactionDespeckleOff);
@@ -231,6 +236,11 @@ OptionsWidget::preUpdateUI(PageId const& page_id)
     blackOnWhiteCB->setChecked(params.isBlackOnWhite());
     m_outputRotation = params.outputRotation();
     updateOutputRotationDisplay();
+    if (m_autoRotationPage != page_id) {
+        m_autoRotationImage = QImage();
+        outputRotationAutoResult->clear();
+        outputRotationAutoResult->setVisible(false);
+    }
     updateDpiDisplay();
     updateColorsDisplay();
     updateLayersDisplay();
@@ -1362,4 +1372,37 @@ output::OptionsWidget::applyOutputRotationConfirmed(std::set<PageId> const& page
         m_ptrSettings->setOutputRotation(page_id, m_outputRotation);
     }
     emit invalidateAllThumbnails();
+}
+
+void
+output::OptionsWidget::setAutoRotationImage(PageId const& page_id, QImage const& image)
+{
+    if (m_autoRotationPage != page_id) {
+        outputRotationAutoResult->clear();
+        outputRotationAutoResult->setVisible(false);
+    }
+    m_autoRotationPage = page_id;
+    m_autoRotationImage = image;
+}
+
+void
+output::OptionsWidget::outputRotationAuto()
+{
+    QString text;
+    if (m_autoRotationImage.isNull() || m_autoRotationPage != m_pageId) {
+        text = tr("Auto: wait until the page is processed");
+    } else {
+        QApplication::setOverrideCursor(Qt::WaitCursor);
+        imageproc::OrientationResult const result(imageproc::OrientationDetector::detect(m_autoRotationImage));
+        QApplication::restoreOverrideCursor();
+        if (result.isDecided()) {
+            text = tr("Auto: %1%2 (%3, %4)").arg(result.angle()).arg(QChar(0x00B0))
+                   .arg(result.reason()).arg(result.confidence(), 0, 'f', 2);
+            setOutputRotation(result.angle());
+        } else {
+            text = tr("Auto: no decision (%1)").arg(result.reason());
+        }
+    }
+    outputRotationAutoResult->setText(text);
+    outputRotationAutoResult->setVisible(true);
 }

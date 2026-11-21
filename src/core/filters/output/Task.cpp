@@ -676,6 +676,8 @@ Task::UiUpdater::updateUI(FilterUiInterface* ui)
         return;
     }
 
+    opt_widget->setAutoRotationImage(m_pageId, m_outputImage);
+
     int const output_rotation = m_params.outputRotation();
 
     // Only the Output tab shows the rotated image, so that the zone editors keep their coordinates.

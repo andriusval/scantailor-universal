@@ -55,6 +55,10 @@ private slots:
 
     void showApplyToDialog();
 
+    void autoRotation();
+
+    void showAutoApplyDialog();
+
 private:
     void setRotation(OrthogonalRotation rotation);
 
@@ -64,10 +68,15 @@ private:
 
     void appliedToAllPages(std::set<PageId> const& pages);
 
+    void autoAppliedTo(std::set<PageId> const& pages);
+
+    void showAutoResult(QString const& text);
+
     IntrusivePtr<Settings> m_ptrSettings;
     PageSelectionAccessor m_pageSelectionAccessor;
     PageId m_pageId;
     OrthogonalRotation m_rotation;
+    PageId m_autoResultPage;
 };
 
 } // namespace fix_orientation

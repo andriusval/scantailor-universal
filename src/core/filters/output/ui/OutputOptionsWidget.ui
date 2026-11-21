@@ -1360,6 +1360,16 @@
        </widget>
       </item>
       <item>
+       <widget class="QToolButton" name="outputRotationAutoBtn">
+        <property name="toolTip">
+         <string>Find the rotation from the text of this output page</string>
+        </property>
+        <property name="text">
+         <string>Auto</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QLabel" name="outputRotationApplyButton">
         <property name="font">
          <font>
@@ -1378,6 +1388,16 @@
        </widget>
       </item>
      </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="outputRotationAutoResult">
+     <property name="text">
+      <string notr="true"/>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
     </widget>
    </item>
    <item>
