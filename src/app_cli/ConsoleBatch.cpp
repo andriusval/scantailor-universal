@@ -590,7 +590,13 @@ ConsoleBatch::renderPreviews(QString const& directory, int const max_size)
     int failures = 0;
     ImageId loaded_image_id;
     QImage image;
-    for (PageInfo const& page : m_ptrPages->toPageSequence(PAGE_VIEW)) {
+    // With --pages, only the selected pages get a preview, because the other pages did not change.
+    PageSequence const preview_pages(m_ptrPages->toPageSequence(PAGE_VIEW));
+    std::set<PageId> const preview_selection = selectedPages(preview_pages);
+    for (PageInfo const& page : preview_pages) {
+        if (preview_selection.count(page.id()) == 0) {
+            continue;
+        }
         QString const file_name(
             QFileInfo(m_outFileNameGen.fileNameFor(page.id())).completeBaseName() + ".png"
         );
