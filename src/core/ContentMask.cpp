@@ -19,6 +19,7 @@
 */
 
 #include "ContentMask.h"
+#include "MultipleTargetsSupport.h"
 #include "Despeckle.h"
 #include "Dpi.h"
 #include "ImageTransformation.h"
@@ -109,7 +110,8 @@ ContentMask::findContentInArea(QRect const& area) const
 
 bool
 ContentMask::snapContentRect(
-    QRectF& content_rect, QPointF const& pos, SnapMode const mode, QRectF const& bounds) const
+    QRectF& content_rect, QPointF const& pos, SnapMode const mode, QRectF const& bounds,
+    double const min_size) const
 {
     if (isNull() || content_rect.isEmpty()) {
         return false;
@@ -169,14 +171,14 @@ ContentMask::snapContentRect(
     }
 
     if (edge_mask & TOP) {
-        r.setTop(std::min(found.top(), r.bottom() - 1.0));
+        r.setTop(std::min(found.top(), r.bottom() - min_size));
     } else if (edge_mask & BOTTOM) {
-        r.setBottom(std::max(found.bottom(), r.top() + 1.0));
+        r.setBottom(std::max(found.bottom(), r.top() + min_size));
     }
     if (edge_mask & LEFT) {
-        r.setLeft(std::min(found.left(), r.right() - 1.0));
+        r.setLeft(std::min(found.left(), r.right() - min_size));
     } else if (edge_mask & RIGHT) {
-        r.setRight(std::max(found.right(), r.left() + 1.0));
+        r.setRight(std::max(found.right(), r.left() + min_size));
     }
     content_rect = r;
     return true;
@@ -190,7 +192,7 @@ parseContentSnap(QString const& value, QStringList* errors)
         "^(.+?)(?::([LRlr]))?@(-?[0-9.]+),(-?[0-9.]+)(?::(nearest|h|v|hv|left|right|top|bottom))?$"
     );
     QVector<ContentSnapRequest> out;
-    for (QString const& raw : value.split(';', Qt::SkipEmptyParts)) {
+    for (QString const& raw : value.split(';', QStringSkipEmptyParts)) {
         QString const item(raw.trimmed());
         QRegularExpressionMatch const m(rx.match(item));
         if (!m.hasMatch()) {

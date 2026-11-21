@@ -36,6 +36,7 @@
 #include "ContentMask.h"
 #include "CommandLine.h"
 #include <QFileInfo>
+#include <QDir>
 #include "filters/page_layout/Task.h"
 #include <QObject>
 #include <QTransform>
@@ -168,12 +169,19 @@ Task::process(TaskStatus const& status, FilterData const& data)
 
     // --content-snap: the GUI double-click adjustment, driven from the command line
     if (CommandLine::get().hasContentSnap() && !new_params.contentRect().isEmpty()) {
-        QString const file_name(QFileInfo(m_pageId.imageId().filePath()).fileName());
+        QString const file_path(QDir::fromNativeSeparators(m_pageId.imageId().filePath()));
+        QString const file_name(QFileInfo(file_path).fileName());
         QChar const side = m_pageId.subPage() == PageId::LEFT_PAGE ? QChar('L')
                            : m_pageId.subPage() == PageId::RIGHT_PAGE ? QChar('R') : QChar();
         QVector<ContentSnapRequest> reqs;
         for (ContentSnapRequest const& r : parseContentSnap(CommandLine::get().contentSnap())) {
-            if (r.fileName == file_name && (r.side.isNull() || r.side == side)) {
+            // a bare name matches any folder; a path (absolute or relative to the project)
+            // must match the end of the image path
+            QString const want(QDir::fromNativeSeparators(r.fileName));
+            bool const same_file = want.contains('/')
+                                   ? (file_path == want || file_path.endsWith(QChar('/') + want))
+                                   : want == file_name;
+            if (same_file && (r.side.isNull() || r.side == side)) {
                 reqs.append(r);
             }
         }

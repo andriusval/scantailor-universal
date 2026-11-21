@@ -112,7 +112,12 @@ ProjectReader::resolvePath(QString const& path) const
     if (QDir::isAbsolutePath(path) || drive_rx.match(path).hasMatch() || path.startsWith(':')) {
         return path;
     }
-    return QDir::cleanPath(QDir(m_projectDir).absoluteFilePath(path));
+    QString const from_project(QDir::cleanPath(QDir(m_projectDir).absoluteFilePath(path)));
+    if (!QFileInfo::exists(from_project) && QFileInfo::exists(path)) {
+        // projects written by older builds: relative to the working directory
+        return QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+    }
+    return from_project;
 }
 
 void

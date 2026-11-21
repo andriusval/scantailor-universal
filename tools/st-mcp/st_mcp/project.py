@@ -275,12 +275,16 @@ class Project:
             raise RuntimeError(f"page {page_id}: page-layout not run yet (run stages 1-5 first)")
         if margins_mm:
             m = p.find("hardMarginsMM")
+            if m is None:
+                m = ET.SubElement(p, "hardMarginsMM")
             for k, v in margins_mm.items():
                 if k not in ("left", "top", "right", "bottom"):
                     raise ValueError(f"bad margin side: {k}")
                 m.set(k, repr(float(v)))
             m.set("autoMargins", "false")
         a = p.find("alignment")
+        if a is None and (align_v is not None or align_h is not None or match_size is not None):
+            a = ET.SubElement(p, "alignment")
         if align_v is not None:
             if align_v == "center":
                 align_v = "vcenter"

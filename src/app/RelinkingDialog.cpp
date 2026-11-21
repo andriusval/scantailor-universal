@@ -209,7 +209,12 @@ RelinkingDialog::findInFolderClicked()
         return;
     }
 
-    m_model.commitChanges(); // so that Undo reverts only this search
+    // so that Undo reverts only this search; a change that failed the merge check is dropped
+    if (ui.errorLabel->isVisible()) {
+        m_model.rollbackChanges();
+    } else {
+        m_model.commitChanges();
+    }
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     RelinkingModel::FolderSearchResult const res(m_model.relinkMissingFromFolder(folder));
     QApplication::restoreOverrideCursor();

@@ -135,6 +135,7 @@
 #include <QDate>
 #include <algorithm>
 #include <vector>
+#include <set>
 #include <stddef.h>
 #include <math.h>
 #include <assert.h>
@@ -543,12 +544,10 @@ MainWindow::haveMissingImages() const
     class Checker : public VirtualFunction1<void, RelinkablePath const&>
     {
     public:
-        bool missing = false;
+        std::vector<QString> files;
         virtual void operator()(RelinkablePath const& path)
         {
-            if (!missing && !QFileInfo::exists(path.normalizedPath())) {
-                missing = true;
-            }
+            files.push_back(path.normalizedPath());
         }
     };
     if (!m_ptrPages) {
@@ -556,7 +555,24 @@ MainWindow::haveMissingImages() const
     }
     Checker checker;
     m_ptrPages->listRelinkablePaths(checker);
-    return checker.missing;
+
+    // folders first: few of them, and a moved or offline folder is found without
+    // touching every file in it
+    std::set<QString> dirs;
+    for (QString const& f : checker.files) {
+        dirs.insert(QFileInfo(f).path());
+    }
+    for (QString const& d : dirs) {
+        if (!QFileInfo::exists(d)) {
+            return true;
+        }
+    }
+    for (QString const& f : checker.files) {
+        if (!QFileInfo::exists(f)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void

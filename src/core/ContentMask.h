@@ -71,7 +71,7 @@ public:
      * \return false (and \p content_rect untouched) when there is no ink near \p pos.
      */
     bool snapContentRect(QRectF& content_rect, QPointF const& pos, SnapMode mode,
-                         QRectF const& bounds) const;
+                         QRectF const& bounds, double min_size = 10.0) const;
 
     imageproc::BinaryImage const& image() const
     {

@@ -204,8 +204,10 @@ CommandLine::parseCli(QStringList const& argv)
             // handle input images and output directory
             QFileInfo file(argv[i]);
             if (i == (argv.size() - 1)) {
-                // output directory: created when it does not exist yet
-                if (!file.exists() && QDir().mkpath(file.filePath())) {
+                // output directory: the CLI creates it when it does not exist yet (only when a
+                // project or images were given before it, so a lone mistyped file name is an error)
+                bool const have_input = !m_projectFile.isEmpty() || !m_files.empty() || !m_images.empty();
+                if (!m_gui && have_input && !file.exists() && QDir().mkpath(file.filePath())) {
                     file.refresh();
                 }
                 if (file.isDir()) {
@@ -371,7 +373,8 @@ CommandLine::printHelp()
     std::cout << "\t\t\t\t\t\t-- if set the content detection is se to manual mode" << std::endl;
     std::cout << "\t\t\t\t\t\t   example: --content-box=100x100:1500x2500" << std::endl;
     std::cout << "\t--content-snap=<file>[:L|R]@<x>,<y>[:nearest|h|v|hv|left|right|top|bottom][;...]" << std::endl;
-    std::cout << "\t\t\t\t\t\t-- like a double-click on the content box in the GUI (Select Content):" << std::endl;
+    std::cout << "\t\t\t\t\t\t-- like a double-click on the content box in the GUI (Select Content);" << std::endl;
+    std::cout << "\t\t\t\t\t\t   <file>: name, or path (relative to the project) when names repeat:" << std::endl;
     std::cout << "\t\t\t\t\t\t   the nearest box edge snaps to the ink around page point x,y" << std::endl;
     std::cout << "\t\t\t\t\t\t   (h: left/right edge only, v: top/bottom only, hv: corner," << std::endl;
     std::cout << "\t\t\t\t\t\t   left|right|top|bottom: that edge, wherever the point is);" << std::endl;

@@ -284,6 +284,18 @@ def pages_snap_content(project: str, pages: str | list[str], sides: str | list[s
     _ensure_idle(proj)
     p = Project(proj)
     reqs, plan, skipped = [], [], []
+    names = [im.path.name for im in p.images.values()]
+    dup_names = {n for n in names if names.count(n) > 1}
+
+    def image_ref(path: Path) -> str:
+        # a bare name is enough unless several scans share it; then a path relative to the project
+        if path.name not in dup_names:
+            return path.name
+        try:
+            return path.resolve().relative_to(proj.parent).as_posix()
+        except ValueError:
+            return path.as_posix()
+
     for i in _resolve_pages(p, pages):
         pg = p.page(i)
         if pg.image.file_page > 0:
@@ -310,7 +322,7 @@ def pages_snap_content(project: str, pages: str | list[str], sides: str | list[s
                 continue
             # explicit edge: the GUI's nearest-edge rule would move the opposite edge when the
             # text block sits closer to it (e.g. a short page)
-            reqs.append(f"{pg.image.path.name}{sub_}@{pt['x']},{pt['y']}:{side}")
+            reqs.append(f"{image_ref(pg.image.path)}{sub_}@{pt['x']},{pt['y']}:{side}")
             done.append({"side": side, "at": pt})
         if done:
             plan.append({"page": pg.label, "snaps": done})

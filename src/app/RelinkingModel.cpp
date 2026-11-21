@@ -18,6 +18,7 @@
 
 #include "RelinkingModel.h"
 #include <QMultiHash>
+#include <QHash>
 #include <QFileInfo>
 #include <QDirIterator>
 #include "PayloadEvent.h"
@@ -237,6 +238,9 @@ RelinkingModel::relinkMissingFromFolder(QString const& folder)
         (fi.isDir() ? dirs : files).insert(nameKey(fi.fileName()), path);
     }
 
+    // pass 1: pick a match for every missing item; pass 2: apply the ones nobody else claims
+    std::vector<QString> chosen(m_items.size());
+    QHash<QString, int> claims;
     int row = -1;
     for (Item& item : m_items) {
         ++row;
@@ -265,12 +269,26 @@ RelinkingModel::relinkMissingFromFolder(QString const& folder)
         } else if (candidates.size() > 1) {
             ++result.ambiguous;
         } else {
-            item.uncommittedPath = candidates.front();
-            m_haveUncommittedChanges = true;
-            ++result.relinked;
-            emit dataChanged(index(row), index(row));
-            requestStatusUpdate(index(row));
+            chosen[row] = candidates.front();
+            claims[chosen[row]] += 1;
         }
+    }
+
+    for (row = 0; row < int(m_items.size()); ++row) {
+        if (chosen[row].isEmpty()) {
+            continue;
+        }
+        if (claims.value(chosen[row]) > 1) {
+            // e.g. bookA/001.jpg and bookB/001.jpg both missing, one 001.jpg found
+            ++result.ambiguous;
+            continue;
+        }
+        Item& item = m_items[row];
+        item.uncommittedPath = chosen[row];
+        m_haveUncommittedChanges = true;
+        ++result.relinked;
+        emit dataChanged(index(row), index(row));
+        requestStatusUpdate(index(row));
     }
 
     return result;

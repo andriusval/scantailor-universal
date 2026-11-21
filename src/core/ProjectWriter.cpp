@@ -141,14 +141,15 @@ ProjectWriter::packDirPath(QString const& path, QString const& project_dir)
     if (path.isEmpty() || project_dir.isEmpty() || path.startsWith(':')) {
         return path;
     }
-    QString const abs(QDir::cleanPath(QDir(project_dir).absoluteFilePath(path)));
+    // a relative path held in memory (e.g. a CLI argument) is relative to the working directory
+    QString const abs(QDir::cleanPath(QFileInfo(path).absoluteFilePath()));
     QString const rel(QDir(project_dir).relativeFilePath(abs));
     if (rel.isEmpty() || rel == ".") {
         return ".";
     }
-    // outside the project folder (or on another drive): keep it absolute
+    // outside the project folder (or on another drive): absolute
     if (QDir::isAbsolutePath(rel) || rel == ".." || rel.startsWith("../")) {
-        return path;
+        return QDir::isAbsolutePath(path) ? path : abs;
     }
     return rel;
 }
