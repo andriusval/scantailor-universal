@@ -175,6 +175,12 @@ TXT
   `--deskew-pictures` when the CLI has it. The CLI finds the angle from the
   straight edges of the pictures. For other pages, and with older builds, the
   Python function `checks.picture_skew` measures the angle.
+- CLI builds of this fork from 2026-11-22 use the picture edges at stage 3 by
+  default (`--deskew-pictures=false` turns it off). Thus `run_stages(1, 3)`
+  on a new project gives picture pages the picture angle already. The tool
+  still passes `--deskew-pictures`, so that older builds measure the same way.
+  Pages that have an angle in the project keep it, so the tool stays useful
+  for these pages.
 - `run_stages(pages=...)` processes only those pages with a CLI that has
   `--pages`; older builds process all pages. Stage 5 still uses the size of all
   pages. So after margin changes, or after a size warning, run stages 5-6 on

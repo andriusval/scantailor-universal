@@ -1315,6 +1315,7 @@ def _cli_picture_angles(p: Project, proj: Path, ids: list[str]) -> dict[str, flo
         for i in ids:
             t.clear_deskew(i)
         t.save()
+        # New builds have the option on by default, but older builds need the switch, so the call keeps it.
         cmd = [find_cli(), "--deskew-pictures", "--json-progress", "--start-filter=3", "--end-filter=3",
                "--pages=" + ";".join(_page_ref(t, tmp, t.page(i)) for i in ids),
                f"--output-project={tmp}", str(tmp), str(p.output_dir)]
