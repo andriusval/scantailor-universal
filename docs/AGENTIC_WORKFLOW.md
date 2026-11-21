@@ -49,7 +49,13 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
 3. `run_stages(project, 1, 5)` (~0,5 s puslapiui).
 4. **Content:** `check_pages(kind="content")` ir plačiausi/aukščiausi iš
    `pages_list`. Pažymėtus peržiūrėti, tada:
-   - `box_exceeds_text` → `page_set_content(mode="tighten")` (numerius
+   - šiukšlės prie rėmelio kraštų (`thin_*_column_isolated`,
+     `thin_*_line_isolated`, `box_exceeds_text`) →
+     `pages_snap_content(pages=[visi pažymėti], sides="auto")` vienu kvietimu:
+     paties ScanTailor dvigubo paspaudimo pritraukimas (CLI `--content-snap`)
+     pritraukia pažymėtus kraštus prie kraštinio teksto; po darbo peržiūrėti;
+   - jei pritraukus šiukšlė liko (pvz. arčiau nei ~2,5 mm nuo teksto) ar kas
+     nukirpta → `page_set_content(mode="tighten")` (numerius
      palieka; pusė, kurios juostoje rašalo 3+ eilutėse, lieka — `kept_sides`;
      jei peržiūroje tai šiukšlė, pvz. ranka rašytas bibliotekos šifras, kraštą
      nustatyti `mode="manual"`);
@@ -107,6 +113,7 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `pages_list(project, sort_by, descending, limit, offset)` | Lentelė: id, label, content dydis + z-score, paraštės, lygiavimas, match size, spalvų režimas, DPI, vėliavos (`outlier_width`, `outlier_height`, `empty_content`, `cover_candidate`) |
 | `page_preview(project, page)` / `pages_preview(project, pages)` | Puslapis(-iai) su content box overlay |
 | `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
+| `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5 |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination)` | `output` |
 | `check_pages(project, pages, kind=content\|pictures)` | Heuristikos su įrodymais |

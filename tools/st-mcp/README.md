@@ -77,6 +77,10 @@ Values are JSON when they parse as JSON (`10`, `true`, `["a","b"]`), else string
   relative paths against the working directory) and first checks that every
   scan can be opened: the CLI itself "processes" missing images with exit 0 and
   then saves a project pointing at the wrong folder.
+- `pages_snap_content` uses the CLI option `--content-snap`, which exists only
+  in CLI builds from this fork (branch `agentic/windows-build`, 2026-11-21 or
+  later). It is the GUI's double-click adjustment of the content box (ported
+  from ScanTailor Advanced), so agent and GUI snap edges the same way.
 - `run_stages` always processes all pages (a CLI limitation); re-runs after
   content/layout changes are faster because ScanTailor caches.
 - Heuristics (`check_pages`) report evidence; the agent is expected to look at

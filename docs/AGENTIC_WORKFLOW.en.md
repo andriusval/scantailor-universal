@@ -50,7 +50,12 @@ GUI.
 4. **Content:** `check_pages(kind="content")` and the widest/tallest pages
    from `pages_list`. Preview what is flagged (`pages_preview`, zoom on edges
    when unsure). Then:
-   - `box_exceeds_text` → `page_set_content(mode="tighten")` (keeps page
+   - junk at the box sides (`thin_*_column_isolated`, `thin_*_line_isolated`,
+     `box_exceeds_text`) → `pages_snap_content(pages=[all flagged], sides="auto")`
+     in one call: ScanTailor's own double-click adjustment (CLI `--content-snap`)
+     snaps each flagged edge to the outermost text; preview the pages after the job;
+   - if a snap left junk in (e.g. junk closer than ~2.5 mm to the text) or cut
+     something → `page_set_content(mode="tighten")` (keeps page
      numbers; a side whose strip has ink in 3+ lines stays — `kept_sides`; if
      the preview shows that strip is junk such as a handwritten library mark,
      set the edge with `mode="manual"`);
@@ -106,6 +111,7 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `pages_list(project, sort_by, descending, limit, offset)` | Table: id, label, content size + z-scores, margins, alignment, match size, color mode, DPI, flags (`outlier_width`, `outlier_height`, `empty_content`, `cover_candidate`) |
 | `page_preview(project, page)` / `pages_preview(project, pages)` | Page(s) with the content box overlay |
 | `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
+| `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5 |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination)` | `output` |
 | `check_pages(project, pages, kind=content\|pictures)` | Heuristics with evidence |

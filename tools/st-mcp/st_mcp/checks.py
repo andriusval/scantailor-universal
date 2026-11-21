@@ -190,7 +190,7 @@ def check_page(project: Project, page_id: str) -> dict:
     for j in _side_junk(ink, bx0, bx1, by0, by1, line_h):
         findings.append({"kind": f"thin_{j['side']}_column_isolated", "gap_px": round(j["gap"] / k),
                          "width_px": round(j["width"] / k),
-                         "hint": "isolated narrow ink at box side: likely scan junk, consider mode=tighten"})
+                         "hint": "isolated narrow ink at box side: likely scan junk; pages_snap_content(sides=auto)"})
 
     # empty space between the box and the text block (faint junk ScanTailor counted as content)
     ex = box_excess(project, pg.id)
@@ -199,7 +199,7 @@ def check_page(project: Project, page_id: str) -> dict:
         if over:
             findings.append({"kind": "box_exceeds_text", "excess_px": over, "threshold_px": ex["threshold_px"],
                              "hint": "box is larger than the text on these sides (junk at the edge): "
-                                     "page_set_content(mode=tighten), then preview"})
+                                     "pages_snap_content(sides=auto), then preview"})
 
     # page-number position inside the box: short isolated last/first line
     number_pos = None
@@ -225,7 +225,7 @@ def check_page(project: Project, page_id: str) -> dict:
             if gap > 4 * max(typical_gap, 1) and hgt < 0.5 * line_h and not is_number:
                 findings.append({"kind": f"thin_{name}_line_isolated", "gap_px": round(gap / k),
                                  "height_px": round(hgt / k),
-                                 "hint": "isolated thin ink line at box edge: likely scan junk, consider shrinking"})
+                                 "hint": "isolated thin ink line at box edge: likely scan junk; pages_snap_content(sides=auto)"})
 
     if number_pos is None:  # a small isolated block right outside the box also tells where numbers sit
         for f in findings:
@@ -513,3 +513,48 @@ def picture_skew(project: Project, page_id: str) -> float | None:
         if score > best:
             best, best_a = score, float(a)
     return best_a
+
+
+def junk_sides(project: Project, page_id: str, finding: dict | None = None) -> list[str]:
+    """Box sides with junk between the box edge and the text, from check_page findings."""
+    res = finding or check_page(project, page_id)
+    sides: list[str] = []
+    for f in res.get("findings", []):
+        kind = f["kind"]
+        if kind in ("thin_left_column_isolated", "thin_right_column_isolated"):
+            sides.append(kind.split("_")[1])
+        elif kind == "thin_first_line_isolated":
+            sides.append("top")
+        elif kind == "thin_last_line_isolated":
+            sides.append("bottom")
+        elif kind == "box_exceeds_text":
+            sides += list(f["excess_px"])
+    return [s for s in ("left", "right", "top", "bottom") if s in sides]
+
+
+def snap_point(project: Project, page_id: str, side: str) -> dict | None:
+    """The point to 'double-click' so ScanTailor snaps one box edge to the text (--content-snap):
+    on the outermost text on that side (text block edge, junk columns excluded), at the median
+    line/column that reaches it. Page px; None when the page has no text block."""
+    tb = text_block(project, page_id)
+    if tb is None:
+        return None
+    ink, k = _ink_mask(project, page_id)
+    L, T, R, B = tb["left"], tb["top"], tb["right"] - 1, tb["bottom"] - 1
+    w = max(2, int(0.15 * tb["line_h"]))
+    if side in ("left", "right"):
+        c0, c1 = (L, L + w) if side == "left" else (R - w + 1, R + 1)
+        rows = np.where(ink[T:B + 1, c0:c1].any(axis=1))[0] + T
+        if not len(rows):
+            return None
+        x, y = (L if side == "left" else R), int(np.median(rows))
+    elif side in ("top", "bottom"):
+        r0, r1 = (T, T + w) if side == "top" else (B - w + 1, B + 1)
+        cols = np.where(ink[r0:r1, L:R + 1].any(axis=0))[0] + L
+        if not len(cols):
+            return None
+        x, y = int(np.median(cols)), (T if side == "top" else B)
+    else:
+        raise ValueError("side must be left|right|top|bottom")
+    # aim half a pixel into the ink, in page px
+    return {"x": round((x + 0.5) / k, 1), "y": round((y + 0.5) / k, 1)}

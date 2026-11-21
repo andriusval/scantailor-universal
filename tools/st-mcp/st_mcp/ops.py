@@ -238,7 +238,7 @@ def _check_inputs_reachable(p: Project, cli: str) -> None:
 def run_stages(project: str, start: int = 1, end: int = 5, orientation: str | None = None,
                layout: str | None = None, layout_direction: str | None = None,
                dpi: int | None = None, content_detection: str | None = None,
-               wait_s: float = 0) -> dict:
+               wait_s: float = 0, content_snap: str | None = None) -> dict:
     """Run ScanTailor filters start..end (1 orientation, 2 split, 3 deskew, 4 content, 5 margins, 6 output)
     on all pages, in the background. Per-page manual settings in the project are kept.
 
@@ -261,12 +261,69 @@ def run_stages(project: str, start: int = 1, end: int = 5, orientation: str | No
         cmd.append(f"--dpi={dpi}")
     if content_detection:
         cmd.append(f"--content-detection={content_detection}")
+    if content_snap:
+        cmd.append(f"--content-snap={content_snap}")
     cmd += [f"--output-project={proj}", str(proj), str(p.output_dir)]
     shutil.copy2(proj, proj.with_suffix(proj.suffix + f".before-run{start}-{end}"))
     _check_inputs_reachable(p, cmd[0])
     job = Job(cmd, proj, start, end, len(p.images) if start <= 2 else len(p.pages))
     _jobs[job.id] = job
     return job_status(job.id, wait_s) if wait_s else job.status()
+
+
+def pages_snap_content(project: str, pages: str | list[str], sides: str | list[str] = "auto",
+                       wait_s: float = 0) -> dict:
+    """Shrink content boxes to the text with ScanTailor's own double-click adjustment (the GUI
+    feature from ScanTailor Advanced, run through the CLI option --content-snap): for each side, a
+    'double-click' on the outermost text makes ScanTailor snap that box edge to the ink there, so
+    junk between the edge and the text drops out. Use it when check_pages reports junk at the box
+    sides (thin_*_column_isolated, thin_*_line_isolated, box_exceeds_text).
+    sides: 'auto' (the sides check_pages flags as junk), 'all', or a list of left|right|top|bottom.
+    Runs stages 4-5 in the background (returns a job, like run_stages); preview the pages afterwards."""
+    proj = Path(project).resolve()
+    _ensure_idle(proj)
+    p = Project(proj)
+    reqs, plan, skipped = [], [], []
+    for i in _resolve_pages(p, pages):
+        pg = p.page(i)
+        if pg.image.file_page > 0:
+            skipped.append({"page": pg.label, "why": "multi-page image files are not supported"})
+            continue
+        c = p.content(pg.id)
+        if not c.get("processed") or c.get("empty"):
+            skipped.append({"page": pg.label, "why": "no content box"})
+            continue
+        if sides == "auto":
+            want = checks.junk_sides(p, pg.id)
+        elif sides == "all":
+            want = ["left", "right", "top", "bottom"]
+        else:
+            want = [sides] if isinstance(sides, str) else list(sides)
+        if not want:
+            skipped.append({"page": pg.label, "why": "no junk side found"})
+            continue
+        sub_ = {"left": ":L", "right": ":R"}.get(pg.side, "")
+        done = []
+        for side in want:
+            pt = checks.snap_point(p, pg.id, side)
+            if pt is None:
+                continue
+            # explicit edge: the GUI's nearest-edge rule would move the opposite edge when the
+            # text block sits closer to it (e.g. a short page)
+            reqs.append(f"{pg.image.path.name}{sub_}@{pt['x']},{pt['y']}:{side}")
+            done.append({"side": side, "at": pt})
+        if done:
+            plan.append({"page": pg.label, "snaps": done})
+        else:
+            skipped.append({"page": pg.label, "why": "no text block to snap to"})
+    if not reqs:
+        return {"snapped": [], "skipped": skipped, "note": "nothing to do"}
+    if any(";" in r for r in reqs):
+        raise ValueError("an image file name contains ';', which --content-snap cannot pass")
+    res = run_stages(project, 4, 5, content_snap=";".join(reqs), wait_s=wait_s)
+    res.update({"snapped": plan, "skipped": skipped,
+                "next": "when the job is done: pages_preview on these pages; check_pages(kind=content)"})
+    return res
 
 
 def job_status(job_id: str, wait_s: float = 0) -> dict:
@@ -663,6 +720,6 @@ def workflow_guide() -> dict:
 
 
 TOOLS = [project_create, project_for_windows, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
-         pages_preview, image_preview, page_set_content, pages_set_layout, pages_set_output,
+         pages_preview, image_preview, page_set_content, pages_snap_content, pages_set_layout, pages_set_output,
          check_pages, export_summary, workflow_guide]
 IMAGE_TOOLS = {"page_preview", "pages_preview", "image_preview"}
