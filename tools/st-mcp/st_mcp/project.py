@@ -334,6 +334,8 @@ class Project:
         # ScanTailor writes this attribute only for a true value, so a false value removes it.
         if grayscale_first is not None:
             cp = p.find("color-params")
+            if cp is None:
+                raise RuntimeError(f"page {page_id}: color-params missing (run stage 6 first)")
             cg = cp.find("color-or-grayscale")
             if cg is None:
                 cg = ET.SubElement(cp, "color-or-grayscale")

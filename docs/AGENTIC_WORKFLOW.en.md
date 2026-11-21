@@ -79,7 +79,8 @@ GUI.
      `pages_set_layout(<picture pages>, margin_left=0, margin_right=0)`.
      `grayscale_first` is the GUI option "Convert to grayscale first". The
      scan becomes grayscale before all other output steps. Thus the paper
-     tint of a color JPEG does not change the margins or the photo. The output TIFF is 8-bit gray and about 4 times smaller. Do not
+     tint of a color JPEG does not change the margins, the illumination or
+     the photo. The output TIFF is 8-bit gray and about 4 times smaller. Do not
      use it for color plates that must stay in color.
 6. **Covers and endpapers:** `page_set_content(mode="cover")`, then
    `pages_set_layout(margins_mm=0, match_size=false)` and
@@ -164,8 +165,8 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
     (`--grayscale-first=false` clears it). Use it with `--pages` to change only
     some pages, for example
     `--start-filter=6 --pages="021.jpg;095.jpg:L" --grayscale-first`.
-    `--white-margins` and `--normalize-illumination` reset it, so give it
-    again together with them.
+    `--white-margins`, `--normalize-illumination` and the layer options reset
+    it, so give it again together with them.
 - Default settings do not fit this book: scans are rotated 90° (needs
   `orientation=right, layout=2`). Without a preview the agent would not notice.
 - The CLI reads DPI from the JPGs; `--dpi` only matters when it is missing.

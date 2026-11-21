@@ -933,8 +933,9 @@ def pages_set_output(project: str, pages: str | list[str], color_mode: str | Non
     tint does not change the margins, the illumination or the photos, and the output TIFF is 8-bit gray;
     no effect in bw mode).
     filling_color (background|white|black) fills the area outside the page; fill_offcut also fills the
-    area beyond the split line (only without white margins). These three need a ScanTailor build from
-    branch agentic/windows-build; older builds ignore them."""
+    area beyond the split line (only without white margins). filling_color and fill_offcut need a
+    ScanTailor build from branch agentic/windows-build, and grayscale_first needs a build with branch
+    feat/grayscale-first; older builds ignore them and write RGB."""
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)

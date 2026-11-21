@@ -165,8 +165,8 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
     (`--grayscale-first=false` išjungia). Su `--pages` keičiami tik pasirinkti
     puslapiai, pvz.
     `--start-filter=6 --pages="021.jpg;095.jpg:L" --grayscale-first`.
-    `--white-margins` ir `--normalize-illumination` jį atstato, todėl kartu su
-    jais jį reikia nurodyti dar kartą.
+    `--white-margins`, `--normalize-illumination` ir sluoksnių parinktys jį
+    atstato, todėl kartu su jomis jį reikia nurodyti dar kartą.
 - Numatyti nustatymai šiai knygai netinka: skenai pasukti 90° (reikia
   `orientation=right, layout=2`). Be peržiūros agentas to nepastebėtų.
 - CLI DPI nuskaito iš JPG; `--dpi` reikalingas tik kai jo nėra.
