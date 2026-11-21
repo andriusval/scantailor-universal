@@ -84,8 +84,15 @@ Values are JSON when they parse as JSON (`10`, `true`, `["a","b"]`), else string
   in CLI builds from this fork (branch `agentic/windows-build`, 2026-11-21 or
   later). It is the GUI's double-click adjustment of the content box (ported
   from ScanTailor Advanced), so agent and GUI snap edges the same way.
-- `run_stages` always processes all pages (a CLI limitation); re-runs after
-  content/layout changes are faster because ScanTailor caches.
+- `run_stages(pages=...)` processes only those pages with a CLI that has
+  `--pages`; older builds process all pages. Stage 5 still uses the size of all
+  pages. So after margin changes, or after a size warning, run stages 5-6 on
+  all pages.
+- With a CLI that has `--json-progress`, jobs follow the JSON events and report
+  page errors and warnings. Older builds fall back to the `--verbose` text.
+- `page_preview` draws through the CLI (`--render-preview`) when it can, so the
+  agent sees what the GUI shows; `pages_preview` stays in Python for speed
+  unless `engine="cli"`.
 - Heuristics (`check_pages`) report evidence; the agent is expected to look at
   `pages_preview` before changing anything. Page-number position detection
   works on a subset of pages and is used as a vote.

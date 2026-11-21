@@ -302,7 +302,8 @@ class Project:
 
     def set_output(self, page_id: str, color_mode: str | None = None, dpi: int | None = None,
                    despeckle: str | None = None, white_margins: bool | None = None,
-                   equalize_illumination: bool | None = None) -> None:
+                   equalize_illumination: bool | None = None, filling_color: str | None = None,
+                   fill_offcut: bool | None = None) -> None:
         p = self._page_params("output", page_id)
         if p is None:
             raise RuntimeError(f"page {page_id}: output params missing (run stages 1-5 first)")
@@ -319,13 +320,16 @@ class Project:
                 raise ValueError("despeckle must be off|cautious|normal|aggressive")
             p.set("despeckleLevel", despeckle)
         # Color/Grayscale (and Mixed) options: "White margins", "Equalize illumination"
-        for attr, val in (("whiteMargins", white_margins), ("normalizeIllumination", equalize_illumination)):
+        if filling_color is not None and filling_color not in ("background", "white", "black"):
+            raise ValueError("filling_color must be background|white|black")
+        for attr, val in (("whiteMargins", white_margins), ("normalizeIllumination", equalize_illumination),
+                          ("fillOffcut", fill_offcut), ("fillingColor", filling_color)):
             if val is not None:
                 cp = p.find("color-params")
                 cg = cp.find("color-or-grayscale")
                 if cg is None:
                     cg = ET.SubElement(cp, "color-or-grayscale")
-                cg.set(attr, "1" if val else "0")
+                cg.set(attr, val if isinstance(val, str) else ("1" if val else "0"))
 
     def _filters(self) -> ET.Element:
         f = self.root.find("./filters")

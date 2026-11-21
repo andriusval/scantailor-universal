@@ -5,6 +5,7 @@ JSON-serialisable dict out (previews return PIL images, wrapped by the caller).
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -73,15 +74,48 @@ class Job:
         self.current_filter = start
         self.processed = 0
         self._split_done = start > 2
+        # With --json-progress, stdout holds only JSON events, so the human text goes to the log file.
+        self.json = "--json-progress" in cmd
+        self.page_errors: list[dict] = []
+        self.warnings: list[str] = []
+        self.run_end: dict | None = None
+        self._log = open(self.log_path, "w", encoding="utf-8")
         # Older builds read relative project paths from the current directory, so the job starts in the project folder.
-        self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=cli_env(),
+        self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                      stderr=self._log if self.json else subprocess.STDOUT, env=cli_env(),
                                       cwd=str(project.parent), text=True, encoding="utf-8", errors="replace")
         threading.Thread(target=self._pump, daemon=True).start()
 
+    def _event(self, ev: dict) -> None:
+        kind = ev.get("event")
+        if kind == "stage_start":
+            self.current_filter = int(ev.get("stage", self.current_filter))
+            self.processed = 0
+            self.n_pages = int(ev.get("pages", self.n_pages))
+            self._split_done = True
+        elif kind == "page_done":
+            self.processed += 1
+        elif kind == "page_error":
+            self.processed += 1
+            self.page_errors.append({k: ev.get(k) for k in ("stage", "image", "side", "error") if k in ev})
+        elif kind == "warning":
+            self.warnings.append(str(ev.get("message") or ev.get("warning") or ev))
+        elif kind == "run_end":
+            self.run_end = {k: v for k, v in ev.items() if k != "event"}
+
     def _pump(self) -> None:
-        with open(self.log_path, "w", encoding="utf-8") as log:
+        if self.json:
             for line in self._proc.stdout:  # type: ignore[union-attr]
-                log.write(line)
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    self._event(json.loads(line))
+                except ValueError:
+                    self._log.write(line + "\n")
+        else:
+            for line in self._proc.stdout:  # type: ignore[union-attr]
+                self._log.write(line)
                 m = re.match(r"Filter: (\d+)", line.strip())
                 if m:
                     self.current_filter = int(m.group(1))
@@ -91,6 +125,7 @@ class Job:
                 elif line.strip().startswith("Processing:"):
                     self.processed += 1
         self.returncode = self._proc.wait()
+        self._log.close()
         self.finished = time.time()
 
     def status(self) -> dict:
@@ -98,7 +133,7 @@ class Job:
         tail = ""
         if done and self.returncode:
             tail = "".join(Path(self.log_path).read_text(encoding="utf-8", errors="replace").splitlines(True)[-15:])
-        return {
+        out = {
             "job_id": self.id,
             "state": ("ok" if self.returncode == 0 else "failed") if done else "running",
             "stages": f"{self.start}-{self.end}",
@@ -107,8 +142,16 @@ class Job:
                                        else f"{self.processed} (total known after the split stage)"),
             "elapsed_s": round((self.finished or time.time()) - self.started, 1),
             "log": str(self.log_path),
-            **({"error_tail": tail} if tail else {}),
         }
+        if self.page_errors:
+            out["page_errors"] = self.page_errors[:20]
+        if self.warnings:
+            out["warnings"] = self.warnings[:10]
+        if self.run_end:
+            out["run_end"] = self.run_end
+        if tail:
+            out["error_tail"] = tail
+        return out
 
 
 _jobs: dict[str, Job] = {}
@@ -251,14 +294,30 @@ def _check_inputs_reachable(p: Project, cli: str) -> None:
         raise RuntimeError(f"{len(missing)} scan(s) not found, e.g. {missing[:3]}")
 
 
+# A bare file name is enough unless several scans share it; then the path relative to the project.
+def _page_ref(p: Project, proj: Path, pg) -> str:
+    names = [im.path.name for im in p.images.values()]
+    ref = pg.image.path.name
+    if names.count(ref) > 1:
+        try:
+            ref = pg.image.path.resolve().relative_to(proj.parent).as_posix()
+        except ValueError:
+            ref = pg.image.path.as_posix()
+    return ref + {"left": ":L", "right": ":R"}.get(pg.side, "")
+
+
 def run_stages(project: str, start: int = 1, end: int = 5, orientation: str | None = None,
                layout: str | None = None, layout_direction: str | None = None,
                dpi: int | None = None, content_detection: str | None = None,
-               wait_s: float = 0, content_snap: str | None = None) -> dict:
+               wait_s: float = 0, content_snap: str | None = None,
+               pages: str | list[str] | None = None) -> dict:
     """Run ScanTailor filters start..end (1 orientation, 2 split, 3 deskew, 4 content, 5 margins, 6 output)
     on all pages, in the background. Per-page manual settings in the project are kept.
 
     orientation/layout/... are applied to ALL pages when given (use only on the first run or to reset).
+    pages: only these pages (ids or labels), with a CLI that has --pages; the others keep their settings
+    and output files. Stage 5 still uses the size of all pages: if the job reports a size warning, or
+    after margin changes, run stages 5-6 on all pages.
     Returns a job; poll with job_status. wait_s>0 blocks up to that many seconds first.
     """
     proj = Path(project).resolve()
@@ -279,12 +338,23 @@ def run_stages(project: str, start: int = 1, end: int = 5, orientation: str | No
         cmd.append(f"--content-detection={content_detection}")
     if content_snap:
         cmd.append(f"--content-snap={content_snap}")
+    note = None
+    if pages not in (None, "all"):
+        if _cli_supports("pages"):
+            cmd.append("--pages=" + ";".join(_page_ref(p, proj, p.page(i)) for i in _resolve_pages(p, pages)))
+        else:
+            note = "this CLI has no --pages, so all pages were processed"
+    if _cli_supports("json-progress"):
+        cmd.append("--json-progress")
     cmd += [f"--output-project={proj}", str(proj), str(p.output_dir)]
     shutil.copy2(proj, proj.with_suffix(proj.suffix + f".before-run{start}-{end}"))
     _check_inputs_reachable(p, cmd[0])
     job = Job(cmd, proj, start, end, len(p.images) if start <= 2 else len(p.pages))
     _jobs[job.id] = job
-    return job_status(job.id, wait_s) if wait_s else job.status()
+    res = job_status(job.id, wait_s) if wait_s else job.status()
+    if note:
+        res["note"] = note
+    return res
 
 
 _cli_help_cache: dict[str, str] = {}
@@ -363,7 +433,8 @@ def pages_snap_content(project: str, pages: str | list[str], sides: str | list[s
         return {"snapped": [], "skipped": skipped, "note": "nothing to do"}
     if any(";" in r for r in reqs):
         raise ValueError("an image file name contains ';', which --content-snap cannot pass")
-    res = run_stages(project, 4, 5, content_snap=";".join(reqs), wait_s=wait_s)
+    snapped_ids = [p.find_page(x["page"]).id for x in plan]
+    res = run_stages(project, 4, 5, content_snap=";".join(reqs), wait_s=wait_s, pages=snapped_ids)
     res.update({"snapped": plan, "skipped": skipped,
                 "next": "when the job is done: pages_preview on these pages; check_pages(kind=content)"})
     return res
@@ -441,16 +512,57 @@ def pages_list(project: str, sort_by: str = "index", descending: bool = False,
     return {"total": total, "sort_by": key, "pages": rows}
 
 
-def page_preview(project: str, page: str, max_px: int = 1200) -> Image.Image:
-    """The page as in the GUI's Select Content view (deskewed, cropped) with the content box in blue."""
+def _cli_previews(p: Project, ids: list[str], max_px: int) -> dict[str, Image.Image]:
+    """Previews drawn by ScanTailor itself (CLI --render-preview), so they show what the GUI shows."""
+    import tempfile
+    proj = p.path
+    with tempfile.TemporaryDirectory(prefix="st-preview-") as tmp:
+        cmd = [find_cli(), "--start-filter=4", "--end-filter=4",
+               "--pages=" + ";".join(_page_ref(p, proj, p.page(i)) for i in ids),
+               f"--render-preview={tmp}/png", f"--render-preview-size={int(max_px)}", str(proj), f"{tmp}/out"]
+        r = subprocess.run(cmd, capture_output=True, env=cli_env(), cwd=str(proj.parent),
+                           text=True, encoding="utf-8", errors="replace")
+        out = {}
+        for i in ids:
+            f = Path(tmp) / "png" / (p.output_name(i) + ".png")
+            if f.exists():
+                with Image.open(f) as im:
+                    out[i] = im.convert("RGB")
+        if not out:
+            raise RuntimeError(f"CLI preview failed ({r.returncode}): {(r.stdout + r.stderr)[-800:]}")
+        return out
+
+
+def _use_cli_preview(engine: str) -> bool:
+    if engine == "cli":
+        if not _cli_supports("render-preview") or not _cli_supports("pages"):
+            raise RuntimeError("this CLI has no --render-preview/--pages; use engine='python'")
+        return True
+    if engine == "auto":
+        return _cli_supports("render-preview") and _cli_supports("pages")
+    return False
+
+
+def page_preview(project: str, page: str, max_px: int = 1200, engine: str = "auto") -> Image.Image:
+    """The page as in the GUI's Select Content view (deskewed, cropped) with the content box.
+    engine: 'auto' (ScanTailor draws it through CLI --render-preview when available, else Python),
+    'cli' or 'python' (fast, st-mcp's own copy of the geometry)."""
     p = _proj(project)
-    return render_page(p, p.find_page(page).id, max_px=max_px)
+    pid = p.find_page(page).id
+    if _use_cli_preview(engine):
+        return _cli_previews(p, [pid], max_px)[pid]
+    return render_page(p, pid, max_px=max_px)
 
 
-def pages_preview(project: str, pages: str | list[str], cell_px: int = 400, cols: int = 4) -> Image.Image:
-    """Contact sheet of several pages with their content boxes (max 16 pages)."""
+def pages_preview(project: str, pages: str | list[str], cell_px: int = 400, cols: int = 4,
+                  engine: str = "python") -> Image.Image:
+    """Contact sheet of several pages with their content boxes (max 16 pages).
+    engine: 'python' (default, fast) or 'cli' (drawn by ScanTailor; one CLI run, about 1 s per page)."""
     p = _proj(project)
     ids = _resolve_pages(p, pages)[:16]
+    if _use_cli_preview(engine):
+        imgs = _cli_previews(p, ids, cell_px * 2)
+        return contact_sheet([(p.page(i).label, imgs[i]) for i in ids if i in imgs], cell=cell_px, cols=cols)
     return contact_sheet([(p.page(i).label, render_page(p, i, max_px=cell_px * 2)) for i in ids],
                          cell=cell_px, cols=cols)
 
@@ -811,20 +923,25 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
 
 def pages_set_output(project: str, pages: str | list[str], color_mode: str | None = None, dpi: int | None = None,
                      despeckle: str | None = None, white_margins: bool | None = None,
-                     equalize_illumination: bool | None = None) -> dict:
+                     equalize_illumination: bool | None = None, filling_color: str | None = None,
+                     fill_offcut: bool | None = None) -> dict:
     """Output mode per page. color_mode: bw | color (=color/grayscale) | mixed.
     Text and pages with black-and-white line illustrations: bw 600. Pages with grayscale (halftone/photo)
     illustrations: color, white_margins=true, equalize_illumination=true. Covers: color 300.
-    white_margins / equalize_illumination are the GUI's Color/Grayscale checkboxes."""
+    white_margins / equalize_illumination are the GUI's Color/Grayscale checkboxes.
+    filling_color (background|white|black) fills the area outside the page; fill_offcut also fills the
+    area beyond the split line (only without white margins). Both need a ScanTailor build from branch
+    agentic/windows-build; older builds ignore them."""
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
     ids = _resolve_pages(p, pages)
     for i in ids:
-        p.set_output(i, color_mode, dpi, despeckle, white_margins, equalize_illumination)
+        p.set_output(i, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color, fill_offcut)
     p.save()
     return {"updated_pages": len(ids), "color_mode": color_mode, "dpi": dpi, "despeckle": despeckle,
-            "white_margins": white_margins, "equalize_illumination": equalize_illumination}
+            "white_margins": white_margins, "equalize_illumination": equalize_illumination,
+            "filling_color": filling_color, "fill_offcut": fill_offcut}
 
 
 def check_pages(project: str, pages: str | list[str] = "all", kind: str = "content") -> dict:
