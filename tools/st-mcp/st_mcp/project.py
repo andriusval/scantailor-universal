@@ -246,7 +246,14 @@ class Project:
             "white_margins": _cg(cp, "whiteMargins"),
             "equalize_illumination": _cg(cp, "normalizeIllumination"),
             "output_rotation": int(p.get("outputRotation", "0")),
+            "file_rotation": self._file_rotation(page_id),
         }
+
+    # The output file keeps the rotation of its last run, which can differ from the new setting.
+    def _file_rotation(self, page_id: str) -> int:
+        f = self.filter_el("output")
+        el = f.find(f"./page[@id='{page_id}']/output-params/image") if f is not None else None
+        return int(el.get("outputRotation", "0")) if el is not None else 0
 
     # ------------------------------------------------------------------ write
     def set_content(self, page_id: str, rect: dict | None) -> None:

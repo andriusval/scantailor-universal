@@ -20,7 +20,7 @@ Principai (perimti iš craft-anything):
 | # | Žmogus GUI | Agentas | Įrankiai |
 |---|---|---|---|
 | 0 | Naujas projektas, sudedami JPG, *Fix DPI → 300* | Nuskaito DPI iš failų; jei nėra — 300 ir praneša | `project_create` |
-| 1 | (GUI to neprašo, bet kai kurios knygos skenuotos pasuktos) | Peržiūri 2–3 originalus: orientacija ir ar skenai yra atvartai | `image_preview`, tada `run_stages(1, 5, orientation=…, layout=…)` |
+| 1 | (GUI to neprašo, bet kai kurios knygos skenuotos pasuktos) | Peržiūri 2–3 originalus dėl atvartų; kiekvieno skeno pasukimą randa detektorius pagal tekstą, pažymėtus skenus agentas peržiūri | `image_preview`, `run_stages(1, 5, orientation=auto, layout=…)`, `check_pages(kind=orientation)` |
 | 2 | *Margins → Play* | Paleidžia filtrus 1–5 | `run_stages`, `job_status` |
 | 3 | *Select Content*, rūšiuoja pagal **Width**, žiūri apačią (plačiausi) — content box dažnai apima šiukšles; mažina iki spausdinto teksto | Ima išskirtis pagal plotį (robust z-score), peržiūri su content box overlay, taiso | `pages_list(sort_by=z_width, descending=true)`, `pages_preview`, `page_set_content` |
 | 4 | Tas pats, žiūri **siauriausius** | Tas pats kitam sąrašo galui (nepilnas turinys, tušti puslapiai) | tie patys |
@@ -42,14 +42,25 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    žmogaus projektas (pvz. `projektas.ScanTailor`) ar `out/` — jų neliesti:
    naudoti `agentas.ScanTailor` ir `out-agentas/`.
 2. `image_preview(project, images=[0, 1, 3, N/2, -2, -1])` (indeksai). Nuspręsti:
-   - **orientation** pagal raidžių kryptį padidintoje iškarpoje;
+   - **orientation:** 3 žingsnyje naudoti `orientation="auto"`. Detektorius
+     randa kiekvieno skeno pasukimą pagal tekstą (CLI `--orientation=auto`).
+     EXIF žymė yra tik užuomina: kai tekstas jai prieštarauja, laimi tekstas.
+     Raidžių kryptį padidintoje iškarpoje tikrinti tik tiems skenams, kuriuos
+     pažymi 3 žingsnis;
    - **layout**: `2` atvartams, `1` pavieniams puslapiams;
    - viršeliai ir kiti pavieniai skenai (`001`, `9999`, …) dažniausiai
      `orientation=none, layout=1` (`images_set_geometry`);
    - kiekvieną tokį skeną peržiūrėti: priešlapio skenas (vidinis viršelis su
      žemėlapiu ir priešlapis, pvz. `002`, `9998`) paprastai yra atvartas →
      `layout=2`, orientacija tokia, kokią rodo skenas.
-3. `run_stages(project, 1, 5)` (~0,5 s puslapiui).
+3. `run_stages(project, 1, 5, orientation="auto", layout=…)` (~0,5 s
+   puslapiui). Tada `check_pages(kind="orientation")` ir peržiūrėti kiekvieną
+   pažymėtą skeną: „no decision“ (viršeliai, nuotraukos, tušti lapai), „low
+   confidence“, „EXIF žymė prieštarauja tekstui“ arba „text runs across the
+   book“. Paskutinis dažniausiai yra šonu išspausdinta lentelė: skenas lieka
+   knygos pasukimo, o 5 žingsnis pasuka tik jo išvestį. Neteisingą skeną
+   pataisyti su `images_set_geometry(orientation=…)` ir `run_stages(1, 5)` be
+   `orientation`.
 4. **Content:** `check_pages(kind="content")` ir plačiausi/aukščiausi iš
    `pages_list`. Pažymėtus peržiūrėti, tada:
    - šiukšlės prie rėmelio kraštų (`thin_*_column_isolated`,
@@ -87,7 +98,12 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
      eina iš viršaus į apačią, arba `output_rotation=90`, kai iš apačios į
      viršų. Pasukamas tik išvesties TIFF (CLI `--output-rotate`, pagal
      laikrodžio rodyklę); su 90 ar 270 jis gulsčias. Tada šiems puslapiams
-     paleisti 6 etapą.
+     paleisti 6 etapą. Po pirmo 6 etapo radinys turi ir
+     `detected_output_rotation`. Kitas būdas:
+     `run_stages(6, 6, pages=<puslapiai>, output_rotate="auto")` — pasukimą
+     pagal baigtą puslapį nustato detektorius (CLI `--output-rotate=auto`). Po
+     6 etapo `check_pages(kind="orientation")` išvardija išvesties puslapius,
+     kurių tekstui reikia kito pasukimo; juos peržiūrėti.
 6. **Viršeliai ir priešlapiai:** `page_set_content(mode="cover")` (randa ir
    tamsius viršelius ant juodo fono; kiekvieną kraštą pritraukia prie viršelio
    krašto ir dar 1 mm į vidų, kad nesimatytų fono), `pages_set_layout(margins_mm=0,
@@ -138,7 +154,7 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `project_create(images_dir, project, output_dir?, dpi=300, force_dpi=false)` | Sukuria `.ScanTailor`, sutvarko DPI |
 | `project_info(project)` | Puslapių skaičius, DPI, pasukimai, etapų progresas, vykdomas darbas |
 | `image_preview(project, images?)` | Originalūs skenai |
-| `run_stages(project, start, end, orientation?, layout?, layout_direction?, dpi?, content_detection?, wait_s?, pages?)` | Paleidžia filtrus fone; `pages` — tik šie puslapiai (CLI `--pages`); eiga ir puslapių klaidos iš CLI `--json-progress` |
+| `run_stages(project, start, end, orientation?, layout?, layout_direction?, dpi?, content_detection?, wait_s?, pages?, output_rotate?)` | Paleidžia filtrus fone; `pages` — tik šie puslapiai (CLI `--pages`); eiga ir puslapių klaidos iš CLI `--json-progress`; `orientation=auto` ir `output_rotate=auto` naudoja orientacijos detektorių |
 | `job_status(job_id, wait_s?)` | Progresas / rezultatas |
 | `pages_list(project, sort_by, descending, limit, offset)` | Lentelė: id, label, content dydis + z-score, paraštės, lygiavimas, match size, spalvų režimas, DPI, vėliavos (`outlier_width`, `outlier_height`, `empty_content`, `cover_candidate`) |
 | `page_preview(project, page, engine?)` / `pages_preview(project, pages, engine?)` | Puslapis(-iai) su content box overlay; `engine="cli"` — piešia pats ScanTailor (CLI `--render-preview`), kaip GUI |
@@ -149,7 +165,7 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `pages_fit_width(project, margin_mm?, percentile?)` | Vienas puslapio plotis: mažesnės šoninės paraštės už tipinį teksto bloką platesniems puslapiams |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertikalus lygiavimas visiems teksto puslapiams ir šalinimo kandidatai ataskaitai |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?, output_rotation?)` | `output`; `output_rotation` (0/90/180/270, pagal laikrodžio rodyklę) pasuka tik išvesties TIFF (CLI `--output-rotate`) |
-| `check_pages(project, pages, kind=content\|pictures)` | Heuristikos su įrodymais; `text_runs_vertically` žymi šonu išspausdintas lenteles |
+| `check_pages(project, pages, kind=content\|pictures\|orientation)` | Heuristikos su įrodymais; `text_runs_vertically` žymi šonu išspausdintas lenteles; `orientation` paleidžia detektorių (CLI `--detect-orientation`) skenams ir išvesties failams ir išvardija tuos, kuriuos reikia peržiūrėti |
 | `export_summary(project)` | Išvesties TIFF sąrašas ir kas trūksta |
 | `pages_straighten_pictures(project, pages)` | Nuotraukų puslapių kampas pagal spaudos stačiakampius |
 | `project_for_windows(project, relative?)` | /mnt/c keliai → C:/ Windows GUI arba reliatyvūs nuo projekto (paskutinis žingsnis per WSL) |
@@ -165,8 +181,15 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
   - *Match size with other pages* išjungta = `alignment@null="1"`;
   - spalvų režimas / DPI: `output/page/params/color-params@colorMode`, `dpi`;
   - išvesties pasukimas: `output/page/params@outputRotation` (laipsniai pagal
-    laikrodžio rodyklę; nėra atributo = 0). CLI: `--output-rotate=<0|90|180|270>`,
+    laikrodžio rodyklę; nėra atributo = 0). CLI: `--output-rotate=<0|90|180|270|auto>`,
     pavieniams puslapiams kartu su `--pages`.
+  - orientacijos detektorius (2026-11-21): `--orientation=auto` (1 etapas,
+    visas skenas prieš padalijimą) ir `--output-rotate=auto` (6 etapas, baigtas
+    puslapis). Su `--json-progress` įvykis `page_done` turi
+    `orientation_detected` arba `output_rotation_detected` (null be
+    sprendimo), `confidence` (0–1) ir `reason`.
+    `--detect-orientation=<sąrašo failas>` kiekvienam vaizdui išspausdina vieną
+    JSON eilutę ir nieko nekeičia.
 - Numatyti nustatymai šiai knygai netinka: skenai pasukti 90° (reikia
   `orientation=right, layout=2`). Be peržiūros agentas to nepastebėtų.
 - CLI DPI nuskaito iš JPG; `--dpi` reikalingas tik kai jo nėra.

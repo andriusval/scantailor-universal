@@ -18,7 +18,7 @@ Principles (borrowed from craft-anything):
 | # | Person in the GUI | Agent | Tools |
 |---|---|---|---|
 | 0 | New project, add the JPGs, *Fix DPI → 300* | Reads DPI from the images; if missing, uses 300 and says so | `project_create` |
-| 1 | (Not asked by the GUI, but some books are scanned rotated) | Looks at 2–3 originals: orientation, and whether each scan is a two-page spread | `image_preview`, then `run_stages(1, 5, orientation=…, layout=…)` |
+| 1 | (Not asked by the GUI, but some books are scanned rotated) | Looks at 2–3 originals for the page layout; lets the detector find the rotation of each scan from its text and previews the flagged scans | `image_preview`, `run_stages(1, 5, orientation=auto, layout=…)`, `check_pages(kind=orientation)` |
 | 2 | *Margins → Play* | Runs filters 1–5 | `run_stages`, `job_status` |
 | 3 | *Select Content*, sort by **Width**, look at the bottom (widest) — the box often includes scan junk; shrink it to the printed text | Takes outliers by width (robust z-score), previews them with the content box overlay, fixes | `pages_list(sort_by=z_width, descending=true)`, `pages_preview`, `page_set_content` |
 | 4 | Same, looking at the **narrowest** | Same for the other end of the list (incomplete content, empty pages) | same |
@@ -41,15 +41,24 @@ GUI.
    has the person's own project (e.g. `projektas.ScanTailor`) or `out/`, never
    touch them: use `agentas.ScanTailor` and `out-agentas/`.
 2. `image_preview(project, images=[0, 1, 3, N/2, -2, -1])` (indices). Decide:
-   - **orientation** from the direction of the letters in a zoomed crop:
-     `right` = rotate 90° clockwise, `left`, `upsidedown`, `none`;
+   - **orientation:** use `orientation="auto"` in step 3. The detector finds
+     the rotation of each scan from its text (CLI `--orientation=auto`). The
+     EXIF tag is only a hint: when the text disagrees, the text wins. Check the
+     letters in a zoomed crop only for the scans that step 3 flags;
    - **layout**: `2` for open-book spreads, `1` for single pages;
    - covers and other one-image scans (`001`, `9999`, …) usually
      `orientation=none, layout=1`: `images_set_geometry` for them;
    - look at each such scan. An endpaper scan (`002`, `9998`: the inside
      cover with a map and the flyleaf) is usually a spread. Give it
      `layout=2` and the orientation that the scan shows.
-3. `run_stages(project, 1, 5)` (about 0.5 s per page).
+3. `run_stages(project, 1, 5, orientation="auto", layout=…)` (about 0.5 s
+   per page). Then `check_pages(kind="orientation")` and preview each flagged
+   scan: "no decision" (covers, photos, blank pages), "low confidence", "the
+   EXIF tag disagrees", or "text runs across the book". The last one is
+   usually a sideways table: the scan keeps the rotation of the book, and
+   step 5 turns only its output. Fix a wrong scan with
+   `images_set_geometry(orientation=…)` and `run_stages(1, 5)` without
+   `orientation`.
 4. **Content:** `check_pages(kind="content")` and the widest/tallest pages
    from `pages_list`. Preview what is flagged (`pages_preview`, zoom on edges
    when unsure). Then:
@@ -84,7 +93,12 @@ GUI.
      `pages_set_output(<pages>, output_rotation=270)` when the text lines run
      from top to bottom, or `output_rotation=90` when they run from bottom to
      top. Only the output TIFF turns (CLI `--output-rotate`, clockwise), and
-     with 90 or 270 it is landscape. Then run stage 6 on these pages.
+     with 90 or 270 it is landscape. Then run stage 6 on these pages. After a
+     first stage 6 run, the finding also has `detected_output_rotation`.
+     Alternatively, `run_stages(6, 6, pages=<pages>, output_rotate="auto")`
+     lets the detector set the rotation from the finished page (CLI
+     `--output-rotate=auto`). After stage 6, `check_pages(kind="orientation")`
+     lists the output pages whose text needs another rotation; preview them.
 6. **Covers and endpapers:** `page_set_content(mode="cover")`, then
    `pages_set_layout(margins_mm=0, match_size=false)` and
    `pages_set_output(color_mode="color", dpi=300)`. The cover mode also finds
@@ -137,7 +151,7 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `project_create(images_dir, project, output_dir?, dpi=300, force_dpi=false)` | Creates the `.ScanTailor`, handles DPI |
 | `project_info(project)` | Page count, DPI, rotations, stage progress, running job |
 | `image_preview(project, images?)` | Original scans |
-| `run_stages(project, start, end, orientation?, layout?, layout_direction?, dpi?, content_detection?, wait_s?, pages?)` | Runs filters in the background; `pages` limits the run to some pages (CLI `--pages`); progress and page errors come from CLI `--json-progress` |
+| `run_stages(project, start, end, orientation?, layout?, layout_direction?, dpi?, content_detection?, wait_s?, pages?, output_rotate?)` | Runs filters in the background; `pages` limits the run to some pages (CLI `--pages`); progress and page errors come from CLI `--json-progress`; `orientation=auto` and `output_rotate=auto` use the orientation detector |
 | `job_status(job_id, wait_s?)` | Progress / result |
 | `pages_list(project, sort_by, descending, limit, offset)` | Table: id, label, content size + z-scores, margins, alignment, match size, color mode, DPI, flags (`outlier_width`, `outlier_height`, `empty_content`, `cover_candidate`) |
 | `page_preview(project, page, engine?)` / `pages_preview(project, pages, engine?)` | Page(s) with the content box overlay; `engine="cli"` lets ScanTailor draw them (CLI `--render-preview`), as the GUI shows them |
@@ -148,7 +162,7 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `pages_fit_width(project, margin_mm?, percentile?)` | One page width: smaller side margins for pages wider than the typical text block |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertical alignment for all body pages, plus removal candidates for the report |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?, output_rotation?)` | `output`; `output_rotation` (0/90/180/270, clockwise) turns only the output TIFF (CLI `--output-rotate`) |
-| `check_pages(project, pages, kind=content\|pictures)` | Heuristics with evidence; `text_runs_vertically` marks sideways tables |
+| `check_pages(project, pages, kind=content\|pictures\|orientation)` | Heuristics with evidence; `text_runs_vertically` marks sideways tables; `orientation` runs the detector (CLI `--detect-orientation`) on the scans and the output files and lists the ones that need a look |
 | `export_summary(project)` | Output TIFF list and anything missing |
 | `pages_straighten_pictures(project, pages)` | Re-measure skew of photo pages from the printed rectangles |
 | `project_for_windows(project, relative?)` | Write /mnt/c paths as C:/ for the Windows GUI, or as paths relative to the project (last step under WSL) |
@@ -164,8 +178,14 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
   - *Match size with other pages* off = `alignment@null="1"`;
   - colour mode / DPI: `output/page/params/color-params@colorMode`, `dpi`;
   - output rotation: `output/page/params@outputRotation` (clockwise degrees;
-    a missing attribute is 0). CLI: `--output-rotate=<0|90|180|270>`, together
-    with `--pages` for single pages.
+    a missing attribute is 0). CLI: `--output-rotate=<0|90|180|270|auto>`,
+    together with `--pages` for single pages.
+  - orientation detector (2026-11-21): `--orientation=auto` (stage 1, whole
+    scan before the split) and `--output-rotate=auto` (stage 6, finished
+    page). With `--json-progress`, `page_done` has `orientation_detected` or
+    `output_rotation_detected` (null without a decision), `confidence` (0–1)
+    and `reason`. `--detect-orientation=<list file>` prints one JSON line per
+    image and changes nothing.
 - Default settings do not fit this book: scans are rotated 90° (needs
   `orientation=right, layout=2`). Without a preview the agent would not notice.
 - The CLI reads DPI from the JPGs; `--dpi` only matters when it is missing.

@@ -11,10 +11,12 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
 import xml.etree.ElementTree as ET
+from collections import Counter
 from pathlib import Path
 
 from PIL import Image
@@ -310,11 +312,14 @@ def run_stages(project: str, start: int = 1, end: int = 5, orientation: str | No
                layout: str | None = None, layout_direction: str | None = None,
                dpi: int | None = None, content_detection: str | None = None,
                wait_s: float = 0, content_snap: str | None = None,
-               pages: str | list[str] | None = None) -> dict:
+               pages: str | list[str] | None = None, output_rotate: str | None = None) -> dict:
     """Run ScanTailor filters start..end (1 orientation, 2 split, 3 deskew, 4 content, 5 margins, 6 output)
     on all pages, in the background. Per-page manual settings in the project are kept.
 
     orientation/layout/... are applied to ALL pages when given (use only on the first run or to reset).
+    orientation='auto' finds the rotation of each scan from its text (CLI --orientation=auto); a scan
+    without a clear result keeps its rotation. output_rotate='auto' (stage 6) finds the output rotation
+    of each page from the finished page, for sideways tables; use it with pages=<those pages>.
     pages: only these pages (ids or labels), with a CLI that has --pages; the others keep their settings
     and output files. Stage 5 still uses the size of all pages: if the job reports a size warning, or
     after margin changes, run stages 5-6 on all pages.
@@ -328,6 +333,10 @@ def run_stages(project: str, start: int = 1, end: int = 5, orientation: str | No
     cmd = [find_cli(), "--verbose", f"--start-filter={start}", f"--end-filter={end}"]
     if orientation:
         cmd.append(f"--orientation={orientation}")
+    if output_rotate is not None:
+        if str(output_rotate) == "auto" and not _cli_supports("detect-orientation"):
+            raise RuntimeError(f"{find_cli()} does not know --output-rotate=auto: build a newer CLI")
+        cmd.append(f"--output-rotate={output_rotate}")
     if layout:
         cmd.append(f"--layout={layout}")
     if layout_direction:
@@ -954,7 +963,11 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
     headers) and left/right (cut-off text, marginalia), isolated junk at the box's top/bottom lines and
     left/right sides, empty boxes on pages with ink, and where page numbers sit.
     kind=pictures: pages with illustrations: picture_fraction (grayscale/halftone areas) and
-    line_art_fraction (dense black-ink drawings); each flagged page has `likely` and must be previewed."""
+    line_art_fraction (dense black-ink drawings); each flagged page has `likely` and must be previewed.
+    kind=orientation: ScanTailor's text-based orientation detector (CLI --detect-orientation) on each scan
+    (stage 1 rotation, EXIF tag only as a hint) and on each existing output TIFF (stage 6 output_rotation).
+    Lists only the scans/pages that need a look: no decision, low confidence, EXIF tag against the text,
+    text across the book (sideways table), or a detected rotation that differs from the project."""
     p = _proj(project)
     ids = _resolve_pages(p, pages)
     if kind == "pictures":
@@ -965,15 +978,153 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
         return {"checked": len(res), "flagged": flagged,
                 "rule": "preview each: grayscale illustrations (photos, halftones) -> color_mode=color, "
                         "white_margins=true, equalize_illumination=true; black-and-white line art -> keep bw 600"}
+    if kind == "orientation":
+        return _check_orientation(p, ids)
     if kind != "content":
-        raise ValueError("kind must be content|pictures")
+        raise ValueError("kind must be content|pictures|orientation")
     res = [checks.check_page(p, i) for i in ids]
     flagged = [r for r in res if r.get("findings")]
+    _add_sideways_direction(p, flagged)
     pos = [r.get("page_number_in_box") for r in res if r.get("page_number_in_box")]
     summary = {k: pos.count(k) for k in set(pos)}
     return {"checked": len(res), "flagged": flagged,
             "page_number_position_votes": summary,
             "suggested_align_v": max(summary, key=summary.get) if summary else None}
+
+
+ORIENT_NAME = {0: "none", 90: "right", 180: "upsidedown", 270: "left"}
+DETECT_THRESHOLD = 0.5
+
+
+# One CLI call for many files is faster than one call per file, and it changes no project.
+def _detect_orientation(paths: list[Path]) -> dict[str, dict]:
+    if not paths:
+        return {}
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:
+        f.write("\n".join(str(x) for x in paths) + "\n")
+        list_file = f.name
+    try:
+        r = subprocess.run([find_cli(), f"--detect-orientation={list_file}"], capture_output=True, env=cli_env(),
+                           text=True, encoding="utf-8", errors="replace")
+    finally:
+        os.unlink(list_file)
+    res = {}
+    for line in r.stdout.splitlines():
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if ev.get("event") == "orientation":
+            res[ev["image"]] = ev
+    return res
+
+
+# Same rule as OrientationDetector::applyBookRotation in the CLI, so that a sideways table keeps the book rotation.
+def _apply_book_rotation(results: list[dict]) -> None:
+    votes = Counter(r["orientation_detected"] for r in results
+                    if r.get("orientation_detected") is not None and r.get("confidence", 0) >= DETECT_THRESHOLD)
+    if not votes:
+        return
+    book, count = max(votes.items(), key=lambda kv: (kv[1], -kv[0]))
+    if count < 5 or count * 10 < sum(votes.values()) * 6:
+        return
+    for r in results:
+        a = r.get("orientation_detected")
+        if a is not None and (a - book) % 180:
+            r.update(orientation_detected=book, confidence=round(r.get("confidence", 0) * 0.5, 3),
+                     reason="text runs across the book, book rotation used")
+
+
+def _check_orientation(p: Project, ids: list[str]) -> dict:
+    if not _cli_supports("detect-orientation"):
+        raise RuntimeError(f"{find_cli()} does not know --detect-orientation: build a newer CLI")
+    pages = [p.page(i) for i in ids]
+    image_ids = list(dict.fromkeys(pg.image_id for pg in pages))
+    scan_paths = [p.images[i].path for i in image_ids]
+    outputs = {}
+    for pg in pages:
+        f = p.output_dir / (p.output_name(pg.id) + ".tif")
+        if f.exists():
+            outputs[pg.id] = f
+    det = _detect_orientation(scan_paths + list(outputs.values()))
+    missing = {"orientation_detected": None, "confidence": 0, "reason": "no result from the CLI"}
+    scans = [dict(det.get(str(path), missing)) for path in scan_paths]
+    _apply_book_rotation(scans)
+
+    flagged, scans_ok = [], 0
+    for iid, r in zip(image_ids, scans):
+        cur, ang, conf, reason = p.rotation(iid), r.get("orientation_detected"), r.get("confidence", 0), r["reason"]
+        why = []
+        if ang is None:
+            why.append("no decision")
+        elif conf < DETECT_THRESHOLD:
+            why.append("low confidence")
+        if ang is not None and ang != cur:
+            why.append(f"detected {ang}, project has {cur}")
+        if "exif disagrees" in reason:
+            why.append("the EXIF tag disagrees with the text")
+        if "across the book" in reason:
+            why.append("text runs across the book (sideways table?)")
+        if not why:
+            scans_ok += 1
+            continue
+        item = {"stage": 1, "image": p.images[iid].path.name,
+                "pages": [pg.label for pg in pages if pg.image_id == iid], "rotation": cur,
+                "detected": ang, "confidence": conf, "reason": reason, "why": why}
+        if "exif_rotation" in r:
+            item["exif_rotation"] = r["exif_rotation"]
+        flagged.append(item)
+
+    outputs_ok = 0
+    for pid, f in outputs.items():
+        r = det.get(str(f), missing)
+        o = p.output(pid)
+        cur = o.get("output_rotation", 0)
+        rel, reason = r.get("orientation_detected"), r["reason"]
+        why, need = [], None
+        if rel is None:
+            # A page without text (picture, blank) keeps the book rotation, so only unclear text needs a look.
+            if reason not in ("no text", "cannot load the image"):
+                why.append("no decision")
+        else:
+            need = (o.get("file_rotation", 0) + rel) % 360
+            if r.get("confidence", 0) < DETECT_THRESHOLD:
+                why.append("low confidence")
+            if need != cur:
+                why.append(f"detected output_rotation {need}, project has {cur}")
+        if not why:
+            outputs_ok += 1
+            continue
+        flagged.append({"stage": 6, "page": p.page(pid).label, "output_rotation": cur, "detected": need,
+                        "confidence": r.get("confidence", 0), "reason": reason, "why": why})
+    return {"checked_scans": len(scans), "scans_ok": scans_ok, "checked_outputs": len(outputs),
+            "outputs_ok": outputs_ok, "flagged": flagged, "threshold": DETECT_THRESHOLD,
+            "rule": "preview every flagged scan/page; stage 1: images_set_geometry(images, orientation="
+                    "none|right|upsidedown|left for 0|90|180|270), then run_stages(1, 5); stage 6: "
+                    "pages_set_output(pages, output_rotation=<detected>), then run_stages(6, 6, pages=...)"}
+
+
+# The profile check sees that text runs across the page, and the detector on the output file gives the direction.
+def _add_sideways_direction(p: Project, flagged: list[dict]) -> None:
+    sideways = [r for r in flagged if any(f["kind"] == "text_runs_vertically" for f in r["findings"])]
+    if not sideways or not _cli_supports("detect-orientation"):
+        return
+    files = {}
+    for r in sideways:
+        f = p.output_dir / (p.output_name(r["page_id"]) + ".tif")
+        if f.exists():
+            files[r["page_id"]] = f
+    det = _detect_orientation(list(files.values()))
+    for r in sideways:
+        ev = det.get(str(files.get(r["page_id"], "")))
+        if not ev or ev.get("orientation_detected") is None:
+            continue
+        need = (p.output(r["page_id"]).get("file_rotation", 0) + ev["orientation_detected"]) % 360
+        for f in r["findings"]:
+            if f["kind"] == "text_runs_vertically":
+                f.update(detected_output_rotation=need, confidence=ev.get("confidence"),
+                         hint=f"sideways content: keep stages 1-5, preview, then "
+                              f"pages_set_output(output_rotation={need}) or run_stages(6, 6, output_rotate='auto')")
 
 
 def export_summary(project: str) -> dict:
