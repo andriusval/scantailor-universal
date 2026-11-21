@@ -94,7 +94,9 @@ GUI.
    copyright, dedication, epigraph) goes to `vcenter`, but a small logo at
    the top stays `top`. Section starts (the text starts lower than usual) go
    to `bottom`. Short pages (chapter ends, lists) and full text pages without
-   the page-number band go to `top`. Other pages go to `bottom`. Preview the `top` and `vcenter` pages, and
+   the page-number band go to `top`. Other pages go to `bottom`. When the
+   previews show tables or diagrams, add `review_full_pages=true`: it lists
+   full-height pages with few text lines, such as rotated tables. Preview the `top` and `vcenter` pages, and
    correct single pages with `pages_set_layout`. Then `run_stages(4, 6)`,
    `export_summary`, and check that all body pages have the same size
    (`pages_list(sort_by="content_width", descending=true)`). Look at 8–16

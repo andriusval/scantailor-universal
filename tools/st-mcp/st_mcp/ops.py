@@ -648,15 +648,19 @@ def pages_set_layout(project: str, pages: str | list[str] = "all", margins_mm: f
             "align_h": align_h, "match_size": match_size, "next": "run_stages(5, 5) to propagate"}
 
 
-def _body_pages(p: Project) -> list[tuple[str, dict]]:
-    """Pages that take part in the common page size: content found, match size on, not a cover."""
+# Only pages with content, match size on and stage 5 done take part in the common page size.
+def _body_pages(p: Project, skipped: list | None = None) -> list[tuple[str, dict]]:
     out = []
     for pg in p.pages:
         c = p.content(pg.id)
         lay = p.layout(pg.id)
         if not c.get("processed") or c.get("empty") or not c.get("content_mm"):
             continue
-        if c.get("mode") == "cover" or (lay.get("processed") and not lay.get("match_size", True)):
+        if not lay.get("processed"):
+            if skipped is not None:
+                skipped.append(pg.label)
+            continue
+        if c.get("mode") == "cover" or not lay.get("match_size", True):
             continue
         out.append((pg.id, c))
     return out
@@ -673,50 +677,55 @@ def pages_fit_width(project: str, margin_mm: float = 10.0, percentile: float = 8
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
-    body = _body_pages(p)
+    no_layout: list[str] = []
+    body = _body_pages(p, no_layout)
     if len(body) < 3:
-        raise RuntimeError("too few processed pages with content; run stages 1-4 first")
+        raise RuntimeError("too few pages with content and page layout; run stages 1-5 first")
     widths = sorted(c["content_mm"]["width"] for _, c in body)
     typical = widths[min(len(widths) - 1, int(round(percentile / 100.0 * (len(widths) - 1))))]
     changed = []
     for pid, c in body:
         w = c["content_mm"]["width"]
         lr = margin_mm if w <= typical else max(0.0, round((typical + 2 * margin_mm - w) / 2, 1))
-        cur = p.layout(pid)
-        old = cur["margins_mm"]["left"] if cur.get("processed") else None
-        if old is None or abs(old - lr) > 0.05 or abs(cur["margins_mm"]["right"] - lr) > 0.05:
+        cur = p.layout(pid)["margins_mm"]
+        # Smaller margins set on purpose (picture pages: 0) stay, because they never widen the page.
+        lr = min(lr, cur["left"], cur["right"])
+        if abs(cur["left"] - lr) > 0.05 or abs(cur["right"] - lr) > 0.05:
             p.set_layout(pid, {"left": lr, "right": lr})
-            if lr != margin_mm:
-                changed.append({"page": p.page(pid).label, "content_width_mm": w, "left_right_mm": lr})
+        if lr != margin_mm:
+            changed.append({"page": p.page(pid).label, "content_width_mm": w, "left_right_mm": lr})
     p.save()
-    return {"typical_width_mm": typical, "page_width_mm": round(typical + 2 * margin_mm, 1),
+    return {"typical_width_mm": typical, "skipped_no_page_layout": no_layout, "page_width_mm": round(typical + 2 * margin_mm, 1),
             "median_width_mm": statistics.median(widths), "narrowed_margins": changed,
             "next": "run_stages(5, 5), then pages_list(sort_by='content_width') to confirm one page size"}
 
 
 def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_ratio: float = 0.95,
-                     section_start_offset: float = 0.10) -> dict:
+                     section_start_offset: float = 0.10, review_full_pages: bool = False) -> dict:
     """Vertical alignment for every body page, and lists of pages a person should check.
     - Front matter (pages before the first page with at least half the usual number of text lines:
       title, copyright, dedication, epigraph): vcenter. A small element at the top of such a page
       (series logo, less than 25 % of the usual height): top.
     - Section starts (the text block starts lower than usual by more than section_start_offset of
-      the page height: preface, list or contents start): bottom, even when the page is short.
+      the page height, with 3 or more text lines: preface, list or contents start): bottom, even when
+      the page is short. A small block lower than usual (part title, specks): vcenter, and review.
     - Short pages (content height below short_ratio of the median: chapter ends, lists): top.
     - Full text pages without the page-number band (height below missing_number_ratio of the median
       but the usual number of lines): top, so that their text lines up with the other pages.
     - Other body pages: bottom.
     Lists for the report (nothing is removed or changed for them): blank pages, half-title candidates,
     near-empty pages (no text line, tiny box: mark them empty if they hold only specks or a stamp),
-    and full-height pages with few text lines (rotated tables or pictures: vcenter is usual there).
-    Covers keep their settings. Then run_stages(5, 5)."""
+    and, with review_full_pages=true, full-height text pages with few text lines (rotated tables:
+    vcenter is usual there). review_full_pages analyses every page (about 0.5 s each), so use it when
+    the previews show tables or diagrams. Covers keep their settings. Then run_stages(5, 5)."""
     import statistics
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
-    body = _body_pages(p)
+    no_layout: list[str] = []
+    body = _body_pages(p, no_layout)
     if len(body) < 3:
-        raise RuntimeError("too few processed pages with content; run stages 1-4 first")
+        raise RuntimeError("too few pages with content and page layout; run stages 1-5 first")
     heights = [c["content_mm"]["height"] for _, c in body]
     med_h = statistics.median(heights)
     lines: dict[str, int] = {}
@@ -745,8 +754,8 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
         if text_lines(pid) >= 0.5 * med_lines:
             front_end = i
             break
-    decided = {"vcenter": [], "top_small_header": [], "bottom_section_start": [], "top_short": [],
-               "top_no_number_band": [], "bottom": 0}
+    decided = {"vcenter": [], "top_small_header": [], "bottom_section_start": [], "vcenter_small_block": [],
+               "top_short": [], "top_no_number_band": [], "bottom": 0}
     half_titles, near_empty, full_few_lines = [], [], []
     for i, (pid, c) in enumerate(body):
         h = c["content_mm"]["height"]
@@ -756,6 +765,7 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
         area = c["content_mm"]["width"] * h
         if area < 0.01 * med_h * med_h and text_lines(pid) == 0:
             near_empty.append(lab)
+        is_text = p.output(pid).get("color_mode") in (None, "bw")
         if i < front_end:
             if h < 0.25 * med_h and offset < section_start_offset:
                 align = "top"
@@ -766,8 +776,12 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
             if text_lines(pid) <= 5:
                 half_titles.append(lab)
         elif h < missing_number_ratio * med_h and offset > section_start_offset:
-            align = "bottom"
-            decided["bottom_section_start"].append(lab)
+            if text_lines(pid) >= 3:
+                align = "bottom"
+                decided["bottom_section_start"].append(lab)
+            else:
+                align = "vcenter"
+                decided["vcenter_small_block"].append(lab)
         elif h < short_ratio * med_h:
             align = "top"
             decided["top_short"].append(lab)
@@ -778,16 +792,17 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
             align = "bottom"
             decided["bottom"] += 1
             # Picture pages already have their own output mode, so only text-mode pages need this review.
-            if (h >= 0.9 * med_h and text_lines(pid) < 0.5 * med_lines
-                    and p.output(pid).get("color_mode") in (None, "bw")):
+            if review_full_pages and is_text and h >= 0.9 * med_h and text_lines(pid) < 0.5 * med_lines:
                 full_few_lines.append(lab)
         p.set_layout(pid, None, align, None, None)
     p.save()
     blank = [pg.label for pg in p.pages if p.content(pg.id).get("empty")]
     return {"median_height_mm": med_h, "median_text_lines": med_lines, **decided,
+            "skipped_no_page_layout": no_layout,
             "review": {"full_height_few_lines": full_few_lines,
-                       "note": "rotated tables or pictures: preview them, vcenter is usual; section starts: "
-                               "preview them too, some books keep them at the top"},
+                       "small_blocks": decided["vcenter_small_block"],
+                       "note": "rotated tables: preview them, vcenter is usual; section starts and small "
+                               "blocks: preview them too, some books keep them at the top"},
             "report_removal_candidates": {"blank_pages": blank, "half_title_candidates": half_titles,
                                           "near_empty_pages": near_empty,
                                           "note": "list these in the final report; the user decides, nothing was removed"},
@@ -867,13 +882,12 @@ def pages_straighten_pictures(project: str, pages: str | list[str], min_change: 
     return {"changed": changed, "next": "run_stages(3, 5), then page_set_content(mode=all_content) on these pages"}
 
 
-def _keep_original(proj: Path) -> str | None:
-    """Copy the finished project to <name>.orig.ScanTailor once, so that later corrections by a person can be compared."""
+# The copy always holds the last finished run, so that project_diff shows only the corrections of the person.
+def _keep_original(proj: Path) -> dict:
     orig = proj.with_name(proj.stem + ".orig" + proj.suffix)
-    if orig.exists():
-        return None
+    replaced = orig.exists()
     shutil.copy2(proj, orig)
-    return str(orig)
+    return {"path": str(orig), "replaced_older_copy": replaced}
 
 
 def project_diff(original: str, corrected: str, limit: int = 60) -> dict:
@@ -900,14 +914,24 @@ def project_diff(original: str, corrected: str, limit: int = 60) -> dict:
 
     ia = {im.path.name for im in a.images.values()}
     ib = {im.path.name for im in b.images.values()}
-    la = {pg.label: pg for pg in a.pages}
-    lb = {pg.label: pg for pg in b.pages}
+    # A label repeats for pages of one multi-page file, so the key adds the file page and the side.
+    def keyed(p: Project) -> dict:
+        out = {}
+        for pg in p.pages:
+            out[(pg.image.path.name, pg.image.file_page, pg.side)] = pg
+        return out
+
+    ka, kb = keyed(a), keyed(b)
+    la = {pg.label for pg in ka.values()}
+    lb = {pg.label for pg in kb.values()}
     by_kind: dict[str, list] = {}
-    for lab in sorted(set(la) & set(lb), key=lambda x: la[x].index):
-        sa, sb = page_state(a, la[lab]), page_state(b, lb[lab])
+    for key in sorted(set(ka) & set(kb), key=lambda x: ka[x].index):
+        pa, pb = ka[key], kb[key]
+        sa, sb = page_state(a, pa), page_state(b, pb)
+        name = pa.label if not pa.image.file_page else f"{pa.label} (page {pa.image.file_page})"
         for k in sa:
             if sa[k] != sb[k]:
-                by_kind.setdefault(k, []).append({"page": lab, "agent": sa[k], "user": sb[k]})
+                by_kind.setdefault(k, []).append({"page": name, "agent": sa[k], "user": sb[k]})
     return {
         "images_removed": sorted(ia - ib), "images_added": sorted(ib - ia),
         "pages_only_in_original": sorted(set(la) - set(lb)), "pages_only_in_corrected": sorted(set(lb) - set(la)),

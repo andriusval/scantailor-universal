@@ -95,7 +95,9 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    logotipas viršuje lieka `top`; skyrių ir sąrašų pradžios (tekstas
    prasideda žemiau nei įprastai) → `bottom`; trumpi puslapiai (skyrių
    pabaigos, sąrašai) ir pilni teksto puslapiai be numerio juostos → `top`;
-   kiti → `bottom`. Peržiūrėti `top` ir `vcenter` puslapius, pavienius
+   kiti → `bottom`. Jei peržiūrose matosi lentelės ar diagramos, pridėti
+   `review_full_pages=true`: jis išvardija aukštus puslapius su mažai
+   eilučių, pvz. pasuktas lenteles. Peržiūrėti `top` ir `vcenter` puslapius, pavienius
    pataisyti per `pages_set_layout`. Tada `run_stages(4, 6)`,
    `export_summary`, patikrinti, ar visi teksto puslapiai vienodo dydžio
    (`pages_list(sort_by="content_width", descending=true)`). Peržiūrėti 8–16

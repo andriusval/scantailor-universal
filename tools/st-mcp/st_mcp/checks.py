@@ -280,9 +280,9 @@ def detect_cover_rect(project: Project, page_id: str) -> dict | None:
     return refine_cover_edges(project, pg.id, rough)
 
 
+# Each edge of the rough box moves to the strongest brightness step near it, because the cover edge is that step.
 def refine_cover_edges(project: Project, page_id: str, rect: dict, search: float = 0.03,
                        inset_mm: float = 1.0) -> dict:
-    """Move each edge of a rough cover box to the strongest brightness step near it (page px)."""
     pt = project.transform(page_id)
     im = render_page(project, page_id, max_px=2400, overlay=False, pad=(0, 0, 0))
     g = np.asarray(im.convert("L"), dtype=np.float32)
