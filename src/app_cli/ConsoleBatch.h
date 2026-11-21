@@ -42,6 +42,11 @@
 #include "PageSelectionAccessor.h"
 #include "ProjectReader.h"
 
+namespace output
+{
+class Task;
+}
+
 class LoadFileTask;
 
 class ConsoleBatch
@@ -101,7 +106,8 @@ private:
 
     IntrusivePtr<LoadFileTask> createCompositeTask(
         PageInfo const& page,
-        int const last_filter_idx
+        int const last_filter_idx,
+        IntrusivePtr<output::Task>* output_task_out = nullptr
     );
 };
 

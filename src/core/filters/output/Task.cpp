@@ -152,7 +152,8 @@ Task::Task(IntrusivePtr<Filter> const& filter,
         m_debug(debug),
         m_keep_orig_fore_subscan(keep_orig_fore_subscan),
 //Original_Foreground_Mixed
-        m_p_orig_fore_subscan(p_orig_fore_subscan)
+        m_p_orig_fore_subscan(p_orig_fore_subscan),
+        m_outputReused(false)
 {
     if (debug) {
         m_ptrDbg.reset(new DebugImages);
@@ -426,6 +427,8 @@ Task::process(
             need_reprocess = speckles_img.isNull();
         }
     }
+
+    m_outputReused = !need_reprocess;
 
     if (need_reprocess) {
         // Even in batch processing mode we should still write automask, because it
