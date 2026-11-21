@@ -116,6 +116,7 @@ CommandLine::parseCli(QStringList const& argv)
     opts << "output-project";
     opts << "render-preview";
     opts << "render-preview-size";
+    opts << "dump-masks";
     opts << "tiff-compression";
     opts << "picture-shape";
     opts << "language";
@@ -447,6 +448,9 @@ CommandLine::printHelp()
     std::cout << "\t--render-preview=<directory>\t\t-- after the last filter, write a PNG for each page to the directory:" << std::endl;
     std::cout << "\t\t\t\t\t\t   the image after filters 1-3 with the page box and the content box of filter 4" << std::endl;
     std::cout << "\t\t--render-preview-size=<pixels>\t-- maximum length of the long side of a preview; default: 1200" << std::endl;
+    std::cout << "\t--dump-masks=<directory>\t\t-- after the last filter, write the 150 DPI analysis masks of filter 4 for each page:" << std::endl;
+    std::cout << "\t\t\t\t\t\t   <page>_content.png (the ink), <page>_text.png and <page>_garbage.png (white = set)," << std::endl;
+    std::cout << "\t\t\t\t\t\t   and <page>.json with the transforms between the scan, the page and the masks" << std::endl;
     std::cout << "\t--pages=<file>[:L|R]|[#]<index>[-<index>][;...]" << std::endl;
     std::cout << "\t\t\t\t\t\t-- process only these pages; other pages keep their page settings and output files" << std::endl;
     std::cout << "\t\t\t\t\t\t   <file>: image name, or path (relative to the project) when names repeat;" << std::endl;

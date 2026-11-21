@@ -113,7 +113,8 @@ struct PreferVertical {
 
 QRectF
 ContentBoxFinder::findContentBox(
-    TaskStatus const& status, FilterData const& data, QRectF const& page_rect, DebugImages* dbg)
+    TaskStatus const& status, FilterData const& data, QRectF const& page_rect, DebugImages* dbg,
+    Masks* masks)
 {
     ImageTransformation xform_150dpi(data.xform());
     xform_150dpi.preScaleToDpi(Dpi(150, 150));
@@ -209,6 +210,9 @@ ContentBoxFinder::findContentBox(
     filterShadows(status, garbage, dbg);
     if (dbg) {
         dbg->add(garbage, "filtered_shadows");
+    }
+    if (masks) {
+        masks->garbage = garbage;
     }
 
     status.throwIfCancelled();
@@ -345,6 +349,9 @@ ContentBoxFinder::findContentBox(
 
     // Make text_mask store the actual content pixels that are text.
     rasterOp<RopAnd<RopSrc, RopDst> >(text_mask, content);
+    if (masks) {
+        masks->text = text_mask;
+    }
 
     QRect content_rect(content_blocks.contentBoundingBox());
 

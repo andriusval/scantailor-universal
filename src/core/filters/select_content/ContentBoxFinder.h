@@ -20,6 +20,7 @@
 #define SELECT_CONTENT_CONTENTBOXFINDER_H_
 
 #include "imageproc/BinaryThreshold.h"
+#include "imageproc/BinaryImage.h"
 
 class TaskStatus;
 class DebugImages;
@@ -41,9 +42,15 @@ namespace select_content
 class ContentBoxFinder
 {
 public:
+    // The CLI option --dump-masks writes these 150 DPI images, which use the coordinates of ContentMask.
+    struct Masks {
+        imageproc::BinaryImage text;
+        imageproc::BinaryImage garbage;
+    };
+
     static QRectF findContentBox(
         TaskStatus const& status, FilterData const& data, QRectF const& page_rect,
-        DebugImages* dbg = 0);
+        DebugImages* dbg = 0, Masks* masks = 0);
 private:
     class Garbage;
 

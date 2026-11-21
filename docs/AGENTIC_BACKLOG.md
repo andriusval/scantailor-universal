@@ -49,3 +49,4 @@ Siūloma eilė: 1 ir 4, tada 2, tada 5 ir 6, vėliau 7–9.
 - CLI skaito kiekvieno skeno DPI iš failo.
 - Relinking dialogas: „Find in folder…“, suvestinė, filtras.
 - Windows buildas su Qt 6.12.1 LTS; minimalus Qt 6.4 / 5.15.
+- 7 punktas: CLI `--dump-masks` (turinio, teksto ir šiukšlių kaukės su transformacija); `check_pages` jas naudoja.

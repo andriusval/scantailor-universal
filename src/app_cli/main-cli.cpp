@@ -114,6 +114,13 @@ int main(int argc, char** argv)
         std::cerr << "Use --render-preview=<directory>." << std::endl;
         return 1;
     }
+    if (cli.dumpMasksGiven() && (!cli.hasDumpMasks() || cli.getDumpMasksDirectory() == "true")) {
+        std::cerr << "Use --dump-masks=<directory>." << std::endl;
+        if (json) {
+            printRunError(QStringLiteral("--dump-masks needs a directory"));
+        }
+        return 1;
+    }
     if (cli.hasRenderPreviewSize() && cli.getRenderPreviewSize() <= 0) {
         std::cerr << "Use --render-preview-size=<pixels> with a positive number." << std::endl;
         return 1;
@@ -148,6 +155,18 @@ int main(int argc, char** argv)
         }
     }
 
+    // A page without masks is a warning, but a failure to make the mask directory is an error.
+    int mask_failures = 0;
+    QString mask_error;
+    if (cli.hasDumpMasks()) {
+        try {
+            mask_failures = cbatch->dumpMasks(cli.getDumpMasksDirectory());
+        } catch (std::exception const& e) {
+            std::cerr << e.what() << std::endl;
+            mask_error = QString::fromLocal8Bit(e.what());
+        }
+    }
+
     try {
         if (cli.hasOutputProject() && !cbatch->saveProject(cli.outputProjectFile()) && json) {
             printRunError(QStringLiteral("cannot write the project file"), cbatch.get());
@@ -162,12 +181,13 @@ int main(int argc, char** argv)
     }
 
     bool const preview_failed = preview_failures > 0 || !preview_error.isEmpty();
+    bool const run_failed = preview_failed || !mask_error.isEmpty();
 
     if (json) {
         // The status is "error" only when the exit code is not zero, and a warning does not change the exit code.
         QJsonObject ev;
         ev["event"] = QStringLiteral("run_end");
-        ev["status"] = preview_failed ? QStringLiteral("error")
+        ev["status"] = run_failed ? QStringLiteral("error")
                        : (cbatch->warningCount() > 0 ? QStringLiteral("warning") : QStringLiteral("ok"));
         ev["pages"] = cbatch->pageCount();
         ev["page_errors"] = cbatch->pageErrorCount();
@@ -178,7 +198,12 @@ int main(int argc, char** argv)
         if (cli.hasRenderPreview()) {
             ev["preview_failures"] = preview_failures;
         }
-        if (!preview_error.isEmpty()) {
+        if (cli.hasDumpMasks()) {
+            ev["mask_failures"] = mask_failures;
+        }
+        if (!mask_error.isEmpty()) {
+            ev["error"] = mask_error;
+        } else if (!preview_error.isEmpty()) {
             ev["error"] = preview_error;
         } else if (preview_failed) {
             ev["error"] = QStringLiteral("%1 preview(s) failed").arg(preview_failures);
@@ -186,5 +211,5 @@ int main(int argc, char** argv)
         ConsoleBatch::printJsonLine(ev);
     }
 
-    return preview_failed ? 1 : 0;
+    return run_failed ? 1 : 0;
 }

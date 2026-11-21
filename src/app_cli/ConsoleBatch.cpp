@@ -47,6 +47,9 @@
 #include "ImageLoader.h"
 #include "ImageTransformation.h"
 #include "ContentBoxCollector.h"
+#include "ContentMask.h"
+#include "FilterData.h"
+#include "TaskStatus.h"
 #include "settings/ini_keys.h"
 
 #include "filters/fix_orientation/Settings.h"
@@ -65,6 +68,7 @@
 #include "filters/select_content/Filter.h"
 #include "filters/select_content/Task.h"
 #include "filters/select_content/CacheDrivenTask.h"
+#include "filters/select_content/ContentBoxFinder.h"
 #include "filters/page_layout/Settings.h"
 #include "filters/page_layout/Filter.h"
 #include "filters/page_layout/Task.h"
@@ -85,6 +89,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QDomDocument>
+#include <QFile>
 #include <QRegularExpression>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -228,7 +233,107 @@ QImage renderPreview(
     return preview;
 }
 
+// The CLI makes the masks after the run, so that nothing can cancel them.
+class NullTaskStatus : public TaskStatus
+{
+public:
+    virtual void cancel() {}
+
+    virtual bool isCancelled() const
+    {
+        return false;
+    }
+
+    virtual void throwIfCancelled() const {}
+};
+
+// Use the GUI cache tasks, and give select_content a next task, because without it the task changes the thumbnail flags.
+IntrusivePtr<fix_orientation::CacheDrivenTask> createCollectTask(StageSequence& stages)
+{
+    IntrusivePtr<select_content::CacheDrivenTask> const select_content_task(
+        stages.selectContentFilter()->createCacheDrivenTask(
+            stages.pageLayoutFilter()->createCacheDrivenTask(
+                IntrusivePtr<output::CacheDrivenTask>()
+            )
+        )
+    );
+    return stages.fixOrientationFilter()->createCacheDrivenTask(
+               stages.pageSplitFilter()->createCacheDrivenTask(
+                   stages.deskewFilter()->createCacheDrivenTask(select_content_task)
+               )
+           );
+}
+
+// Returns false when filters 1-4 are not complete for the page.
+bool collectPage(
+    fix_orientation::CacheDrivenTask& task, select_content::Settings& sc_settings,
+    PageInfo const& page, PreviewCollector& collector)
+{
+    // A page marked for a new thumbnail still has a valid content box, so clear the mark for this pass and restore it.
+    std::unique_ptr<select_content::Params> const sc_params(sc_settings.getPageParams(page.id()));
+    bool const thumbnail_mark = sc_params.get()
+                                && (sc_params->getForceReprocess() & select_content::Params::RegenerateThumbnail);
+    if (thumbnail_mark) {
+        select_content::Params cleared(*sc_params);
+        cleared.setForceReprocess(select_content::Params::Regenerate(
+            cleared.getForceReprocess() & ~select_content::Params::RegenerateThumbnail));
+        sc_settings.setPageParams(page.id(), cleared);
+    }
+
+    try {
+        task.process(page, &collector);
+    } catch (...) {
+        // The caller can continue after an error, so the saved project must keep the mark.
+        if (thumbnail_mark) {
+            sc_settings.setPageParams(page.id(), *sc_params);
+        }
+        throw;
+    }
+    if (thumbnail_mark) {
+        sc_settings.setPageParams(page.id(), *sc_params);
+    }
+    return collector.collected();
+}
+
+// Qt maps a point (x, y) to (m11 x + m21 y + dx, m12 x + m22 y + dy).
+QJsonArray transformToJson(QTransform const& t)
+{
+    QJsonArray a;
+    a << t.m11() << t.m12() << t.m21() << t.m22() << t.dx() << t.dy();
+    return a;
+}
+
+QJsonArray polygonToJson(QPolygonF const& poly)
+{
+    QJsonArray a;
+    for (QPointF const& p : poly) {
+        QJsonArray pt;
+        pt << p.x() << p.y();
+        a << pt;
+    }
+    return a;
+}
+
+// The PNG files use white for the set pixels, so that a viewer shows the ink as light marks on black.
+bool saveMask(imageproc::BinaryImage const& mask, QString const& path)
+{
+    QImage image(mask.toQImage());
+    image.setColor(0, 0xff000000);
+    image.setColor(1, 0xffffffff);
+    // The PNG writer also writes the unused bits at the end of each row, so clear them to get the same file each time.
+    int const tail_bits = image.width() % 8;
+    if (tail_bits != 0) {
+        uchar const keep = uchar(0xff << (8 - tail_bits));
+        for (int y = 0; y < image.height(); ++y) {
+            image.scanLine(y)[image.width() / 8] &= keep;
+        }
+    }
+    return image.save(path, "PNG");
+}
+
 } // namespace
+
+static QJsonObject rectToJson(QRectF const& rect);
 
 ConsoleBatch::ConsoleBatch(std::vector<ImageFileInfo> const& images, QString const& output_directory, Qt::LayoutDirection const layout)
     :   batch(true), debug(true), m_pageErrors(0), m_warnings(0),
@@ -566,21 +671,8 @@ ConsoleBatch::renderPreviews(QString const& directory, int const max_size)
         throw std::runtime_error("Unable to create the preview directory.");
     }
 
-    // Use the GUI cache tasks, and give select_content a next task, because without it the task changes the thumbnail flags.
-    IntrusivePtr<select_content::CacheDrivenTask> const select_content_task(
-        m_ptrStages->selectContentFilter()->createCacheDrivenTask(
-            m_ptrStages->pageLayoutFilter()->createCacheDrivenTask(
-                IntrusivePtr<output::CacheDrivenTask>()
-            )
-        )
-    );
-    IntrusivePtr<fix_orientation::CacheDrivenTask> const task(
-        m_ptrStages->fixOrientationFilter()->createCacheDrivenTask(
-            m_ptrStages->pageSplitFilter()->createCacheDrivenTask(
-                m_ptrStages->deskewFilter()->createCacheDrivenTask(select_content_task)
-            )
-        )
-    );
+    IntrusivePtr<fix_orientation::CacheDrivenTask> const task(createCollectTask(*m_ptrStages));
+    select_content::Settings& sc_settings = *m_ptrStages->selectContentFilter()->getSettings();
 
     QSettings const settings;
     QColor const content_color(
@@ -601,24 +693,8 @@ ConsoleBatch::renderPreviews(QString const& directory, int const max_size)
             QFileInfo(m_outFileNameGen.fileNameFor(page.id())).completeBaseName() + ".png"
         );
 
-        // A page marked for a new thumbnail still has a valid content box, so clear the mark for this pass and restore it.
-        select_content::Settings* const sc_settings = m_ptrStages->selectContentFilter()->getSettings();
-        std::unique_ptr<select_content::Params> const sc_params(sc_settings->getPageParams(page.id()));
-        bool const thumbnail_mark = sc_params.get()
-                                    && (sc_params->getForceReprocess() & select_content::Params::RegenerateThumbnail);
-        if (thumbnail_mark) {
-            select_content::Params cleared(*sc_params);
-            cleared.setForceReprocess(select_content::Params::Regenerate(
-                cleared.getForceReprocess() & ~select_content::Params::RegenerateThumbnail));
-            sc_settings->setPageParams(page.id(), cleared);
-        }
-
         PreviewCollector collector;
-        task->process(page, &collector);
-        if (thumbnail_mark) {
-            sc_settings->setPageParams(page.id(), *sc_params);
-        }
-        if (!collector.collected()) {
+        if (!collectPage(*task, sc_settings, page, collector)) {
             std::cerr << "No preview for " << file_name.toLocal8Bit().constData()
                       << ": filters 1-4 are not complete for this page." << std::endl;
             ++failures;
@@ -626,9 +702,7 @@ ConsoleBatch::renderPreviews(QString const& directory, int const max_size)
         }
 
         QRectF page_rect;
-        std::unique_ptr<select_content::Params> const params(
-            m_ptrStages->selectContentFilter()->getSettings()->getPageParams(page.id())
-        );
+        std::unique_ptr<select_content::Params> const params(sc_settings.getPageParams(page.id()));
         if (params.get()) {
             page_rect = params->pageRect();
         }
@@ -653,6 +727,168 @@ ConsoleBatch::renderPreviews(QString const& directory, int const max_size)
             ++failures;
         } else if (cli.isVerbose()) {
             std::cout << "Preview: " << path.toLocal8Bit().constData() << "\n";
+        }
+    }
+
+    return failures;
+}
+
+int
+ConsoleBatch::dumpMasks(QString const& directory)
+{
+    CommandLine const& cli = CommandLine::get();
+    QDir const dir(directory);
+    if (!dir.mkpath(".")) {
+        throw std::runtime_error("Unable to create the mask directory.");
+    }
+
+    IntrusivePtr<fix_orientation::CacheDrivenTask> const task(createCollectTask(*m_ptrStages));
+    select_content::Settings& sc_settings = *m_ptrStages->selectContentFilter()->getSettings();
+    NullTaskStatus const status;
+
+    int failures = 0;
+    ImageId loaded_image_id;
+    QImage image;
+    PageSequence const pages(m_ptrPages->toPageSequence(PAGE_VIEW));
+    std::set<PageId> const selection = selectedPages(pages);
+    for (PageInfo const& page : pages) {
+        if (selection.count(page.id()) == 0) {
+            continue;
+        }
+        QString const stem(QFileInfo(m_outFileNameGen.fileNameFor(page.id())).completeBaseName());
+        QString error;
+        try {
+            PreviewCollector collector;
+            std::unique_ptr<select_content::Params> params;
+            if (collectPage(*task, sc_settings, page, collector)) {
+                params = sc_settings.getPageParams(page.id());
+            }
+            if (!params.get()) {
+                throw std::runtime_error("filters 1-4 are not complete for this page");
+            }
+
+            // The two pages of a split image use the same image, thus load it one time only.
+            if (!(loaded_image_id == page.imageId())) {
+                image = ImageLoader::load(page.imageId());
+                loaded_image_id = page.imageId();
+            }
+            if (image.isNull()) {
+                throw std::runtime_error("cannot load the image");
+            }
+
+            // Filter 4 gets the image with the transformation of filter 3, so the masks repeat that step.
+            ImageTransformation const& xform = collector.xform();
+            FilterData data(FilterData(page.imageId().filePath(), image), xform);
+            data.setBlackOnWhite(params->dependencies().isBlackOnWhite());
+
+            // Use the same image as select_content::Task, so that the mask is the one that the content snap uses.
+            ContentMask const content_mask(data.grayImage(), xform, status);
+            if (content_mask.isNull()) {
+                throw std::runtime_error("the page area is empty");
+            }
+            select_content::ContentBoxFinder::Masks finder_masks;
+            select_content::ContentBoxFinder::findContentBox(status, data, params->pageRect(), 0, &finder_masks);
+
+            ImageTransformation xform150(xform);
+            xform150.preScaleToDpi(Dpi(150, 150));
+            QRect const mask_rect(xform150.resultingRect().toRect());
+            QTransform const original_to_mask(
+                xform150.transform() * QTransform::fromTranslate(-mask_rect.left(), -mask_rect.top())
+            );
+            QTransform const page_to_mask(xform.transformBack() * original_to_mask);
+
+            QJsonObject files;
+            QString const content_file(stem + "_content.png");
+            if (!saveMask(content_mask.image(), dir.filePath(content_file))) {
+                throw std::runtime_error("cannot write " + content_file.toStdString());
+            }
+            files["content"] = content_file;
+            if (!finder_masks.text.isNull()) {
+                QString const text_file(stem + "_text.png");
+                if (!saveMask(finder_masks.text, dir.filePath(text_file))) {
+                    throw std::runtime_error("cannot write " + text_file.toStdString());
+                }
+                files["text"] = text_file;
+            }
+            if (!finder_masks.garbage.isNull()) {
+                QString const garbage_file(stem + "_garbage.png");
+                if (!saveMask(finder_masks.garbage, dir.filePath(garbage_file))) {
+                    throw std::runtime_error("cannot write " + garbage_file.toStdString());
+                }
+                files["garbage"] = garbage_file;
+            }
+
+            QJsonObject size;
+            size["width"] = image.width();
+            size["height"] = image.height();
+            QJsonObject dpi;
+            dpi["x"] = xform.origDpi().horizontal();
+            dpi["y"] = xform.origDpi().vertical();
+            QJsonObject mask;
+            mask["width"] = content_mask.image().width();
+            mask["height"] = content_mask.image().height();
+            mask["dpi"] = 150;
+            mask["files"] = files;
+
+            QJsonObject transforms;
+            transforms["original_to_page"] = transformToJson(xform.transform());
+            transforms["original_to_mask"] = transformToJson(original_to_mask);
+            transforms["page_to_mask"] = transformToJson(page_to_mask);
+
+            QRectF const& content_rect = params->contentRect();
+            QJsonObject page_box;
+            page_box["page"] = rectToJson(params->pageRect());
+            page_box["mask"] = rectToJson(page_to_mask.mapRect(params->pageRect()));
+            QJsonObject content_box;
+            content_box["empty"] = content_rect.isEmpty();
+            if (!content_rect.isEmpty()) {
+                content_box["page"] = rectToJson(content_rect);
+                content_box["mask"] = rectToJson(page_to_mask.mapRect(content_rect));
+            }
+
+            QJsonObject out;
+            out["stem"] = stem;
+            out["image"] = QFileInfo(page.imageId().filePath()).absoluteFilePath();
+            out["image_page"] = page.imageId().page();
+            out["sub_page"] = page.id().subPageAsString();
+            out["image_size"] = size;
+            out["dpi"] = dpi;
+            out["rotation"] = xform.preRotation().toDegrees();
+            out["deskew_angle"] = xform.postRotation();
+            out["crop_area"] = polygonToJson(xform.preCropArea());
+            out["crop_area_mask"] = polygonToJson(page_to_mask.map(xform.resultingPreCropArea()));
+            out["mask"] = mask;
+            out["transforms"] = transforms;
+            out["page_box"] = page_box;
+            out["content_box"] = content_box;
+            out["content_mode"] = params->mode() == MODE_AUTO ? QStringLiteral("auto") : QStringLiteral("manual");
+
+            QFile json_file(dir.filePath(stem + ".json"));
+            if (!json_file.open(QIODevice::WriteOnly | QIODevice::Truncate)
+                    || json_file.write(QJsonDocument(out).toJson(QJsonDocument::Indented)) < 0) {
+                throw std::runtime_error("cannot write " + (stem + ".json").toStdString());
+            }
+            if (cli.isVerbose()) {
+                std::cout << "Masks: " << dir.filePath(stem).toLocal8Bit().constData() << "\n";
+            }
+        } catch (std::exception const& e) {
+            error = QString::fromLocal8Bit(e.what());
+        }
+
+        if (!error.isEmpty()) {
+            ++failures;
+            ++m_warnings;
+            std::cerr << "Warning: no masks for " << stem.toLocal8Bit().constData() << ": "
+                      << error.toLocal8Bit().constData() << std::endl;
+            if (cli.isJsonProgress()) {
+                QJsonObject ev;
+                ev["event"] = QStringLiteral("warning");
+                ev["warning"] = QStringLiteral("dump_masks_failed");
+                ev["image"] = QFileInfo(page.imageId().filePath()).fileName();
+                ev["side"] = page.id().subPageAsString();
+                ev["message"] = QStringLiteral("No masks for %1: %2").arg(stem, error);
+                printJsonLine(ev);
+            }
         }
     }
 

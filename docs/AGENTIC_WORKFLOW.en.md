@@ -145,6 +145,31 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `pages_straighten_pictures(project, pages)` | Re-measure skew of photo pages from the printed rectangles |
 | `project_for_windows(project, relative?)` | Write /mnt/c paths as C:/ for the Windows GUI, or as paths relative to the project (last step under WSL) |
 
+## CLI options for st-mcp
+
+`--dump-masks=<directory>` writes the analysis masks of filter 4 (select content) for each page after the run.
+With `--pages`, it writes them only for the selected pages.
+The files use the page name of `--render-preview` and of the output TIFF:
+
+- `<page>_content.png`: the ink, as the content box snap (`--content-snap`) sees it;
+- `<page>_text.png`: the ink that `ContentBoxFinder` keeps as text;
+- `<page>_garbage.png`: the dark areas that touch the page border (shadows, scan borders);
+- `<page>.json`: the page data and the transforms.
+
+The JSON file gives the scan file, the sub-page, the image size, the DPI and the rotation.
+It also gives the deskew angle, the crop area, the page box and the content box.
+`crop_area` uses the coordinates of the page outline in the project: the scan after the DPI scale and the rotation.
+The transforms are `original_to_page`, `original_to_mask` and `page_to_mask`.
+
+The masks are 1-bit PNG files at 150 DPI, and white is a set pixel.
+
+A transform is the list `m11 m12 m21 m22 dx dy` of `QTransform`: `x' = m11*x + m21*y + dx`, `y' = m12*x + m22*y + dy`.
+Mask pixel `(x, y)` covers the mask coordinates from `(x, y)` to `(x+1, y+1)`.
+To get the scan pixel of a mask pixel, use the inverse of `original_to_mask`.
+If the CLI cannot write the masks of a page, it sends the `--json-progress` event `warning` (`dump_masks_failed`), and the run continues.
+`--start-filter=5 --end-filter=4` runs no filter, so the masks then come from the saved results of filter 4.
+`check_pages(kind=content)` uses the content mask when the CLI has this option.
+
 ## Verified so far (2026-11-20, Onetti "Trumpas gyvenimas", 300 DPI JPG)
 
 - The CLI runs headless; `--start-filter/--end-filter` run stages separately.
