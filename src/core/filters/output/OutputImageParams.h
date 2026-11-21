@@ -99,6 +99,23 @@ public:
         m_blackOnWhite = black_on_white;
     }
 
+    // A negative value means that the page does not use the automatic grayscale detection.
+    double grayscaleChroma() const
+    {
+        return m_grayscaleChroma;
+    }
+
+    bool grayscaleDetected() const
+    {
+        return m_grayscaleDetected;
+    }
+
+    void setGrayscaleDetection(double chroma, bool detected)
+    {
+        m_grayscaleChroma = chroma;
+        m_grayscaleDetected = detected;
+    }
+
     QDomElement toXml(QDomDocument& doc, QString const& name) const;
 
     /**
@@ -167,6 +184,10 @@ private:
     QString m_TiffCompression;
 
     bool m_blackOnWhite;
+
+    double m_grayscaleChroma;
+
+    bool m_grayscaleDetected;
 };
 
 } // namespace output

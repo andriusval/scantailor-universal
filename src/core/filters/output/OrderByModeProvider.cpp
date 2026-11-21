@@ -55,8 +55,8 @@ OrderByModeProvider::precedes(
     if (cgoptsl.normalizeIllumination() != cgoptsr.normalizeIllumination()) {
         return cgoptsl.normalizeIllumination() < cgoptsr.normalizeIllumination();
     }
-    if (cgoptsl.convertToGrayscale() != cgoptsr.convertToGrayscale()) {
-        return cgoptsl.convertToGrayscale() < cgoptsr.convertToGrayscale();
+    if (cgoptsl.grayscaleFirst() != cgoptsr.grayscaleFirst()) {
+        return cgoptsl.grayscaleFirst() < cgoptsr.grayscaleFirst();
     }
 
     if (lclr_param.blackWhiteOptions().thresholdAdjustment() == rclr_param.blackWhiteOptions().thresholdAdjustment()) {

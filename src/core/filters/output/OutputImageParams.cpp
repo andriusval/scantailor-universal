@@ -46,7 +46,9 @@ OutputImageParams::OutputImageParams(QSize const& out_image_size, QRect const& c
         m_dewarpingMode(dewarping_mode),
         m_despeckleLevel(despeckle_level),
         m_TiffCompression(TiffCompression),
-        m_blackOnWhite(true)
+        m_blackOnWhite(true),
+        m_grayscaleChroma(-1.0),
+        m_grayscaleDetected(false)
 {
     // For historical reasons, we disregard post-cropping and post-scaling here.
     xform.setPostCropArea(QPolygonF()); // Resets post-scale as well.
@@ -63,7 +65,9 @@ OutputImageParams::OutputImageParams(QDomElement const& el)
         m_dewarpingMode(el.attribute("dewarpingMode")),
         m_despeckleLevel(despeckleLevelFromString(el.attribute("despeckleLevel"))),
         m_TiffCompression(el.attribute("tiff-compression")),
-        m_blackOnWhite(el.attribute("blackOnWhite", "1") == "1")
+        m_blackOnWhite(el.attribute("blackOnWhite", "1") == "1"),
+        m_grayscaleChroma(el.attribute("grayscaleChroma", "-1").toDouble()),
+        m_grayscaleDetected(el.attribute("grayscaleDetected", "0") == "1")
 {
 }
 
@@ -85,6 +89,11 @@ OutputImageParams::toXml(QDomDocument& doc, QString const& name) const
     el.setAttribute("tiff-compression", m_TiffCompression);
     if (!m_blackOnWhite) {
         el.setAttribute("blackOnWhite", "0");
+    }
+    // Only pages with the automatic detection get these attributes, so that other projects stay the same.
+    if (m_grayscaleChroma >= 0.0) {
+        el.setAttribute("grayscaleChroma", QString::number(m_grayscaleChroma, 'f', 2));
+        el.setAttribute("grayscaleDetected", m_grayscaleDetected ? "1" : "0");
     }
 
     return el;
@@ -114,6 +123,11 @@ OutputImageParams::matches(OutputImageParams const& other) const
     }
 
     if (m_blackOnWhite != other.m_blackOnWhite) {
+        return false;
+    }
+
+    // The detection result decides the output, so a different result needs a new output.
+    if (m_grayscaleDetected != other.m_grayscaleDetected) {
         return false;
     }
 

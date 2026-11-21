@@ -55,6 +55,7 @@
 #include "ThumbnailPixmapCache.h"
 #include "DebugImages.h"
 #include "OutputGenerator.h"
+#include "GrayscaleDetector.h"
 #include "TiffWriter.h"
 #include "ImageLoader.h"
 #include "ErrorWidget.h"
@@ -222,13 +223,26 @@ Task::process(
 
     RenderParams render_params(params.colorParams());
 
-    // A gray original has nothing to convert, so it keeps its ICC profile as before.
+    // The output generator gets only ON or OFF, because the automatic detection happens here.
     ColorParams generator_color_params(params.colorParams());
-    if (render_params.convertToGrayscale() && data.origImage().allGray()) {
-        ColorGrayscaleOptions cgo(generator_color_params.colorGrayscaleOptions());
-        cgo.setConvertToGrayscale(false);
-        generator_color_params.setColorGrayscaleOptions(cgo);
+    ColorGrayscaleOptions generator_cgo(generator_color_params.colorGrayscaleOptions());
+    double grayscale_chroma = -1.0;
+    bool grayscale_detected = false;
+    if (params.colorParams().colorMode() != ColorParams::BLACK_AND_WHITE
+            && generator_cgo.grayscaleFirst() == GRAYSCALE_FIRST_AUTO) {
+        QRectF area(content_rect_phys.boundingRect());
+        if (area.isEmpty()) {
+            area = data.xform().transformBack().map(data.xform().resultingPreCropArea()).boundingRect();
+        }
+        grayscale_chroma = GrayscaleDetector::measureChroma(data.origImage(), area);
+        grayscale_detected = GrayscaleDetector::isGrayscale(grayscale_chroma);
+        generator_cgo.setGrayscaleFirst(grayscale_detected ? GRAYSCALE_FIRST_ON : GRAYSCALE_FIRST_OFF);
     }
+    // A gray original has nothing to convert, so it keeps its ICC profile as before.
+    if (generator_cgo.grayscaleFirst() == GRAYSCALE_FIRST_ON && data.origImage().allGray()) {
+        generator_cgo.setGrayscaleFirst(GRAYSCALE_FIRST_OFF);
+    }
+    generator_color_params.setColorGrayscaleOptions(generator_cgo);
     bool const drop_icc_profile = RenderParams(generator_color_params).convertToGrayscale();
 
     QString const out_file_path(m_outFileNameGen.filePathFor(m_pageId));
@@ -278,6 +292,7 @@ Task::process(
                     GlobalStaticSettings::m_tiff_compr_method_bw :
                     GlobalStaticSettings::m_tiff_compr_method_color);
     new_output_image_params.setBlackOnWhite(params.isBlackOnWhite());
+    new_output_image_params.setGrayscaleDetection(grayscale_chroma, grayscale_detected);
 
 //begin of modified by monday2000
 //Quadro_Zoner

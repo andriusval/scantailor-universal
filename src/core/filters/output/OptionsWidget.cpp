@@ -22,6 +22,8 @@
 #include "ChangeDewarpingWidget.h"
 #include "ApplyToDialog.h"
 #include "Settings.h"
+#include "OutputParams.h"
+#include <memory>
 #include "Params.h"
 #include "dewarping/DistortionModel.h"
 #include "DespeckleLevel.h"
@@ -76,6 +78,9 @@ OptionsWidget::OptionsWidget(
     fillingColorSelector->addItem(tr("Background"), FILL_BACKGROUND);
     fillingColorSelector->addItem(tr("White"), FILL_WHITE);
     fillingColorSelector->addItem(tr("Black"), FILL_BLACK);
+    grayscaleFirstSelector->addItem(tr("Off"), GRAYSCALE_FIRST_OFF);
+    grayscaleFirstSelector->addItem(tr("On"), GRAYSCALE_FIRST_ON);
+    grayscaleFirstSelector->addItem(tr("Auto"), GRAYSCALE_FIRST_AUTO);
 
     setDespeckleLevel(DESPECKLE_NORMAL);
 
@@ -122,8 +127,8 @@ OptionsWidget::OptionsWidget(
         this, SLOT(fillOffcutToggled(bool))
     );
     connect(
-        grayscaleFirstCB, SIGNAL(clicked(bool)),
-        this, SLOT(grayscaleFirstToggled(bool))
+        grayscaleFirstSelector, SIGNAL(activated(int)),
+        this, SLOT(grayscaleFirstChanged(int))
     );
     connect(
         fillingColorSelector, SIGNAL(activated(int)),
@@ -238,6 +243,28 @@ OptionsWidget::postUpdateUI()
 {
     // The output task can change this value with the automatic detection.
     blackOnWhiteCB->setChecked(m_ptrSettings->getParams(m_pageId).isBlackOnWhite());
+    updateGrayscaleFirstAutoDisplay();
+}
+
+void
+OptionsWidget::updateGrayscaleFirstAutoDisplay()
+{
+    // The output task writes the detection result into the output parameters after it processes the page.
+    bool const is_auto = m_currentMode != ColorParams::BLACK_AND_WHITE
+                         && m_colorParams.colorGrayscaleOptions().grayscaleFirst() == GRAYSCALE_FIRST_AUTO;
+    grayscaleFirstAutoLabel->setVisible(is_auto);
+    if (!is_auto) {
+        return;
+    }
+    std::unique_ptr<OutputParams> const output_params(m_ptrSettings->getOutputParams(m_pageId));
+    double const chroma = output_params ? output_params->outputImageParams().grayscaleChroma() : -1.0;
+    if (chroma < 0.0) {
+        grayscaleFirstAutoLabel->setText(tr("Auto: not measured yet"));
+    } else if (output_params->outputImageParams().grayscaleDetected()) {
+        grayscaleFirstAutoLabel->setText(tr("Auto: grayscale (chroma %1)").arg(chroma, 0, 'f', 1));
+    } else {
+        grayscaleFirstAutoLabel->setText(tr("Auto: color (chroma %1)").arg(chroma, 0, 'f', 1));
+    }
 }
 
 void
@@ -366,12 +393,13 @@ OptionsWidget::fillOffcutToggled(bool const checked)
 }
 
 void
-OptionsWidget::grayscaleFirstToggled(bool const checked)
+OptionsWidget::grayscaleFirstChanged(int const idx)
 {
     ColorGrayscaleOptions opt(m_colorParams.colorGrayscaleOptions());
-    opt.setConvertToGrayscale(checked);
+    opt.setGrayscaleFirst(static_cast<GrayscaleFirst>(grayscaleFirstSelector->itemData(idx).toInt()));
     m_colorParams.setColorGrayscaleOptions(opt);
     m_ptrSettings->setColorParams(m_pageId, m_colorParams, ColorParamsApplyFilter::CopyMode);
+    updateGrayscaleFirstAutoDisplay();
     emit reloadRequested();
 }
 
@@ -683,7 +711,8 @@ OptionsWidget::updateColorsDisplay()
         whiteMarginsCB->setEnabled(m_currentMode != ColorParams::MIXED); // Mixed must have margins
         equalizeIlluminationCB->setChecked(opt.normalizeIllumination());
         equalizeIlluminationCB->setEnabled(opt.whiteMargins());
-        grayscaleFirstCB->setChecked(opt.convertToGrayscale());
+        grayscaleFirstSelector->setCurrentIndex(grayscaleFirstSelector->findData(opt.grayscaleFirst()));
+        updateGrayscaleFirstAutoDisplay();
         fillOffcutCB->setChecked(opt.fillOffcut());
         // White margins already fill the offcut, so the option has no effect there.
         fillOffcutCB->setEnabled(!opt.whiteMargins());

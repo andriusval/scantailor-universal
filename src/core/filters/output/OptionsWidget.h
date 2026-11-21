@@ -93,7 +93,7 @@ private slots:
 
     void fillOffcutToggled(bool checked);
 
-    void grayscaleFirstToggled(bool checked);
+    void grayscaleFirstChanged(int idx);
 
     void fillingColorChanged(int idx);
 
@@ -184,6 +184,8 @@ private:
     void updateDpiDisplay();
 
     void updateColorsDisplay();
+
+    void updateGrayscaleFirstAutoDisplay();
 
     void updateLayersDisplay();
 

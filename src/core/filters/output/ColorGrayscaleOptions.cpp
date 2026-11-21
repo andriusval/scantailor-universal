@@ -34,7 +34,7 @@ ColorGrayscaleOptions::ColorGrayscaleOptions(QDomElement const& el, bool mixed_m
     m_foregroundLayerEnabled = el.attribute("foregroundLayer", "0") == "1";
     m_fillOffcut = el.attribute("fillOffcut", "0") == "1";
     m_fillingColor = parseFillingColor(el.attribute("fillingColor"));
-    m_convertToGrayscale = el.attribute("convertToGrayscale", "0") == "1";
+    m_grayscaleFirst = parseGrayscaleFirst(el.attribute("convertToGrayscale"));
 }
 
 QDomElement
@@ -49,8 +49,8 @@ ColorGrayscaleOptions::toXml(QDomDocument& doc, QString const& name) const
     el.setAttribute("fillOffcut", m_fillOffcut ? "1" : "0");
     el.setAttribute("fillingColor", formatFillingColor(m_fillingColor));
     // Write the attribute only for a true value, so that projects without the option stay the same.
-    if (m_convertToGrayscale) {
-        el.setAttribute("convertToGrayscale", "1");
+    if (m_grayscaleFirst != GRAYSCALE_FIRST_OFF) {
+        el.setAttribute("convertToGrayscale", formatGrayscaleFirst(m_grayscaleFirst));
     }
     return el;
 }
@@ -78,6 +78,31 @@ ColorGrayscaleOptions::formatFillingColor(FillingColor const color)
         break;
     }
     return QStringLiteral("background");
+}
+
+GrayscaleFirst
+ColorGrayscaleOptions::parseGrayscaleFirst(QString const& str)
+{
+    if (str == "1") {
+        return GRAYSCALE_FIRST_ON;
+    } else if (str == "auto") {
+        return GRAYSCALE_FIRST_AUTO;
+    }
+    return GRAYSCALE_FIRST_OFF;
+}
+
+QString
+ColorGrayscaleOptions::formatGrayscaleFirst(GrayscaleFirst const mode)
+{
+    switch (mode) {
+    case GRAYSCALE_FIRST_ON:
+        return QStringLiteral("1");
+    case GRAYSCALE_FIRST_AUTO:
+        return QStringLiteral("auto");
+    case GRAYSCALE_FIRST_OFF:
+        break;
+    }
+    return QStringLiteral("0");
 }
 
 bool
@@ -111,7 +136,7 @@ ColorGrayscaleOptions::operator==(ColorGrayscaleOptions const& other) const
         return false;
     }
 
-    if (m_convertToGrayscale != other.m_convertToGrayscale) {
+    if (m_grayscaleFirst != other.m_grayscaleFirst) {
         return false;
     }
 
