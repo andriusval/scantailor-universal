@@ -71,6 +71,7 @@
 #include "filters/page_layout/CacheDrivenTask.h"
 #include "filters/output/Settings.h"
 #include "filters/output/Params.h"
+#include "filters/output/OutputParams.h"
 #include "filters/output/Filter.h"
 #include "filters/output/Task.h"
 #include "filters/output/CacheDrivenTask.h"
@@ -937,6 +938,16 @@ ConsoleBatch::pageResult(int idx, PageId const& page_id) const
             res["color_mode"] = QStringLiteral("mixed");
             break;
         }
+        output::GrayscaleFirst const grayscale_first = params.colorParams().colorGrayscaleOptions().grayscaleFirst();
+        res["grayscale_first"] = grayscale_first == output::GRAYSCALE_FIRST_ON ? QStringLiteral("on")
+                                 : grayscale_first == output::GRAYSCALE_FIRST_AUTO ? QStringLiteral("auto")
+                                 : QStringLiteral("off");
+        std::unique_ptr<output::OutputParams> const output_params(
+            m_ptrStages->outputFilter()->getSettings()->getOutputParams(page_id));
+        if (output_params && output_params->outputImageParams().grayscaleChroma() >= 0.0) {
+            res["grayscale_detected"] = output_params->outputImageParams().grayscaleDetected();
+            res["chroma"] = qRound(output_params->outputImageParams().grayscaleChroma() * 10.0) / 10.0;
+        }
     }
     return res;
 }
@@ -1196,12 +1207,19 @@ ConsoleBatch::setupOutput(std::set<PageId> allPages)
 
         if (cli.hasGrayscaleFirst()) {
             QString const value = cli.getGrayscaleFirst();
-            // A typo must not turn the option on without a message.
-            if (value != "true" && value != "1" && value != "false" && value != "0") {
-                throw std::runtime_error("--grayscale-first must be true, false, 1 or 0.");
+            output::GrayscaleFirst mode;
+            if (value == "true" || value == "1") {
+                mode = output::GRAYSCALE_FIRST_ON;
+            } else if (value == "false" || value == "0") {
+                mode = output::GRAYSCALE_FIRST_OFF;
+            } else if (value == "auto") {
+                mode = output::GRAYSCALE_FIRST_AUTO;
+            } else {
+                // A typo must not change the option without a message.
+                throw std::runtime_error("--grayscale-first must be true, false, 1, 0 or auto.");
             }
             output::ColorGrayscaleOptions cgo(colorParams.colorGrayscaleOptions());
-            cgo.setConvertToGrayscale(value == "true" || value == "1");
+            cgo.setGrayscaleFirst(mode);
             colorParams.setColorGrayscaleOptions(cgo);
         }
 
