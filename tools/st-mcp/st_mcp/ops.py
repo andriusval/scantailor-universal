@@ -20,6 +20,7 @@ from pathlib import Path
 from PIL import Image
 
 from . import checks
+from .masks import cli_masks_available, dump_masks
 from .preview import contact_sheet, render_image, render_page
 from .project import Project
 
@@ -948,6 +949,8 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
     """Heuristic checks with evidence. kind=content: ink outside the box above/below (missed page numbers,
     headers) and left/right (cut-off text, marginalia), isolated junk at the box's top/bottom lines and
     left/right sides, empty boxes on pages with ink, and where page numbers sit.
+    With a CLI that has --dump-masks, kind=content uses the ink mask of ScanTailor's filter 4
+    (ink_source=scantailor), else st-mcp's own threshold (ink_source=st-mcp).
     kind=pictures: pages with illustrations: picture_fraction (grayscale/halftone areas) and
     line_art_fraction (dense black-ink drawings); each flagged page has `likely` and must be previewed."""
     p = _proj(project)
@@ -962,11 +965,17 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
                         "white_margins=true, equalize_illumination=true; black-and-white line art -> keep bw 600"}
     if kind != "content":
         raise ValueError("kind must be content|pictures")
-    res = [checks.check_page(p, i) for i in ids]
+    masks = {}
+    if cli_masks_available():
+        try:
+            masks = dump_masks(p, [i for i in ids if p.content(i).get("processed")])
+        except RuntimeError:
+            masks = {}  # The checks below then use st-mcp's own ink mask, as with an older CLI.
+    res = [checks.check_page(p, i, checks.ink_from_masks(p, i, masks[i]) if i in masks else None) for i in ids]
     flagged = [r for r in res if r.get("findings")]
     pos = [r.get("page_number_in_box") for r in res if r.get("page_number_in_box")]
     summary = {k: pos.count(k) for k in set(pos)}
-    return {"checked": len(res), "flagged": flagged,
+    return {"checked": len(res), "flagged": flagged, "ink_source": "scantailor" if masks else "st-mcp",
             "page_number_position_votes": summary,
             "suggested_align_v": max(summary, key=summary.get) if summary else None}
 

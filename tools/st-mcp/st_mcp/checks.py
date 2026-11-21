@@ -59,6 +59,15 @@ def _ink_mask(project: Project, page_id: str) -> tuple[np.ndarray, float]:
     return ink, k
 
 
+def ink_from_masks(project: Project, page_id: str, masks) -> tuple[np.ndarray, float]:
+    # Same grid as _ink_mask(), but the ink is the ContentMask of ScanTailor (CLI --dump-masks).
+    from .masks import mask_on_page_grid
+    pt = project.transform(page_id)
+    k = min(1.0, ANALYSIS_PX / max(pt.width, pt.height))
+    size = (max(1, round(pt.width * k)), max(1, round(pt.height * k)))
+    return mask_on_page_grid(masks.content, masks.page_to_mask, k, size), k
+
+
 def _rows_with_ink(ink: np.ndarray, x0: int, x1: int, y0: int, y1: int, min_frac: float = 0.01,
                    min_px: int = 2) -> list[int]:
     if y1 <= y0 or x1 <= x0:
@@ -120,13 +129,14 @@ def _group(rows: list[int], gap: int = 3) -> list[tuple[int, int]]:
     return out
 
 
-def check_page(project: Project, page_id: str) -> dict:
-    """Ink outside the content box (missed page numbers / headers) and junk near box edges."""
+def check_page(project: Project, page_id: str, ink: tuple[np.ndarray, float] | None = None) -> dict:
+    """Ink outside the content box (missed page numbers / headers) and junk near box edges.
+    ink: a ready (mask, k) pair, for example from ink_from_masks(); else st-mcp thresholds the page itself."""
     pg = project.page(page_id)
     c = project.content(pg.id)
     if not c.get("processed"):
         return {"page_id": pg.id, "label": pg.label, "error": "select-content not run"}
-    ink, k = _ink_mask(project, pg.id)
+    ink, k = ink if ink is not None else _ink_mask(project, pg.id)
     H, W = ink.shape
     ex, ey = int(W * EDGE_IGNORE), int(H * EDGE_IGNORE)
     findings = []
