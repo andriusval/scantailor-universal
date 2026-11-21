@@ -88,7 +88,10 @@ GUI.
      equalize_illumination=true, grayscale_first=<see below>)` and
      `pages_set_layout(<picture pages>, margin_left=0, margin_right=0)`.
      With a CLI that has `--deskew-pictures`, the tool measures the angle
-     from the picture edges in C++.
+     from the picture edges in C++. A CLI of this fork from 2026-11-22 does
+     this at stage 3 by default, so new projects get the picture angle
+     already. The tool stays useful for pages that have an angle already
+     and for older builds.
    - `grayscale_first` is the GUI option "Convert to grayscale first". The
      scan becomes grayscale before all other output steps. Thus the paper
      tint of a color JPEG does not change the margins, the illumination or
@@ -295,6 +298,15 @@ If the CLI cannot write the masks of a page, it sends the `--json-progress` even
     `output_rotation_detected` (null without a decision), `confidence` (0–1)
     and `reason`. `--detect-orientation=<list file>` prints one JSON line per
     image and changes nothing.
+  - picture deskew (2026-11-22): on a page that is mostly a photo or a plate,
+    stage 3 finds the auto angle from the straight picture edges. It is on by
+    default (`--deskew-pictures`); `--deskew-pictures=false` (or `=0`) turns it
+    off. Pages that have deskew parameters keep their angle. The GUI setting
+    is "Deskew picture pages by the picture edges" (Settings, Deskew).
+    `deskew/page@pictureEdges="0|1"` keeps the choice of one page. A page
+    without the attribute follows the global setting.
+    `deskew/page/params@estimator` (`text`, `picture` or `none`) tells which
+    estimator gave the auto angle.
 - Default settings do not fit this book: scans are rotated 90° (needs
   `orientation=right, layout=2`). Without a preview the agent would not notice.
 - The CLI reads DPI from the JPGs; `--dpi` only matters when it is missing.

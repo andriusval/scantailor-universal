@@ -264,6 +264,9 @@ static const char* _key_deskew_controls_color = "deskew/controls_color";
 static const char* _key_deskew_controls_color_def = "#5A0000ff";
 static const char* _key_deskew_deviant_enabled = "deskew_deviant/enabled";
 static const bool _key_deskew_deviant_enabled_def = false;
+static const char* _key_deskew_picture_edges = "deskew/picture_edges";
+// The GUI setting and the CLI option --deskew-pictures share this default, so an upstream build changes only this line.
+static const bool _key_deskew_picture_edges_def = true;
 static const char* _key_select_content_deviant_enabled = "select_content_deviant/enabled";
 static const bool _key_select_content_deviant_enabled_def = false;
 static const char* _key_margins_deviant_enabled = "margins_deviant/enabled";

@@ -1675,6 +1675,19 @@ Images can be rotated by dragging the round handles at the edges. You can also e
             </widget>
            </item>
            <item>
+            <widget class="QCheckBox" name="cbDeskewPictureEdges">
+             <property name="toolTip">
+              <string>On a page that is mostly a photo or a plate, the automatic angle comes from the straight edges of the picture, not from the text lines. Other pages keep the angle from the text lines. Pages that have an angle already keep it.</string>
+             </property>
+             <property name="text">
+              <string>Deskew picture pages by the picture edges</string>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
             <widget class="QWidget" name="gbColorDeskew" native="true">
              <layout class="QHBoxLayout" name="horizontalLayout_19">
               <property name="leftMargin">

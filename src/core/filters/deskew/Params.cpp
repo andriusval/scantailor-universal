@@ -39,7 +39,8 @@ Params::Params(QDomElement const& deskew_el)
         m_deskewAngleDeg(deskew_el.attribute("angle").toDouble()),
         m_deps(deskew_el.namedItem("dependencies").toElement()),
         m_mode(deskew_el.attribute("mode") == "manual" ? MODE_MANUAL : MODE_AUTO),
-        m_deviation(deskew_el.attribute("deviation").toDouble())
+        m_deviation(deskew_el.attribute("deviation").toDouble()),
+        m_estimator(deskew_el.attribute("estimator"))
 {
     CommandLine const& cli = CommandLine::get();
 
@@ -59,6 +60,9 @@ Params::toXml(QDomDocument& doc, QString const& name) const
     el.setAttribute("mode", m_mode == MODE_AUTO ? "auto" : "manual");
     el.setAttribute("angle", Utils::doubleToString(m_deskewAngleDeg));
     el.setAttribute("deviation", m_deviation);
+    if (!m_estimator.isEmpty()) {
+        el.setAttribute("estimator", m_estimator);
+    }
     el.appendChild(m_deps.toXml(doc, "dependencies"));
     return el;
 }

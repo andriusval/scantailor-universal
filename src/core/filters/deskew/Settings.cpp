@@ -22,6 +22,8 @@
 #include "AbstractRelinker.h"
 #include <QMutexLocker>
 #include "settings/ini_keys.h"
+#include "settings/globalstaticsettings.h"
+#include "CommandLine.h"
 #include <cmath>
 #include <iostream>
 
@@ -46,6 +48,7 @@ Settings::clear()
     m_perPageParams.clear();
     m_perPageBlackOnWhite.clear();
     m_perPageSkewEstimator.clear();
+    m_perPagePictureEdges.clear();
 }
 
 void
@@ -71,6 +74,15 @@ Settings::performRelinking(AbstractRelinker const& relinker)
         new_black_on_white.insert(std::map<PageId, bool>::value_type(new_page_id, kv.second));
     }
     m_perPageBlackOnWhite.swap(new_black_on_white);
+
+    std::map<PageId, bool> new_picture_edges;
+    for (std::map<PageId, bool>::value_type const& kv : m_perPagePictureEdges) {
+        RelinkablePath const old_path(kv.first.imageId().filePath(), RelinkablePath::File);
+        PageId new_page_id(kv.first);
+        new_page_id.imageId().setFilePath(relinker.substitutionPathFor(old_path));
+        new_picture_edges.insert(std::map<PageId, bool>::value_type(new_page_id, kv.second));
+    }
+    m_perPagePictureEdges.swap(new_picture_edges);
     // The estimator names belong to the last run only, so the new paths do not need them.
     m_perPageSkewEstimator.clear();
 }
@@ -172,6 +184,37 @@ Settings::skewEstimator(PageId const& page_id) const
     QMutexLocker const locker(&m_mutex);
     std::map<PageId, QString>::const_iterator const it(m_perPageSkewEstimator.find(page_id));
     return it == m_perPageSkewEstimator.end() ? QString() : it->second;
+}
+
+void
+Settings::setPictureEdges(PageId const& page_id, bool const use_picture_edges)
+{
+    QMutexLocker const locker(&m_mutex);
+    m_perPagePictureEdges[page_id] = use_picture_edges;
+}
+
+bool
+Settings::getPictureEdges(PageId const& page_id, bool* use_picture_edges) const
+{
+    QMutexLocker const locker(&m_mutex);
+    std::map<PageId, bool>::const_iterator const it(m_perPagePictureEdges.find(page_id));
+    if (it == m_perPagePictureEdges.end()) {
+        return false;
+    }
+    *use_picture_edges = it->second;
+    return true;
+}
+
+bool
+Settings::usePictureEdges(PageId const& page_id) const
+{
+    bool use_picture_edges = false;
+    if (getPictureEdges(page_id, &use_picture_edges)) {
+        return use_picture_edges;
+    }
+    CommandLine const& cli = CommandLine::get();
+    // The CLI does not read the GUI settings file, so its global value is the default of the setting.
+    return cli.hasDeskewPictures() ? cli.isDeskewPictures() : GlobalStaticSettings::m_deskewPictureEdges;
 }
 
 } // namespace deskew

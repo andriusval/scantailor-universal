@@ -160,6 +160,10 @@ Filter::loadSettings(ProjectReader const& reader, QDomElement const& filters_el)
             continue;
         }
 
+        if (el.hasAttribute("pictureEdges")) {
+            m_ptrSettings->setPictureEdges(page_id, el.attribute("pictureEdges") == "1");
+        }
+
         QDomElement const image_params_el(el.namedItem("image-params").toElement());
         if (!image_params_el.isNull() && image_params_el.hasAttribute("blackOnWhite")) {
             m_ptrSettings->setBlackOnWhite(page_id, image_params_el.attribute("blackOnWhite") == "1");
@@ -183,12 +187,17 @@ Filter::writePageSettings(
     std::unique_ptr<Params> const params(m_ptrSettings->getPageParams(page_id));
     bool black_on_white = true;
     bool const has_black_on_white = m_ptrSettings->getBlackOnWhite(page_id, &black_on_white);
-    if (!params.get() && !has_black_on_white) {
+    bool picture_edges = false;
+    bool const has_picture_edges = m_ptrSettings->getPictureEdges(page_id, &picture_edges);
+    if (!params.get() && !has_black_on_white && !has_picture_edges) {
         return;
     }
 
     QDomElement page_el(doc.createElement("page"));
     page_el.setAttribute("id", numeric_id);
+    if (has_picture_edges) {
+        page_el.setAttribute("pictureEdges", picture_edges ? "1" : "0");
+    }
     if (params.get()) {
         page_el.appendChild(params->toXml(doc, "params"));
     }

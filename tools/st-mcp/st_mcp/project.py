@@ -395,6 +395,12 @@ class Project:
         p.set("mode", "manual")
         p.set("angle", repr(float(angle)))
 
+    def picture_edges_off(self, page_id: str) -> bool:
+        # The GUI check box "Use picture edges" writes pictureEdges="0" when a page must keep the text-line angle.
+        f = self.filter_el("deskew")
+        el = f.find(f"./page[@id='{page_id}']") if f is not None else None
+        return el is not None and el.get("pictureEdges") == "0"
+
     def clear_deskew(self, page_id: str) -> None:
         # Without stored parameters, the next stage 3 run finds the angle again.
         f = self.filter_el("deskew")

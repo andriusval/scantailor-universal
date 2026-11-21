@@ -57,10 +57,15 @@ public:
         void setMode(AutoManualMode mode);
 
         AutoManualMode mode() const;
+
+        void setEstimator(QString const& estimator);
+
+        QString const& estimator() const;
     private:
         double m_effDeskewAngle;
         Dependencies m_deps;
         AutoManualMode m_mode;
+        QString m_estimator;
     };
 
     OptionsWidget(IntrusivePtr<Settings> const& settings,
@@ -82,8 +87,11 @@ private slots:
     void showDeskewDialog();
     void appliedTo(std::set<PageId> const& pages);
     void appliedToAllPages(std::set<PageId> const& pages);
+    void pictureEdgesToggled(bool checked);
 private:
     void updateModeIndication(AutoManualMode mode);
+
+    void updateEstimatorIndication();
 
     void setSpinBoxUnknownState();
 
@@ -102,6 +110,7 @@ private:
     UiData m_uiData;
     int m_ignoreAutoManualToggle;
     int m_ignoreSpinBoxChanges;
+    int m_ignorePictureEdgesToggle;
 
     PageSelectionAccessor m_pageSelectionAccessor;
 };

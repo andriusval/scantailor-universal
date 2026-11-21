@@ -76,12 +76,24 @@ public:
         return m_mode;
     }
 
+    // The name is "text", "picture" or "none" for an auto angle, and old projects have an empty name.
+    QString const& estimator() const
+    {
+        return m_estimator;
+    }
+
+    void setEstimator(QString const& estimator)
+    {
+        m_estimator = estimator;
+    }
+
     QDomElement toXml(QDomDocument& doc, QString const& name) const;
 private:
     double m_deskewAngleDeg;
     Dependencies m_deps;
     AutoManualMode m_mode;
     double m_deviation;
+    QString m_estimator;
 };
 
 } // namespace deskew
