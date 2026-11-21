@@ -19,6 +19,8 @@ Suggested order: 1 and 4, then 2, then 5 and 6, and 7 to 9 later.
    Find out if the CLI skips pages with no parameter change.
    The option `--disable-check-output` exists, but its effect in the CLI is not known.
    If the CLI does not skip such pages, add that check.
+   **Done:** the CLI wrote an empty TIFF compression name, thus the output stage processed all pages again each time.
+   Now the CLI skips pages that did not change.
 
 ## Reliability
 
