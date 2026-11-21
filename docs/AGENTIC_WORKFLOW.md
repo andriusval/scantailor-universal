@@ -129,7 +129,7 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `project_create(images_dir, project, output_dir?, dpi=300, force_dpi=false)` | Sukuria `.ScanTailor`, sutvarko DPI |
 | `project_info(project)` | Puslapių skaičius, DPI, pasukimai, etapų progresas, vykdomas darbas |
 | `image_preview(project, images?)` | Originalūs skenai |
-| `run_stages(project, start, end, orientation?, layout?, layout_direction?, dpi?, content_detection?, wait_s?, pages?)` | Paleidžia filtrus fone; `pages` — tik šie puslapiai (CLI `--pages`); eiga ir puslapių klaidos iš CLI `--json-progress` |
+| `run_stages(project, start, end, orientation?, layout?, layout_direction?, dpi?, content_detection?, wait_s?, pages?)` | Paleidžia filtrus fone; `pages` — tik šie puslapiai (CLI `--pages`); eiga ir puslapių klaidos iš CLI `--json-progress`; keli puslapiai apdorojami vienu metu (CLI `--threads`, žr. „Greitis“) |
 | `job_status(job_id, wait_s?)` | Progresas / rezultatas |
 | `pages_list(project, sort_by, descending, limit, offset)` | Lentelė: id, label, content dydis + z-score, paraštės, lygiavimas, match size, spalvų režimas, DPI, vėliavos (`outlier_width`, `outlier_height`, `empty_content`, `cover_candidate`) |
 | `page_preview(project, page, engine?)` / `pages_preview(project, pages, engine?)` | Puslapis(-iai) su content box overlay; `engine="cli"` — piešia pats ScanTailor (CLI `--render-preview`), kaip GUI |
@@ -163,6 +163,12 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 - Greitis: su `OMP_NUM_THREADS=1` (st-mcp numatytasis) visa knyga (191 skenas,
   380 puslapių, visi etapai) — ~6 min; ScanTailor numatytas OpenMP
   daugiagijis režimas buvo ~9 kartus lėtesnis (54 min) ir nedeterministinis.
+- CLI `--threads=<N>` apdoroja N vieno etapo puslapių vienu metu; kitas etapas
+  prasideda tik po visų puslapių. Kiekvienas puslapis naudoja vieną OpenMP giją,
+  todėl rezultatas toks pat kaip su viena gija (TIFF baitas į baitą).
+  36 skenai, 72 puslapiai, visi etapai: N=1 ~100 s, N=4 ~38 s, N=8 ~25 s,
+  N=14 ~22 s. Kiekvienam puslapiui reikia ~170 MB atminties.
+  st-mcp perduoda `--threads` su pusės branduolių skaičiumi (`ST_CLI_THREADS`).
 
 ## Įgyvendinimo planas
 

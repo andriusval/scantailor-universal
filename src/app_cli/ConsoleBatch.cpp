@@ -89,8 +89,20 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMutex>
+#include <QMutexLocker>
+#include <QAtomicInt>
+#include <QThreadPool>
+#include <QRunnable>
 #include <cstdio>
 #include <stdexcept>
+#include <algorithm>
+#include <exception>
+#include <functional>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #include "MultipleTargetsSupport.h"
 
@@ -227,6 +239,40 @@ QImage renderPreview(
 
     return preview;
 }
+
+// One lock for all console text, so that the lines of parallel pages do not mix.
+QMutex&
+consoleMutex()
+{
+    static QMutex mutex;
+    return mutex;
+}
+
+void
+useOneOpenMpThread()
+{
+#ifdef _OPENMP
+    // The OpenMP thread count is a value of each thread, thus each worker thread must set it.
+    omp_set_num_threads(1);
+#endif
+}
+
+class FunctionRunnable : public QRunnable
+{
+public:
+    explicit FunctionRunnable(std::function<void()> const& function)
+        :   m_function(function)
+    {
+        setAutoDelete(true);
+    }
+
+    virtual void run()
+    {
+        m_function();
+    }
+private:
+    std::function<void()> m_function;
+};
 
 } // namespace
 
@@ -395,6 +441,135 @@ ConsoleBatch::checkImageFiles()
     }
 }
 
+bool
+ConsoleBatch::processPage(
+    int const stage, PageInfo const& page, int const index, int const num_pages,
+    IntrusivePtr<LoadFileTask> const& task)
+{
+    CommandLine const& cli = CommandLine::get();
+    bool const json = cli.isJsonProgress();
+    if (cli.isVerbose()) {
+        QMutexLocker const locker(&consoleMutex());
+        std::cout << "\tProcessing: " << page.imageId().filePath().toLocal8Bit().constData() << "\n";
+    }
+
+    QJsonObject ev;
+    if (json) {
+        ev["stage"] = stage + 1;
+        ev["name"] = stageName(stage);
+        ev["index"] = index;
+        ev["pages"] = num_pages;
+        ev["image"] = QFileInfo(page.imageId().filePath()).fileName();
+        if (page.imageId().isMultiPageFile()) {
+            ev["image_page"] = page.imageId().page();
+        }
+        ev["side"] = page.id().subPageAsString();
+    }
+
+    try {
+        (*task)();
+    } catch (std::exception const& e) {
+        {
+            QMutexLocker const locker(&consoleMutex());
+            ++m_pageErrors;
+        }
+        if (json) {
+            ev["event"] = QStringLiteral("page_error");
+            ev["error"] = QString::fromLocal8Bit(e.what());
+            printJsonLine(ev);
+        }
+        throw;
+    }
+
+    if (task->loadFailed() && !isResourcePath(page.imageId().filePath())) {
+        {
+            QMutexLocker const locker(&consoleMutex());
+            std::cerr << "Error: The image cannot be loaded: "
+                      << QDir::toNativeSeparators(QFileInfo(page.imageId().filePath()).absoluteFilePath()).toLocal8Bit().constData();
+            if (page.imageId().isMultiPageFile()) {
+                std::cerr << " (page " << page.imageId().page() << ")";
+            }
+            std::cerr << std::endl;
+            ++m_pageErrors;
+        }
+        if (json) {
+            ev["event"] = QStringLiteral("page_error");
+            ev["error"] = QStringLiteral("cannot load the image");
+            printJsonLine(ev);
+        }
+        return false;
+    }
+
+    if (json) {
+        ev["event"] = QStringLiteral("page_done");
+        QJsonObject const res(pageResult(stage, page.id()));
+        for (QJsonObject::const_iterator it = res.constBegin(); it != res.constEnd(); ++it) {
+            ev.insert(it.key(), it.value());
+        }
+        printJsonLine(ev);
+    }
+    return true;
+}
+
+int
+ConsoleBatch::processPagesInParallel(int const stage, std::vector<PageInfo> const& pages, int const num_threads)
+{
+    // The main thread makes all tasks, because createCompositeTask() changes members.
+    std::vector<IntrusivePtr<LoadFileTask> > tasks;
+    tasks.reserve(pages.size());
+    for (PageInfo const& page : pages) {
+        tasks.push_back(createCompositeTask(page, stage));
+    }
+
+    int const num_pages = int(pages.size());
+    QAtomicInt next_page(0);
+    QAtomicInt failed_pages(0);
+    QAtomicInt stop(0);
+    QMutex error_mutex;
+    int error_page = num_pages;
+    std::exception_ptr error;
+
+    // Each worker takes the next page in page order, so that the pages start in the same order as with one thread.
+    std::function<void()> const worker = [&]() {
+        useOneOpenMpThread();
+        for (;;) {
+            if (stop.loadAcquire() != 0) {
+                return;
+            }
+            int const i = next_page.fetchAndAddOrdered(1);
+            if (i >= num_pages) {
+                return;
+            }
+            try {
+                if (!processPage(stage, pages[i], i, num_pages, tasks[i])) {
+                    failed_pages.fetchAndAddOrdered(1);
+                }
+            } catch (...) {
+                // An exception must not leave QRunnable::run(), thus keep it for the main thread and stop the next pages.
+                QMutexLocker const locker(&error_mutex);
+                if (i < error_page) {
+                    error_page = i;
+                    error = std::current_exception();
+                }
+                stop.storeRelease(1);
+            }
+            tasks[i].reset();
+        }
+    };
+
+    QThreadPool pool;
+    pool.setMaxThreadCount(num_threads);
+    for (int t = 0; t < std::min(num_threads, num_pages); ++t) {
+        pool.start(new FunctionRunnable(worker));
+    }
+    pool.waitForDone();
+
+    if (error) {
+        std::rethrow_exception(error);
+    }
+    return failed_pages.loadAcquire();
+}
+
 // process the image vector **images** and save output to **output_dir**
 void
 ConsoleBatch::process()
@@ -429,6 +604,11 @@ ConsoleBatch::process()
     }
 
     bool const json = cli.isJsonProgress();
+    int const num_threads = cli.getThreads();
+    if (num_threads > 1) {
+        // Pages already run in parallel, and OpenMP threads in each page would compete with them.
+        useOneOpenMpThread();
+    }
 
     // run filters
     for (int j = startFilterIdx; j <= endFilterIdx; j++) {
@@ -438,7 +618,9 @@ ConsoleBatch::process()
 
         // Pages outside --pages still count in the aggregate size, as in a GUI batch from the current page.
         bool const check_agg_size = m_hasPageFilter && j == m_ptrStages->pageLayoutFilterIdx();
-        QSizeF const agg_size_before = check_agg_size
+        // With parallel pages, an aggregate size change in the output filter makes the page sizes depend on the timing.
+        bool const check_parallel_agg_size = num_threads > 1 && j == m_ptrStages->outputFilterIdx();
+        QSizeF const agg_size_before = (check_agg_size || check_parallel_agg_size)
                                        ? m_ptrStages->pageLayoutFilter()->getSettings()->getAggregateHardSizeMM()
                                        : QSizeF();
 
@@ -458,66 +640,20 @@ ConsoleBatch::process()
             printJsonLine(ev);
         }
 
-        int page_index = 0;
-        for (const PageInfo& page : page_sequence) {
-            if (selection.count(page.id()) == 0) {
-                continue;
+        std::vector<PageInfo> pages;
+        for (PageInfo const& page : page_sequence) {
+            if (selection.count(page.id()) != 0) {
+                pages.push_back(page);
             }
-            if (cli.isVerbose()) {
-                std::cout << "\tProcessing: " << page.imageId().filePath().toLocal8Bit().constData() << "\n";
-            }
+        }
 
-            QJsonObject ev;
-            if (json) {
-                ev["stage"] = j + 1;
-                ev["name"] = stageName(j);
-                ev["index"] = page_index;
-                ev["pages"] = num_pages;
-                ev["image"] = QFileInfo(page.imageId().filePath()).fileName();
-                if (page.imageId().isMultiPageFile()) {
-                    ev["image_page"] = page.imageId().page();
+        if (num_threads > 1) {
+            failed_pages = processPagesInParallel(j, pages, num_threads);
+        } else {
+            for (size_t i = 0; i < pages.size(); ++i) {
+                if (!processPage(j, pages[i], int(i), num_pages, createCompositeTask(pages[i], j))) {
+                    ++failed_pages;
                 }
-                ev["side"] = page.id().subPageAsString();
-            }
-            ++page_index;
-
-            IntrusivePtr<LoadFileTask> bgTask = createCompositeTask(page, j);
-            try {
-                (*bgTask)();
-            } catch (std::exception const& e) {
-                ++m_pageErrors;
-                if (json) {
-                    ev["event"] = QStringLiteral("page_error");
-                    ev["error"] = QString::fromLocal8Bit(e.what());
-                    printJsonLine(ev);
-                }
-                throw;
-            }
-
-            if (bgTask->loadFailed() && !isResourcePath(page.imageId().filePath())) {
-                std::cerr << "Error: The image cannot be loaded: "
-                          << QDir::toNativeSeparators(QFileInfo(page.imageId().filePath()).absoluteFilePath()).toLocal8Bit().constData();
-                if (page.imageId().isMultiPageFile()) {
-                    std::cerr << " (page " << page.imageId().page() << ")";
-                }
-                std::cerr << std::endl;
-                ++failed_pages;
-                ++m_pageErrors;
-                if (json) {
-                    ev["event"] = QStringLiteral("page_error");
-                    ev["error"] = QStringLiteral("cannot load the image");
-                    printJsonLine(ev);
-                }
-                continue;
-            }
-
-            if (json) {
-                ev["event"] = QStringLiteral("page_done");
-                QJsonObject const res(pageResult(j, page.id()));
-                for (QJsonObject::const_iterator it = res.constBegin(); it != res.constEnd(); ++it) {
-                    ev.insert(it.key(), it.value());
-                }
-                printJsonLine(ev);
             }
         }
         if (failed_pages > 0) {
@@ -540,6 +676,23 @@ ConsoleBatch::process()
                 ev["warning"] = QStringLiteral("aggregate_size_changed");
                 ev["message"] = QStringLiteral(
                     "The aggregate page size changed. Run stages 5-6 on all pages to make the sizes equal again.");
+                printJsonLine(ev);
+            }
+        }
+
+        if (check_parallel_agg_size &&
+                agg_size_before != m_ptrStages->pageLayoutFilter()->getSettings()->getAggregateHardSizeMM()) {
+            ++m_warnings;
+            std::cerr << "Warning: the aggregate page size changed in filter 6. With --threads, some pages"
+                      << " can have an old output size. Run stages 5-6 again to make the sizes equal." << std::endl;
+            if (json) {
+                QJsonObject ev;
+                ev["event"] = QStringLiteral("warning");
+                ev["stage"] = j + 1;
+                ev["name"] = stageName(j);
+                ev["warning"] = QStringLiteral("aggregate_size_changed");
+                ev["message"] = QStringLiteral(
+                    "The aggregate page size changed in filter 6. Run stages 5-6 again to make the sizes equal.");
                 printJsonLine(ev);
             }
         }
@@ -807,6 +960,7 @@ ConsoleBatch::printJsonLine(QJsonObject const& obj)
 {
     // The JSON goes to the C stdout stream because the CLI sends std::cout text to stderr in this mode.
     QByteArray const line(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+    QMutexLocker const locker(&consoleMutex());
     std::fwrite(line.constData(), 1, size_t(line.size()), stdout);
     std::fputc('\n', stdout);
     std::fflush(stdout);
