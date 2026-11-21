@@ -72,18 +72,27 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    kiekvieną pažymėtą (padidinus iliustraciją):
    - juodai baltos linijos (graviūros, piešiniai, žemėlapiai) → Output
      **B/W 600**;
-   - grayscale iliustracijos (nuotraukos, rastras) →
+   - nuotraukos, rastras ir spalvoti įklijai →
      `pages_straighten_pictures` (ScanTailor tiesina pagal teksto eilutes ir
      nuotraukas gali pakreipti), `run_stages(3, 5)`,
      `page_set_content(mode="all_content")` (nuotrauka + parašas, be nugarėlės
      šešėlio), tada `pages_set_output(color_mode="color", dpi=300,
-     white_margins=true, equalize_illumination=true, grayscale_first=true)` ir
+     white_margins=true, equalize_illumination=true, grayscale_first=<žr. žemiau>)` ir
      `pages_set_layout(<nuotraukų puslapiai>, margin_left=0, margin_right=0)`.
-     `grayscale_first` yra GUI parinktis „Convert to grayscale first“: skenas
+   - `grayscale_first` yra GUI parinktis „Convert to grayscale first“: skenas
      paverčiamas pilku prieš visus kitus išvesties žingsnius, todėl spalvoto
      JPG popieriaus atspalvis negadina paraščių, apšvietimo išlyginimo ir
      nuotraukos. Išvesties TIFF yra 8 bitų pilkas ir apie 4 kartus mažesnis.
-     Nenaudoti spalvotiems įklijams, kurie turi likti spalvoti.
+   - Pirmiausia perskaityti matavimą: `check_pages(<nuotraukų puslapiai>,
+     kind="grayscale")`. Pilka nuotrauka spalvotame skene turi
+     `grayscale=true` (chroma mažesnė nei 10). Tokiems puslapiams
+     `grayscale_first="auto"`.
+   - Spalvoti įklijai (`grayscale=false`) turi likti spalvoti:
+     `grayscale_first=false`.
+   - Kiekvieną puslapį su `near_threshold=true` peržiūrėti ir nuspręsti
+     true ar false pačiam. Po 6 etapo `job_status` lauke `grayscale_auto`
+     rodo ScanTailor rezultatą. Ataskaitoje nurodyti puslapius su
+     `confidence="low"`.
 6. **Viršeliai ir priešlapiai:** `page_set_content(mode="cover")` (randa ir
    tamsius viršelius ant juodo fono; kiekvieną kraštą pritraukia prie viršelio
    krašto ir dar 1 mm į vidų, kad nesimatytų fono), `pages_set_layout(margins_mm=0,
@@ -144,8 +153,8 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `project_diff(original, corrected)` | Skirtumai tarp agento projekto ir žmogaus pataisyto, puslapiais |
 | `pages_fit_width(project, margin_mm?, percentile?)` | Vienas puslapio plotis: mažesnės šoninės paraštės už tipinį teksto bloką platesniems puslapiams |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertikalus lygiavimas visiems teksto puslapiams ir šalinimo kandidatai ataskaitai |
-| `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?, grayscale_first?)` | `output`; `grayscale_first` įrašo `color-or-grayscale@convertToGrayscale="1"` (CLI `--grayscale-first`) |
-| `check_pages(project, pages, kind=content\|pictures)` | Heuristikos su įrodymais |
+| `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?, grayscale_first?)` | `output`; `grayscale_first` (true, false arba "auto") įrašo `color-or-grayscale@convertToGrayscale="1"` arba `"auto"` (CLI `--grayscale-first`) |
+| `check_pages(project, pages, kind=content\|pictures\|grayscale)` | Heuristikos su įrodymais; `grayscale` duoda kiekvieno puslapio chroma, klasifikaciją ir atstumą iki slenksčio |
 | `export_summary(project)` | Išvesties TIFF sąrašas ir kas trūksta |
 | `pages_straighten_pictures(project, pages)` | Nuotraukų puslapių kampas pagal spaudos stačiakampius |
 | `project_for_windows(project, relative?)` | /mnt/c keliai → C:/ Windows GUI arba reliatyvūs nuo projekto (paskutinis žingsnis per WSL) |
@@ -161,8 +170,12 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
   - *Match size with other pages* išjungta = `alignment@null="1"`;
   - spalvų režimas / DPI: `output/page/params/color-params@colorMode`, `dpi`;
   - „Convert to grayscale first“: `color-params/color-or-grayscale@convertToGrayscale="1"`
-    (jei atributo nėra — išjungta). CLI jį nustato su `--grayscale-first`
-    (`--grayscale-first=false` išjungia). Su `--pages` keičiami tik pasirinkti
+    (įjungta) arba `"auto"` (jei atributo nėra — išjungta). CLI jį nustato su
+    `--grayscale-first`, `--grayscale-first=auto` arba `--grayscale-first=false`.
+    Su auto 6 etapas rezultatą įrašo į
+    `output-params/image@grayscaleChroma,@grayscaleDetected`, o su
+    `--json-progress` įvykis `page_done` duoda `grayscale_first`,
+    `grayscale_detected` ir `chroma`. Su `--pages` keičiami tik pasirinkti
     puslapiai, pvz.
     `--start-filter=6 --pages="021.jpg;095.jpg:L" --grayscale-first`.
     `--white-margins`, `--normalize-illumination` ir sluoksnių parinktys jį

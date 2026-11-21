@@ -350,6 +350,51 @@ def picture_score(project: Project, page_id: str) -> dict:
             "line_art_fraction": round(float(dense.mean()), 3)}
 
 
+# The same limits as GrayscaleDetector in ScanTailor, so that the estimate here is close to the value of the output stage.
+GRAY_CHROMA_THRESHOLD = 10.0
+GRAY_CHROMA_NEAR = 3.0
+_GRAY_MAX_TINT = 10.0
+
+
+def gray_chroma(rgb: np.ndarray) -> float:
+    a = rgb.reshape(-1, 3).astype(np.float64)
+    r, g, b = a[:, 0], a[:, 1], a[:, 2]
+    y = 0.299 * r + 0.587 * g + 0.114 * b
+    m = (y > 30) & (y < 200)
+    if m.sum() < 100:
+        return 0.0
+    cb = (-0.168736 * r - 0.331264 * g + 0.5 * b)[m]
+    cr = (0.5 * r - 0.418688 * g - 0.081312 * b)[m]
+    tb, tr = cb.mean(), cr.mean()
+    tint = float(np.hypot(tb, tr))
+    # Only a weak tint is paper; a strong uniform color, for example of a cover, stays in the value.
+    if tint > _GRAY_MAX_TINT:
+        tb, tr = tb * _GRAY_MAX_TINT / tint, tr * _GRAY_MAX_TINT / tint
+    return float(np.percentile(np.hypot(cb - tb, cr - tr), 95))
+
+
+# A stored value of the output stage wins over the estimate, because the output stage decides with it.
+def grayscale_score(project: Project, page_id: str) -> dict:
+    pg = project.page(page_id)
+    c = project.content(pg.id)
+    im = np.asarray(render_page(project, pg.id, max_px=ANALYSIS_PX, overlay=False).convert("RGB"))
+    pt = project.transform(pg.id)
+    k = min(1.0, ANALYSIS_PX / max(pt.width, pt.height))
+    if c.get("processed") and not c.get("empty") and c.get("content_rect_px"):
+        r = c["content_rect_px"]
+        im = im[int(r["y"] * k):int((r["y"] + r["height"]) * k), int(r["x"] * k):int((r["x"] + r["width"]) * k)]
+    chroma = gray_chroma(im) if im.size else 0.0
+    out = {"page_id": pg.id, "label": pg.label, "chroma_estimate": round(chroma, 1)}
+    stored = project.grayscale_detection(pg.id)
+    if stored:
+        out["chroma_output_stage"] = round(stored["grayscale_chroma"], 1)
+        chroma = stored["grayscale_chroma"]
+    margin = chroma - GRAY_CHROMA_THRESHOLD
+    out.update({"grayscale": margin < 0, "margin": round(margin, 1),
+                "near_threshold": abs(margin) < GRAY_CHROMA_NEAR})
+    return out
+
+
 def text_block(project: Project, page_id: str) -> dict | None:
     """Where the printed text really is inside the content box (analysis px), ignoring specks and junk.
 
