@@ -86,6 +86,13 @@ Values are JSON when they parse as JSON (`10`, `true`, `["a","b"]`), else string
   (threads mostly spin) and output pixels differ slightly from run to run.
   Whole 191-scan / 380-page book, all six stages: 54 min → 5 min 49 s, same
   parameters, deterministic output.
+- A CLI from this fork (2026-11-21 or later) has the option `--threads`. With
+  such a CLI, the tools pass `--threads=<N>`, so that the CLI processes N pages
+  of a stage at the same time. N comes from `ST_CLI_THREADS` (a number, or
+  `auto` for all cores); the default is half of the cores. In each page, the
+  CLI uses one OpenMP thread, and the output is the same as with one thread.
+  Each parallel page needs its own memory, so use a smaller N on a machine
+  with little RAM.
 - Image and output paths in the project may be absolute, relative to the
   project file, or Windows paths (`C:/nes/book`, written by the Windows GUI);
   under WSL the latter are read from `/mnt/c/...`. Reading/previews/checks work

@@ -106,6 +106,11 @@ private:
     QString stageName(int idx) const;
     QJsonObject pageResult(int idx, PageId const& page_id) const;
 
+    bool processPage(
+        int stage, PageInfo const& page, int index, int num_pages,
+        IntrusivePtr<LoadFileTask> const& task, IntrusivePtr<output::Task> const& output_task);
+    int processPagesInParallel(int stage, std::vector<PageInfo> const& pages, int num_threads);
+
     IntrusivePtr<LoadFileTask> createCompositeTask(
         PageInfo const& page,
         int const last_filter_idx,

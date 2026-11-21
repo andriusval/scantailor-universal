@@ -129,7 +129,7 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `project_create(images_dir, project, output_dir?, dpi=300, force_dpi=false)` | Creates the `.ScanTailor`, handles DPI |
 | `project_info(project)` | Page count, DPI, rotations, stage progress, running job |
 | `image_preview(project, images?)` | Original scans |
-| `run_stages(project, start, end, orientation?, layout?, layout_direction?, dpi?, content_detection?, wait_s?, pages?)` | Runs filters in the background; `pages` limits the run to some pages (CLI `--pages`); progress and page errors come from CLI `--json-progress` |
+| `run_stages(project, start, end, orientation?, layout?, layout_direction?, dpi?, content_detection?, wait_s?, pages?)` | Runs filters in the background; `pages` limits the run to some pages (CLI `--pages`); progress and page errors come from CLI `--json-progress`; several pages run at the same time (CLI `--threads`, see "Speed") |
 | `job_status(job_id, wait_s?)` | Progress / result |
 | `pages_list(project, sort_by, descending, limit, offset)` | Table: id, label, content size + z-scores, margins, alignment, match size, color mode, DPI, flags (`outlier_width`, `outlier_height`, `empty_content`, `cover_candidate`) |
 | `page_preview(project, page, engine?)` / `pages_preview(project, pages, engine?)` | Page(s) with the content box overlay; `engine="cli"` lets ScanTailor draw them (CLI `--render-preview`), as the GUI shows them |
@@ -193,6 +193,13 @@ If the CLI cannot write the masks of a page, it sends the `--json-progress` even
   The `page_done` line (stage 6) of such a page has `"skipped":true`.
   The first run on a project from an older CLI writes all pages again.
   After a change of the output code, delete the TIFFs in `out/`, because the CLI keeps them.
+- CLI `--threads=<N>` processes N pages of a stage at the same time; the next
+  stage starts only after all pages. Each page uses one OpenMP thread, so the
+  result is the same as with one thread (TIFFs byte for byte). If the aggregate
+  page size changes in stage 6, the CLI gives a warning: then run stages 5-6.
+  36 scans, 72 pages, all stages: N=1 ~100 s, N=4 ~38 s, N=8 ~25 s,
+  N=14 ~22 s. Each parallel page needs about 170 MB of memory.
+  st-mcp passes `--threads` with half of the cores (`ST_CLI_THREADS`).
 
 ## Implementation plan
 

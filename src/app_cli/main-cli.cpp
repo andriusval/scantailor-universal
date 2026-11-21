@@ -126,6 +126,11 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    if (cli.hasThreads() && cli.getThreads() < 1) {
+        std::cerr << "Use --threads=<N> with N = 0 or more, or --threads=auto." << std::endl;
+        return 1;
+    }
+
     std::unique_ptr<ConsoleBatch> cbatch;
 
     try {
