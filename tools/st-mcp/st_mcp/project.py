@@ -245,7 +245,19 @@ class Project:
             "despeckle": p.get("despeckleLevel"),
             "white_margins": _cg(cp, "whiteMargins"),
             "equalize_illumination": _cg(cp, "normalizeIllumination"),
+            "grayscale_first": GRAYSCALE_FIRST_NAMES.get(_cg_raw(cp, "convertToGrayscale"), "off"),
+            **self.grayscale_detection(page_id),
         }
+
+    def grayscale_detection(self, page_id: str) -> dict:
+        # The last stage 6 run stores the result of the automatic detection in output-params/image.
+        f = self.filter_el("output")
+        img = f.find(f"./page[@id='{page_id}']/output-params/image") if f is not None else None
+        if img is None or img.get("grayscaleDetected") is None:
+            return {}
+        chroma = img.get("grayscaleChroma")
+        return {"grayscale_chroma": None if chroma is None else float(chroma),
+                "grayscale_detected": img.get("grayscaleDetected") == "1"}
 
     # ------------------------------------------------------------------ write
     def set_content(self, page_id: str, rect: dict | None) -> None:
@@ -303,7 +315,7 @@ class Project:
     def set_output(self, page_id: str, color_mode: str | None = None, dpi: int | None = None,
                    despeckle: str | None = None, white_margins: bool | None = None,
                    equalize_illumination: bool | None = None, filling_color: str | None = None,
-                   fill_offcut: bool | None = None) -> None:
+                   fill_offcut: bool | None = None, grayscale_first: bool | str | None = None) -> None:
         p = self._page_params("output", page_id)
         if p is None:
             raise RuntimeError(f"page {page_id}: output params missing (run stages 1-5 first)")
@@ -330,6 +342,21 @@ class Project:
                 if cg is None:
                     cg = ET.SubElement(cp, "color-or-grayscale")
                 cg.set(attr, val if isinstance(val, str) else ("1" if val else "0"))
+        # ScanTailor writes this attribute only for a true value, so a false value removes it.
+        if grayscale_first is not None:
+            value = GRAYSCALE_FIRST.get(str(grayscale_first).lower())
+            if value is None:
+                raise ValueError("grayscale_first must be true|false|on|off|auto")
+            cp = p.find("color-params")
+            if cp is None:
+                raise RuntimeError(f"page {page_id}: color-params missing (run stage 6 first)")
+            cg = cp.find("color-or-grayscale")
+            if cg is None:
+                cg = ET.SubElement(cp, "color-or-grayscale")
+            if value != "0":
+                cg.set("convertToGrayscale", value)
+            elif "convertToGrayscale" in cg.attrib:
+                del cg.attrib["convertToGrayscale"]
 
     def _filters(self) -> ET.Element:
         f = self.root.find("./filters")
@@ -394,6 +421,16 @@ class Project:
         os.close(fd)
         self.tree.write(tmp, encoding="utf-8", xml_declaration=False)
         os.replace(tmp, self.path)
+
+
+# ScanTailor writes "1" for on and "auto" for the automatic detection; a missing attribute is off.
+GRAYSCALE_FIRST = {"true": "1", "1": "1", "on": "1", "false": "0", "0": "0", "off": "0", "auto": "auto"}
+GRAYSCALE_FIRST_NAMES = {"1": "on", "auto": "auto"}
+
+
+def _cg_raw(cp: ET.Element | None, attr: str) -> str | None:
+    cg = cp.find("color-or-grayscale") if cp is not None else None
+    return None if cg is None else cg.get(attr)
 
 
 def _cg(cp: ET.Element | None, attr: str) -> bool | None:

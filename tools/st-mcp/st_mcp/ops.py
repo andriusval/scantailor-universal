@@ -98,6 +98,7 @@ class Job:
         self.page_errors: list[dict] = []
         self.warnings: list[str] = []
         self.run_end: dict | None = None
+        self.grayscale_auto: list[dict] = []
         self._log = open(self.log_path, "w", encoding="utf-8")
         # Older builds read relative project paths from the current directory, so the job starts in the project folder.
         self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
@@ -114,6 +115,14 @@ class Job:
             self._split_done = True
         elif kind == "page_done":
             self.processed += 1
+            if "grayscale_detected" in ev:
+                chroma = ev.get("chroma")
+                margin = None if chroma is None else round(float(chroma) - checks.GRAY_CHROMA_THRESHOLD, 1)
+                self.grayscale_auto.append({
+                    "image": ev.get("image"), "side": ev.get("side"),
+                    "chroma": None if chroma is None else round(float(chroma), 1),
+                    "grayscale_detected": ev.get("grayscale_detected"), "margin": margin,
+                    "confidence": "low" if margin is None or abs(margin) < checks.GRAY_CHROMA_NEAR else "high"})
         elif kind == "page_error":
             self.processed += 1
             self.page_errors.append({k: ev.get(k) for k in ("stage", "image", "side", "error") if k in ev})
@@ -168,6 +177,8 @@ class Job:
             out["warnings"] = self.warnings[:10]
         if self.run_end:
             out["run_end"] = self.run_end
+        if self.grayscale_auto:
+            out["grayscale_auto"] = self.grayscale_auto
         if tail:
             out["error_tail"] = tail
         return out
@@ -1010,20 +1021,27 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
 def pages_set_output(project: str, pages: str | list[str], color_mode: str | None = None, dpi: int | None = None,
                      despeckle: str | None = None, white_margins: bool | None = None,
                      equalize_illumination: bool | None = None, filling_color: str | None = None,
-                     fill_offcut: bool | None = None) -> dict:
+                     fill_offcut: bool | None = None, grayscale_first: bool | str | None = None) -> dict:
     """Output mode per page. color_mode: bw | color (=color/grayscale) | mixed.
     Text and pages with black-and-white line illustrations: bw 600. Pages with grayscale (halftone/photo)
-    illustrations: color, white_margins=true, equalize_illumination=true. Covers: color 300.
-    white_margins / equalize_illumination are the GUI's Color/Grayscale checkboxes.
+    illustrations: color, white_margins=true, equalize_illumination=true, grayscale_first="auto".
+    Color plates and covers: color, grayscale_first=false (covers 300 DPI).
+    white_margins / equalize_illumination are the GUI's Color/Grayscale checkboxes. grayscale_first
+    (true|false|"auto") is "Convert to grayscale first": the scan becomes grayscale before all other output
+    steps, so a paper tint does not change the margins, the illumination or the photos, and the output TIFF
+    is 8-bit gray; "auto" does it only when the picture has no color (check_pages(kind="grayscale")
+    shows the measurement; job_status gives the stage 6 result in grayscale_auto). No effect in bw mode.
     filling_color (background|white|black) fills the area outside the page; fill_offcut also fills the
-    area beyond the split line (only without white margins). Both need a ScanTailor build from branch
-    agentic/windows-build; older builds ignore them."""
+    area beyond the split line (only without white margins). filling_color and fill_offcut need a
+    ScanTailor build from branch agentic/windows-build, and grayscale_first needs a build with branch
+    feat/grayscale-first; older builds ignore them and write RGB."""
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
     ids = _resolve_pages(p, pages)
     for i in ids:
-        p.set_output(i, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color, fill_offcut)
+        p.set_output(i, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color, fill_offcut,
+                     grayscale_first)
     p.save()
     # A B/W page is the default, so only the other output modes are decisions for the review.
     with review.Notes(p) as notes:
@@ -1038,7 +1056,7 @@ def pages_set_output(project: str, pages: str | list[str], color_mode: str | Non
                       "picture page or cover")
     return {"updated_pages": len(ids), "color_mode": color_mode, "dpi": dpi, "despeckle": despeckle,
             "white_margins": white_margins, "equalize_illumination": equalize_illumination,
-            "filling_color": filling_color, "fill_offcut": fill_offcut}
+            "filling_color": filling_color, "fill_offcut": fill_offcut, "grayscale_first": grayscale_first}
 
 
 def check_pages(project: str, pages: str | list[str] = "all", kind: str = "content") -> dict:
@@ -1049,7 +1067,12 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
     (ink_source=scantailor), else st-mcp's own threshold (ink_source=st-mcp); st_mcp_ink_pages lists
     the pages that still used st-mcp's threshold.
     kind=pictures: pages with illustrations: picture_fraction (grayscale/halftone areas) and
-    line_art_fraction (dense black-ink drawings); each flagged page has `likely` and must be previewed."""
+    line_art_fraction (dense black-ink drawings); each flagged page has `likely` and must be previewed.
+    kind=grayscale: for picture pages, before pages_set_output: is the picture gray although the scan is
+    in color (gray photo or halftone on tinted paper)? Per page: chroma (spread of the color of the
+    mid-tones after a weak paper tint is removed; below 10 = gray), grayscale, margin to the threshold and
+    near_threshold. chroma_estimate is computed here; chroma_output_stage is ScanTailor's own value after
+    a stage 6 run with grayscale_first=auto and wins. Preview every page with near_threshold=true."""
     p = _proj(project)
     ids = _resolve_pages(p, pages)
     if kind == "pictures":
@@ -1068,10 +1091,19 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
                     why = f"line art {r['line_art_fraction']:.1%} of the page"
                 notes.add(r["page_id"], "pictures", f"picture page: {r['likely']}", conf, why)
         return {"checked": len(res), "flagged": flagged,
-                "rule": "preview each: grayscale illustrations (photos, halftones) -> color_mode=color, "
-                        "white_margins=true, equalize_illumination=true; black-and-white line art -> keep bw 600"}
+                "rule": "preview each: photos, halftones and color plates -> color_mode=color, "
+                        "white_margins=true, equalize_illumination=true, then check_pages(kind=grayscale): "
+                        "gray pictures -> grayscale_first=auto, color plates -> grayscale_first=false; "
+                        "black-and-white line art -> keep bw 600"}
+    if kind == "grayscale":
+        res = [checks.grayscale_score(p, i) for i in ids]
+        return {"checked": len(res), "threshold": checks.GRAY_CHROMA_THRESHOLD, "pages": res,
+                "near_threshold": [r["label"] for r in res if r["near_threshold"]],
+                "rule": "gray pictures (grayscale=true) -> grayscale_first=auto (or true); color plates "
+                        "(grayscale=false) -> keep color, grayscale_first=false; preview near_threshold pages "
+                        "and decide true/false yourself; covers stay color"}
     if kind != "content":
-        raise ValueError("kind must be content|pictures")
+        raise ValueError("kind must be content|pictures|grayscale")
     masks = {}
     try:
         if cli_masks_available():

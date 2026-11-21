@@ -146,6 +146,9 @@ public:
     QRect outputContentRect() const;
 private:
 
+    // True when the output keeps the color space of the original image, because its ICC profile goes into the output file.
+    bool keepsIccColorSpace(FilterData const& input) const;
+
     QImage processImpl(
         TaskStatus const& status, FilterData const& input,
 //Quadro_Zoner

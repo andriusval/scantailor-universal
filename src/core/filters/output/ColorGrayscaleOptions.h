@@ -28,6 +28,9 @@ namespace output
 
 enum FillingColor { FILL_BACKGROUND, FILL_WHITE, FILL_BLACK };
 
+// AUTO converts only the pages that GrayscaleDetector finds to be gray.
+enum GrayscaleFirst { GRAYSCALE_FIRST_OFF, GRAYSCALE_FIRST_ON, GRAYSCALE_FIRST_AUTO };
+
 class ColorGrayscaleOptions
 {
 public:
@@ -36,7 +39,7 @@ public:
         : m_whiteMargins(whiteMargins), m_normalizeIllumination(normalizeIllumination),
           m_autoLayerEnabled(autoLayer), m_pictureZonesLayerEnabled(pictureZonesLayer),
           m_foregroundLayerEnabled(foregroundLayer),
-          m_fillOffcut(false), m_fillingColor(FILL_BACKGROUND) {}
+          m_fillOffcut(false), m_fillingColor(FILL_BACKGROUND), m_grayscaleFirst(GRAYSCALE_FIRST_OFF) {}
 
     ColorGrayscaleOptions(QDomElement const& el, bool mixed_mode);
 
@@ -112,6 +115,20 @@ public:
         m_fillingColor = color;
     }
 
+    GrayscaleFirst grayscaleFirst() const
+    {
+        return m_grayscaleFirst;
+    }
+
+    void setGrayscaleFirst(GrayscaleFirst mode)
+    {
+        m_grayscaleFirst = mode;
+    }
+
+    static GrayscaleFirst parseGrayscaleFirst(QString const& str);
+
+    static QString formatGrayscaleFirst(GrayscaleFirst mode);
+
     static FillingColor parseFillingColor(QString const& str);
 
     static QString formatFillingColor(FillingColor color);
@@ -127,6 +144,7 @@ private:
     bool m_foregroundLayerEnabled;
     bool m_fillOffcut;
     FillingColor m_fillingColor;
+    GrayscaleFirst m_grayscaleFirst;
 };
 
 } // namespace output

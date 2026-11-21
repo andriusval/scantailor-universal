@@ -99,6 +99,30 @@ public:
         m_blackOnWhite = black_on_white;
     }
 
+    // Only pages with the automatic grayscale detection have a result, so the GUI and the CLI can show it.
+    bool grayscaleMeasured() const
+    {
+        return m_grayscaleMeasured;
+    }
+
+    // A negative value means that the content area has too few mid-tone pixels for a measurement.
+    double grayscaleChroma() const
+    {
+        return m_grayscaleChroma;
+    }
+
+    bool grayscaleDetected() const
+    {
+        return m_grayscaleDetected;
+    }
+
+    void setGrayscaleDetection(double chroma, bool detected)
+    {
+        m_grayscaleMeasured = true;
+        m_grayscaleChroma = chroma;
+        m_grayscaleDetected = detected;
+    }
+
     QDomElement toXml(QDomDocument& doc, QString const& name) const;
 
     /**
@@ -167,6 +191,12 @@ private:
     QString m_TiffCompression;
 
     bool m_blackOnWhite;
+
+    bool m_grayscaleMeasured;
+
+    double m_grayscaleChroma;
+
+    bool m_grayscaleDetected;
 };
 
 } // namespace output

@@ -70,15 +70,27 @@ GUI.
    page (zoom into the illustration):
    - black-and-white line art (engravings, drawings, maps) → keep output
      **B/W 600**;
-   - grayscale illustrations (photos, halftones) →
-     `pages_straighten_pictures` (ScanTailor deskews by text lines and can
-     tilt photos), `run_stages(3, 5)`, `page_set_content(mode="all_content")`
+   - photos, halftones and color plates → `pages_straighten_pictures`,
+     because ScanTailor deskews by text lines and can tilt photos. Then
+     `run_stages(3, 5)`, `page_set_content(mode="all_content")`
      (photo + caption, no spine shadow), then
      `pages_set_output(color_mode="color", dpi=300, white_margins=true,
-     equalize_illumination=true)` and
+     equalize_illumination=true, grayscale_first=<see below>)` and
      `pages_set_layout(<picture pages>, margin_left=0, margin_right=0)`.
      With a CLI that has `--deskew-pictures`, the tool measures the angle
      from the picture edges in C++.
+   - `grayscale_first` is the GUI option "Convert to grayscale first". The
+     scan becomes grayscale before all other output steps. Thus the paper
+     tint of a color JPEG does not change the margins, the illumination or
+     the photo. The output TIFF is 8-bit gray and about 4 times smaller.
+   - Read the measurement first: `check_pages(<picture pages>,
+     kind="grayscale")`. A gray picture in a color scan has `grayscale=true`
+     (chroma below 10). Give these pages `grayscale_first="auto"`.
+   - Color plates (`grayscale=false`) must stay in color: give them
+     `grayscale_first=false`.
+   - Preview each page with `near_threshold=true` and set true or false
+     yourself. After stage 6, `job_status` shows the result of ScanTailor in
+     `grayscale_auto`. Report the pages with `confidence="low"`.
 6. **Covers and endpapers:** `page_set_content(mode="cover")`, then
    `pages_set_layout(margins_mm=0, match_size=false)` and
    `pages_set_output(color_mode="color", dpi=300)`. The cover mode also finds
@@ -193,8 +205,8 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `corrections_stats(log?, book?, top?)` | Corrections per category and per book, and the most frequent categories with their workflow rule |
 | `pages_fit_width(project, margin_mm?, percentile?)` | One page width: smaller side margins for pages wider than the typical text block |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertical alignment for all body pages, plus removal candidates for the report |
-| `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?)` | `output` |
-| `check_pages(project, pages, kind=content\|pictures)` | Heuristics with evidence |
+| `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?, grayscale_first?)` | `output`; `grayscale_first` (true, false or "auto") writes `color-or-grayscale@convertToGrayscale="1"` or `"auto"` (CLI `--grayscale-first`) |
+| `check_pages(project, pages, kind=content\|pictures\|grayscale)` | Heuristics with evidence; `grayscale` gives the chroma per page, the classification and the margin to the threshold |
 | `export_summary(project)` | Output TIFF list and anything missing |
 | `review_note(project, pages, decision, reason?, confidence?, topic?)` | Records a decision of the agent for the review sheet |
 | `review_sheet(project, pages?, thumb_px?, engine?)` | Writes `out-agentas/review/index.html`: thumbnails, decisions with confidence, doubtful pages first |
@@ -235,7 +247,18 @@ If the CLI cannot write the masks of a page, it sends the `--json-progress` even
   - margins: `page-layout/page/params/hardMarginsMM` (mm);
   - alignment: `page-layout/.../alignment@vert,@hor`;
   - *Match size with other pages* off = `alignment@null="1"`;
-  - colour mode / DPI: `output/page/params/color-params@colorMode`, `dpi`.
+  - colour mode / DPI: `output/page/params/color-params@colorMode`, `dpi`;
+  - "Convert to grayscale first": `color-params/color-or-grayscale@convertToGrayscale="1"`
+    (on) or `"auto"` (a missing attribute means off). The CLI sets it with
+    `--grayscale-first`, `--grayscale-first=auto` or `--grayscale-first=false`.
+    With auto, stage 6 stores the result in
+    `output-params/image@grayscaleChroma,@grayscaleDetected`, and with
+    `--json-progress` the `page_done` event gives `grayscale_first`,
+    `grayscale_detected` and `chroma`. Use it with `--pages` to change only
+    some pages, for example
+    `--start-filter=6 --pages="021.jpg;095.jpg:L" --grayscale-first`.
+    `--white-margins`, `--normalize-illumination` and the layer options reset
+    it, so give it again together with them.
 - Default settings do not fit this book: scans are rotated 90° (needs
   `orientation=right, layout=2`). Without a preview the agent would not notice.
 - The CLI reads DPI from the JPGs; `--dpi` only matters when it is missing.

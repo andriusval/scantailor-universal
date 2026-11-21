@@ -55,6 +55,7 @@
 #include "ThumbnailPixmapCache.h"
 #include "DebugImages.h"
 #include "OutputGenerator.h"
+#include "GrayscaleDetector.h"
 #include "TiffWriter.h"
 #include "ImageLoader.h"
 #include "ErrorWidget.h"
@@ -222,6 +223,31 @@ Task::process(
     }
 
     RenderParams render_params(params.colorParams());
+
+    // The output generator gets only ON or OFF, because the automatic detection happens here.
+    ColorParams generator_color_params(params.colorParams());
+    ColorGrayscaleOptions generator_cgo(generator_color_params.colorGrayscaleOptions());
+    bool grayscale_measured = false;
+    double grayscale_chroma = -1.0;
+    bool grayscale_detected = false;
+    if (params.colorParams().colorMode() != ColorParams::BLACK_AND_WHITE
+            && generator_cgo.grayscaleFirst() == GRAYSCALE_FIRST_AUTO) {
+        QRectF area(content_rect_phys.boundingRect());
+        if (area.isEmpty()) {
+            area = data.xform().transformBack().map(data.xform().resultingPreCropArea()).boundingRect();
+        }
+        grayscale_measured = true;
+        grayscale_chroma = GrayscaleDetector::measureChroma(data.origImage(), area);
+        grayscale_detected = GrayscaleDetector::isGrayscale(grayscale_chroma);
+        generator_cgo.setGrayscaleFirst(grayscale_detected ? GRAYSCALE_FIRST_ON : GRAYSCALE_FIRST_OFF);
+    }
+    // A gray original has nothing to convert, so it keeps its ICC profile as before.
+    if (generator_cgo.grayscaleFirst() == GRAYSCALE_FIRST_ON && data.origImage().allGray()) {
+        generator_cgo.setGrayscaleFirst(GRAYSCALE_FIRST_OFF);
+    }
+    generator_color_params.setColorGrayscaleOptions(generator_cgo);
+    bool const drop_icc_profile = RenderParams(generator_color_params).convertToGrayscale();
+
     QString const out_file_path(m_outFileNameGen.filePathFor(m_pageId));
     QFileInfo const out_file_info(out_file_path);
 
@@ -256,7 +282,7 @@ Task::process(
     }
 
     OutputGenerator const generator(
-        params.outputDpi(), params.colorParams(), params.despeckleLevel(),
+        params.outputDpi(), generator_color_params, params.despeckleLevel(),
         new_xform, content_rect_phys, params.isBlackOnWhite()
     );
 
@@ -269,6 +295,9 @@ Task::process(
                     GlobalStaticSettings::m_tiff_compr_method_bw :
                     GlobalStaticSettings::m_tiff_compr_method_color);
     new_output_image_params.setBlackOnWhite(params.isBlackOnWhite());
+    if (grayscale_measured) {
+        new_output_image_params.setGrayscaleDetection(grayscale_chroma, grayscale_detected);
+    }
 
 //begin of modified by monday2000
 //Quadro_Zoner
@@ -346,6 +375,15 @@ Task::process(
         }
 
         if (!stored_output_params->outputImageParams().matches(new_output_image_params)) {
+            need_reprocess = true;
+            break;
+        }
+
+        // Only this task measures, so the cache-driven task does not compare the detection result.
+        if (stored_output_params->outputImageParams().grayscaleMeasured()
+                != new_output_image_params.grayscaleMeasured()
+                || stored_output_params->outputImageParams().grayscaleDetected()
+                != new_output_image_params.grayscaleDetected()) {
             need_reprocess = true;
             break;
         }
@@ -492,7 +530,8 @@ Task::process(
         } else {
             deleteMutuallyExclusiveOutputFiles();
 #ifdef HAVE_EXIV2
-            if (GlobalStaticSettings::m_output_copy_icc_metadata) {
+            // A color profile does not fit a grayscale output that the page made from a color original.
+            if (GlobalStaticSettings::m_output_copy_icc_metadata && !drop_icc_profile) {
                 ImageMetadataCopier::copyMetadata(m_pageId.imageId().filePath(), out_file_path);
             }
 #endif

@@ -295,6 +295,14 @@ public:
     {
         return output::ColorGrayscaleOptions::parseFillingColor(m_options["filling-color"].toLower());
     }
+    bool hasGrayscaleFirst() const
+    {
+        return contains("grayscale-first");
+    }
+    QString getGrayscaleFirst() const
+    {
+        return m_options["grayscale-first"].toLower();
+    }
     bool hasThreshold() const
     {
         return contains("threshold") && !m_options["threshold"].isEmpty();
