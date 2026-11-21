@@ -103,19 +103,69 @@ GUI.
    `export_summary`, and check that all body pages have the same size
    (`pages_list(sort_by="content_width", descending=true)`). Look at 8–16
    output pages (corrected ones, picture pages, covers).
-10. `project_for_windows(project)` when the project was processed under WSL,
+10. **Review sheet:** `review_sheet(project)` writes
+    `out-agentas/review/index.html`. The page shows a thumbnail of each output
+    page and the content box preview of each page with an agent decision.
+    Each decision has a confidence and a reason. Pages with a low confidence
+    or a flag come first, with the marker "CHECK IN GUI". The tools record
+    their decisions in `out-agentas/review/decisions.json`. Record your own
+    decisions (orientation, covers, picture pages that stay B/W) with
+    `review_note(project, pages, decision, reason, confidence)`. Run the sheet
+    before `project_for_windows`, because the CLI previews need paths that
+    the CLI can open.
+11. `project_for_windows(project)` when the project was processed under WSL,
     so that the Windows GUI opens it. With a Windows build from this branch,
     use `relative=true`: the project then opens under WSL and Windows.
     It also keeps `agentas.orig.ScanTailor`, a copy of the finished project.
     Remove the job logs and the run backups. Never remove the `.orig` copy.
     Later, `project_diff(orig, corrected)` compares it with the corrections
     of the person, so that we find new rules.
-11. Summarise: pages changed and why, picture decisions, anything left for a
+12. Summarise: pages changed and why, picture decisions, anything left for a
     person (e.g. stamps or stains inside the text). List the removal
     candidates from `pages_align_auto`: blank leaves, a half-title that
     repeats the title page, and near-empty pages. Also list its review pages:
     full-height pages with few text lines, such as rotated tables. Do not
-    remove them: the person decides.
+    remove them: the person decides. List the pages to check from
+    `review_sheet` (`to_check`) and give the path of the review sheet. Write
+    the summary to `out-agentas/review/report.md`.
+
+## Book queue (overnight runs)
+
+`tools/st-mcp/run_queue.py books.txt` runs this workflow on each book folder
+in `books.txt`, one headless Claude Code session (`claude -p`) per book. The
+prompt holds the rules and the step list above, and asks for the report in
+`out-agentas/review/report.md`. The file `books.state.json` keeps the status
+of each book, so a new start resumes after a crash and skips the finished
+books. The folder `books-logs/` has one log per book.
+
+At the end, `books-summary.md` has one line per book with a link to its
+review sheet. Use `--dry-run` to see the commands first. The details are in
+`tools/st-mcp/README.md`.
+
+## Corrections log
+
+After the person corrects a book in the GUI, run
+`corrections_record("<book>/agentas.orig.ScanTailor", "<book>/agentas.ScanTailor")`.
+It writes one JSONL record for each changed page parameter: book folder, page,
+stage, field, agent value, user value and category. The log is
+`~/.local/share/st-mcp/corrections.jsonl`; set `ST_CORRECTIONS_LOG` to use a
+different file. The tool skips a change that is already in the log for the
+same book, so you can run it after each review.
+
+Categories:
+- pages and geometry: `page_removed`, `page_added`, `split`, `rotation`,
+  `deskew_picture`, `deskew_text`, `page_box`;
+- content box: `content_empty`, `content_box_trim` (a smaller box),
+  `content_box_extend`, `content_box_numbers` (a small band at the top or bottom);
+- covers: `cover` (a box, layout or output change on a cover page);
+- layout: `margins`, `alignment`, `match_size`;
+- output: `output_mode`, `dpi`, `picture_zones`; all else: `other`.
+
+The tool skips a content box change after a new rotation, split or
+deskew angle, because the box coordinates then do not compare.
+
+`corrections_stats()` shows the categories that occur most, and the workflow
+rule that each one points to. Improve that rule first.
 
 Units: content boxes are in page pixels of the deskewed page (same as
 `page_preview`); margins in mm; DPI integers.
@@ -138,12 +188,16 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
 | `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5 |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
-| `project_diff(original, corrected)` | Per-page differences between the agent's project and a corrected one |
+| `project_diff(original, corrected, record?)` | Per-page differences between the agent's project and a corrected one; `record=true` also writes them to the corrections log |
+| `corrections_record(original, corrected, book?, log?)` | Appends the person's corrections to the corrections log (JSONL), one record per changed page parameter, without repeats |
+| `corrections_stats(log?, book?, top?)` | Corrections per category and per book, and the most frequent categories with their workflow rule |
 | `pages_fit_width(project, margin_mm?, percentile?)` | One page width: smaller side margins for pages wider than the typical text block |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertical alignment for all body pages, plus removal candidates for the report |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?)` | `output` |
 | `check_pages(project, pages, kind=content\|pictures)` | Heuristics with evidence |
 | `export_summary(project)` | Output TIFF list and anything missing |
+| `review_note(project, pages, decision, reason?, confidence?, topic?)` | Records a decision of the agent for the review sheet |
+| `review_sheet(project, pages?, thumb_px?, engine?)` | Writes `out-agentas/review/index.html`: thumbnails, decisions with confidence, doubtful pages first |
 | `pages_straighten_pictures(project, pages)` | Re-measure skew of photo pages from the printed rectangles |
 | `project_for_windows(project, relative?)` | Write /mnt/c paths as C:/ for the Windows GUI, or as paths relative to the project (last step under WSL) |
 
