@@ -45,6 +45,7 @@ Settings::clear()
     QMutexLocker locker(&m_mutex);
     m_perPageParams.clear();
     m_perPageBlackOnWhite.clear();
+    m_perPageSkewEstimator.clear();
 }
 
 void
@@ -153,6 +154,21 @@ Settings::getBlackOnWhite(PageId const& page_id, bool* black_on_white) const
     }
     *black_on_white = it->second;
     return true;
+}
+
+void
+Settings::setSkewEstimator(PageId const& page_id, QString const& estimator)
+{
+    QMutexLocker const locker(&m_mutex);
+    m_perPageSkewEstimator[page_id] = estimator;
+}
+
+QString
+Settings::skewEstimator(PageId const& page_id) const
+{
+    QMutexLocker const locker(&m_mutex);
+    std::map<PageId, QString>::const_iterator const it(m_perPageSkewEstimator.find(page_id));
+    return it == m_perPageSkewEstimator.end() ? QString() : it->second;
 }
 
 } // namespace deskew
