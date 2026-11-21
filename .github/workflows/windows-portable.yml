@@ -110,10 +110,11 @@ jobs:
               if ($LastExitCode -ne 0) { throw "windeployqt failed for $($_.Name)" }
           }
           # The bundle must start on a PC without the Visual C++ Redistributable, so it carries the CRT and OpenMP DLLs.
-          $ccFile = Get-ChildItem "${{ github.workspace }}\build\CMakeFiles" -Recurse -Filter CMakeCXXCompiler.cmake | Select-Object -First 1
-          if (-not $ccFile) { throw "CMakeCXXCompiler.cmake not found under build\CMakeFiles" }
+          $ccFiles = @(Get-ChildItem "${{ github.workspace }}\build\CMakeFiles\*\CMakeCXXCompiler.cmake" -ErrorAction SilentlyContinue)
+          if ($ccFiles.Count -ne 1) { throw "Expected one build\CMakeFiles\<version>\CMakeCXXCompiler.cmake, found $($ccFiles.Count)" }
+          $ccFile = $ccFiles[0]
           # The Visual Studio generator keeps the compiler path in this file, not in CMakeCache.txt.
-          $m = Select-String -Path $ccFile.FullName -Pattern 'set\(CMAKE_CXX_COMPILER "([^"]+)"\)' | Select-Object -First 1
+          $m = Select-String -LiteralPath $ccFile.FullName -Pattern 'set\(CMAKE_CXX_COMPILER "([^"]+)"\)' | Select-Object -First 1
           $cl = if ($m) { $m.Matches[0].Groups[1].Value -replace '/', '\' } else { '' }
           if (-not $cl -or $cl -notmatch '^(.+\\VC)\\Tools\\MSVC\\(\d+\.\d+)[^\\]*\\') { throw "MSVC compiler path not found in $($ccFile.FullName): '$cl'" }
           $vcRoot = $Matches[1]
@@ -137,8 +138,11 @@ jobs:
           }
           # The runner has the redist in System32, so only this check shows a runtime DLL that the bundle does not carry.
           $dumpbin = Join-Path (Split-Path $cl) 'dumpbin.exe'
+          if (-not (Test-Path $dumpbin)) { throw "dumpbin.exe not found next to $cl" }
           foreach ($exe in Get-ChildItem $out -Filter *.exe) {
-              $deps = & $dumpbin /nologo /dependents $exe.FullName | Where-Object { $_ -match '^\s+(msvcp|vcruntime|vcomp|concrt)\S*\.dll\s*$' } | ForEach-Object { $_.Trim() }
+              $out_lines = & $dumpbin /nologo /dependents $exe.FullName
+              if ($LastExitCode -ne 0) { throw "dumpbin failed for $($exe.Name) with code $LastExitCode" }
+              $deps = $out_lines | Where-Object { $_ -match '^\s+(msvcp|vcruntime|vcomp|concrt)\S*\.dll\s*$' } | ForEach-Object { $_.Trim() }
               foreach ($dep in $deps) {
                   if (-not (Test-Path (Join-Path $out $dep))) { throw "$($exe.Name) needs $dep, which is missing in the bundle" }
               }
