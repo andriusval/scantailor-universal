@@ -1016,7 +1016,7 @@ def project_diff(original: str, corrected: str, limit: int = 60) -> dict:
     """Compare the project the agent made (e.g. agentas.orig.ScanTailor) with the same project after a
     person corrected it in the GUI. Lists, per kind, the pages that differ: images removed or added,
     rotation, split, deskew angle, content box and mode, empty pages, margins, alignment, match size,
-    output mode and DPI. Use it to learn rules for the workflow from the corrections."""
+    output mode, DPI and output rotation. Use it to learn rules for the workflow from the corrections."""
     a, b = Project(Path(original).resolve()), Project(Path(corrected).resolve())
 
     def page_state(p: Project, pg) -> dict:
@@ -1031,7 +1031,7 @@ def project_diff(original: str, corrected: str, limit: int = 60) -> dict:
             "margins": None if not lay.get("processed") else [round(v, 1) for v in lay["margins_mm"].values()],
             "align": None if not lay.get("processed") else lay.get("align_v"),
             "match_size": lay.get("match_size") if lay.get("processed") else None,
-            "output": (out.get("color_mode"), out.get("dpi")),
+            "output": (out.get("color_mode"), out.get("dpi"), out.get("output_rotation", 0)),
         }
 
     ia = {im.path.name for im in a.images.values()}

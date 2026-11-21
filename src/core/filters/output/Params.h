@@ -134,7 +134,7 @@ public:
         m_blackOnWhiteSetManually = set_manually;
     }
 
-    // Clockwise degrees (0, 90, 180 or 270) to turn the finished output image, for example a sideways table.
+    // A sideways table needs an upright output file, but stages 1-5 must keep the book orientation.
     int outputRotation() const
     {
         return m_outputRotation;

@@ -38,7 +38,7 @@ public:
 
     static QTransform scaleFromToDpi(Dpi const& from, Dpi const& to);
 
-    // Turns an image clockwise by a multiple of 90 degrees; the DPI values swap with the axes.
+    // The DPI values swap with the axes, so that the TIFF header stays correct for a non-square DPI.
     static QImage rotateImage(QImage const& image, int degrees);
 };
 

@@ -319,9 +319,11 @@ Task::process(
                       m_ptrDbg.get(), &m_pageId, &m_ptrSettings
                   );
 
-        // The export puts this image next to the output file, so it must have the same rotation.
+        // The export combines this image with the output file on disk, so use the rotation of that file.
+        std::unique_ptr<OutputParams> const stored_params(m_ptrSettings->getOutputParams(m_pageId));
+        int const file_rotation = stored_params.get() ? stored_params->outputImageParams().outputRotation() : output_rotation;
 //Original_Foreground_Mixed
-        *m_p_orig_fore_subscan = Utils::rotateImage(out_img, output_rotation);
+        *m_p_orig_fore_subscan = Utils::rotateImage(out_img, file_rotation);
 
         return FilterResultPtr(0);
     }
@@ -645,7 +647,7 @@ Task::UiUpdater::UiUpdater(
         m_downscaledOrigImage(ImageView::createDownscaledImage(orig_image)),
         m_outputImage(output_image),
         m_downscaledOutputImage(ImageView::createDownscaledImage(output_image)),
-        m_rotatedOutputImage(Utils::rotateImage(output_image, params.outputRotation())),
+        m_rotatedOutputImage(batch ? QImage() : Utils::rotateImage(output_image, params.outputRotation())),
         m_pictureMask(picture_mask),
         m_despeckleState(despeckle_state),
         m_despeckleVisualization(despeckle_visualization),

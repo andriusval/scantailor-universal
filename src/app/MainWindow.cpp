@@ -87,6 +87,7 @@
 #include "filters/output/Task.h"
 #include "filters/output/CacheDrivenTask.h"
 #include "filters/output/Settings.h"
+#include "filters/output/OutputParams.h"
 #include "LoadFileTask.h"
 #include "CompositeCacheDrivenTask.h"
 #include "ScopedIncDec.h"
@@ -2179,7 +2180,9 @@ MainWindow::ExportOutput(exporting::ExportSettings settings)
             rec.filename = out_file_path;
             rec.page_id = page_id;
             rec.zones_info = m_ptrStages->outputFilter()->getZonesInfo(page_id);
-            rec.output_rotation = m_ptrStages->outputFilter()->getSettings()->getParams(page_id).outputRotation();
+            // The output file on disk can be older than the current setting, so use the rotation of that file.
+            std::unique_ptr<output::OutputParams> const stored(m_ptrStages->outputFilter()->getSettings()->getOutputParams(page_id));
+            rec.output_rotation = stored.get() ? stored->outputImageParams().outputRotation() : 0;
             outpaths_vector.append(rec);
         }
 
