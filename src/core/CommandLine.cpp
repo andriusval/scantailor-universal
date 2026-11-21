@@ -131,6 +131,7 @@ CommandLine::parseCli(QStringList const& argv)
     opts << "tiff-force-rgb";
     opts << "tiff-force-grayscale";
     opts << "tiff-force-keep-color-space";
+    opts << "pages";
 
     QMap<QString, QString> shortMap;
     shortMap["h"] = "help";
@@ -439,6 +440,14 @@ CommandLine::printHelp()
     std::cout << "\t--render-preview=<directory>\t\t-- after the last filter, write a PNG for each page to the directory:" << std::endl;
     std::cout << "\t\t\t\t\t\t   the image after filters 1-3 with the page box and the content box of filter 4" << std::endl;
     std::cout << "\t\t--render-preview-size=<pixels>\t-- maximum length of the long side of a preview; default: 1200" << std::endl;
+    std::cout << "\t--pages=<file>[:L|R]|[#]<index>[-<index>][;...]" << std::endl;
+    std::cout << "\t\t\t\t\t\t-- process only these pages; other pages keep their page settings and output files" << std::endl;
+    std::cout << "\t\t\t\t\t\t   <file>: image name, or path (relative to the project) when names repeat;" << std::endl;
+    std::cout << "\t\t\t\t\t\t   L|R: left or right half of a split image, else all pages of the image;" << std::endl;
+    std::cout << "\t\t\t\t\t\t   <index>: 0-based page number in the project before this run, or a range like 3-7;" << std::endl;
+    std::cout << "\t\t\t\t\t\t   an entry that matches no page, or more than one image, is an error;" << std::endl;
+    std::cout << "\t\t\t\t\t\t   project-wide options (deviation limits, page detection box) still apply to all pages" << std::endl;
+    std::cout << "\t\t\t\t\t\t   example: --pages=\"0100.jpg:L;0101.jpg;#12\"" << std::endl;
     std::cout << "\t--tiff-compression=<lzw|deflate|packbits|jpeg|none>\t-- default: lzw" << std::endl;
     std::cout << "\t--tiff-force-rgb\t\t\t-- all output tiffs will be rgb" << std::endl;
     std::cout << "\t--tiff-force-grayscale\t\t\t-- all output tiffs will be grayscale" << std::endl;
