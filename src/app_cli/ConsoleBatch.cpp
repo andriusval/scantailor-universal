@@ -280,7 +280,15 @@ bool collectPage(
         sc_settings.setPageParams(page.id(), cleared);
     }
 
-    task.process(page, &collector);
+    try {
+        task.process(page, &collector);
+    } catch (...) {
+        // The caller can continue after an error, so the saved project must keep the mark.
+        if (thumbnail_mark) {
+            sc_settings.setPageParams(page.id(), *sc_params);
+        }
+        throw;
+    }
     if (thumbnail_mark) {
         sc_settings.setPageParams(page.id(), *sc_params);
     }
@@ -773,7 +781,8 @@ ConsoleBatch::dumpMasks(QString const& directory)
             FilterData data(FilterData(page.imageId().filePath(), image), xform);
             data.setBlackOnWhite(params->dependencies().isBlackOnWhite());
 
-            ContentMask const content_mask(data.grayImageBlackOnWhite(), xform, status);
+            // Use the same image as select_content::Task, so that the mask is the one that the content snap uses.
+            ContentMask const content_mask(data.grayImage(), xform, status);
             if (content_mask.isNull()) {
                 throw std::runtime_error("the page area is empty");
             }

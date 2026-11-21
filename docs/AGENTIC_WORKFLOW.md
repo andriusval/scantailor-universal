@@ -158,6 +158,7 @@ Failų vardai tokie patys kaip `--render-preview` ir išvesties TIFF:
 
 JSON faile yra skeno failas, sub-page, paveikslėlio dydis, DPI ir pasukimas.
 Taip pat yra deskew kampas, crop sritis, page box ir content box.
+`crop_area` naudoja projekto puslapio kontūro koordinates: skenas po DPI mastelio ir pasukimo.
 Transformacijos: `original_to_page`, `original_to_mask` ir `page_to_mask`.
 
 Kaukės yra 1 bito PNG, 150 DPI, baltas pikselis = nustatytas.

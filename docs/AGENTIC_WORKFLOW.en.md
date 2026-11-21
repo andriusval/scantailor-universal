@@ -158,6 +158,7 @@ The files use the page name of `--render-preview` and of the output TIFF:
 
 The JSON file gives the scan file, the sub-page, the image size, the DPI and the rotation.
 It also gives the deskew angle, the crop area, the page box and the content box.
+`crop_area` uses the coordinates of the page outline in the project: the scan after the DPI scale and the rotation.
 The transforms are `original_to_page`, `original_to_mask` and `page_to_mask`.
 
 The masks are 1-bit PNG files at 150 DPI, and white is a set pixel.
