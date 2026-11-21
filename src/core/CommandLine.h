@@ -187,6 +187,12 @@ public:
     {
         return hasRenderPreviewSize() ? m_options.value("render-preview-size").toInt() : 1200;
     }
+    bool hasThreads() const
+    {
+        return contains("threads");
+    }
+    // Gives -1 for a value that is not "auto" or a number, so that main() can report it.
+    int getThreads() const;
     bool hasOrientation() const
     {
         return contains("orientation") && !m_options["orientation"].isEmpty();

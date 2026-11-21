@@ -17,6 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <algorithm>
 #include <cstdlib>
 #include <assert.h>
 #include <iostream>
@@ -26,6 +27,7 @@
 #include <QMap>
 #include <QRegularExpression>
 #include <QStringList>
+#include <QThread>
 #include "settings/ini_keys.h"
 
 #include "Dpi.h"
@@ -135,6 +137,7 @@ CommandLine::parseCli(QStringList const& argv)
     opts << "tiff-force-grayscale";
     opts << "tiff-force-keep-color-space";
     opts << "pages";
+    opts << "threads";
 
     QMap<QString, QString> shortMap;
     shortMap["h"] = "help";
@@ -455,6 +458,10 @@ CommandLine::printHelp()
     std::cout << "\t\t\t\t\t\t   an entry that matches no page, or more than one image, is an error;" << std::endl;
     std::cout << "\t\t\t\t\t\t   project-wide options (deviation limits, page detection box) still apply to all pages" << std::endl;
     std::cout << "\t\t\t\t\t\t   example: --pages=\"0100.jpg:L;0101.jpg;#12\"" << std::endl;
+    std::cout << "\t--threads=<N|auto>\t\t\t-- process N pages of a filter at the same time; 0 or auto: one per CPU core;" << std::endl;
+    std::cout << "\t\t\t\t\t\t   default: 1. With N > 1, each page uses one OpenMP thread," << std::endl;
+    std::cout << "\t\t\t\t\t\t   the next filter starts after all pages, and the output is the same as with 1;" << std::endl;
+    std::cout << "\t\t\t\t\t\t   a warning tells when the aggregate page size changes in filter 6" << std::endl;
     std::cout << "\t--tiff-compression=<lzw|deflate|packbits|jpeg|none>\t-- default: lzw" << std::endl;
     std::cout << "\t--tiff-force-rgb\t\t\t-- all output tiffs will be rgb" << std::endl;
     std::cout << "\t--tiff-force-grayscale\t\t\t-- all output tiffs will be grayscale" << std::endl;
@@ -464,6 +471,21 @@ CommandLine::printHelp()
     std::cout << "\t\t--page-detection-tolerance=<0.0..1.0>\t-- default: 0.1" << std::endl;
     std::cout << "\t--disable-check-output\t\t\t-- don't check if page is valid when switching to step 6";
     std::cout << std::endl;
+}
+
+int
+CommandLine::getThreads() const
+{
+    if (!hasThreads()) {
+        return 1;
+    }
+    QString const value(m_options.value("threads").trimmed());
+    if (value == "auto" || value == "0") {
+        return std::max(1, QThread::idealThreadCount());
+    }
+    bool ok = false;
+    int const threads = value.toInt(&ok);
+    return (ok && threads > 0) ? threads : -1;
 }
 
 page_split::LayoutType
