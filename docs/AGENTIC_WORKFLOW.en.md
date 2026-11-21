@@ -44,8 +44,11 @@ GUI.
    - **orientation** from the direction of the letters in a zoomed crop:
      `right` = rotate 90° clockwise, `left`, `upsidedown`, `none`;
    - **layout**: `2` for open-book spreads, `1` for single pages;
-   - covers, endpapers and other one-image scans (`001`, `9999`, …) usually
-     `orientation=none, layout=1`: `images_set_geometry` for them.
+   - covers and other one-image scans (`001`, `9999`, …) usually
+     `orientation=none, layout=1`: `images_set_geometry` for them;
+   - look at each such scan. An endpaper scan (`002`, `9998`: the inside
+     cover with a map and the flyleaf) is usually a spread. Give it
+     `layout=2` and the orientation that the scan shows.
 3. `run_stages(project, 1, 5)` (about 0.5 s per page).
 4. **Content:** `check_pages(kind="content")` and the widest/tallest pages
    from `pages_list`. Preview what is flagged (`pages_preview`, zoom on edges
@@ -72,7 +75,8 @@ GUI.
      tilt photos), `run_stages(3, 5)`, `page_set_content(mode="all_content")`
      (photo + caption, no spine shadow), then
      `pages_set_output(color_mode="color", dpi=300, white_margins=true,
-     equalize_illumination=true)`.
+     equalize_illumination=true)` and
+     `pages_set_layout(<picture pages>, margin_left=0, margin_right=0)`.
 6. **Covers and endpapers:** `page_set_content(mode="cover")`, then
    `pages_set_layout(margins_mm=0, match_size=false)` and
    `pages_set_output(color_mode="color", dpi=300)`. The cover mode also finds
@@ -87,9 +91,10 @@ GUI.
    get smaller left and right margins, down to 0, so that they do not make
    the book wider.
 9. **Alignment:** `pages_align_auto(project)`. Front matter (title,
-   copyright, dedication, epigraph) goes to `vcenter`. Short pages (chapter
-   ends, lists) and full text pages without the page-number band go to `top`.
-   Other pages go to `bottom`. Preview the `top` and `vcenter` pages, and
+   copyright, dedication, epigraph) goes to `vcenter`, but a small logo at
+   the top stays `top`. Section starts (the text starts lower than usual) go
+   to `bottom`. Short pages (chapter ends, lists) and full text pages without
+   the page-number band go to `top`. Other pages go to `bottom`. Preview the `top` and `vcenter` pages, and
    correct single pages with `pages_set_layout`. Then `run_stages(4, 6)`,
    `export_summary`, and check that all body pages have the same size
    (`pages_list(sort_by="content_width", descending=true)`). Look at 8–16
@@ -97,11 +102,16 @@ GUI.
 10. `project_for_windows(project)` when the project was processed under WSL,
     so that the Windows GUI opens it. With a Windows build from this branch,
     use `relative=true`: the project then opens under WSL and Windows.
-    Remove the job logs and the backups of the agent.
+    It also keeps `agentas.orig.ScanTailor`, a copy of the finished project.
+    Remove the job logs and the run backups. Never remove the `.orig` copy.
+    Later, `project_diff(orig, corrected)` compares it with the corrections
+    of the person, so that we find new rules.
 11. Summarise: pages changed and why, picture decisions, anything left for a
     person (e.g. stamps or stains inside the text). List the removal
-    candidates from `pages_align_auto` (blank leaves, a half-title that repeats
-    the title page). Do not remove them: the person decides.
+    candidates from `pages_align_auto`: blank leaves, a half-title that
+    repeats the title page, and near-empty pages. Also list its review pages:
+    full-height pages with few text lines, such as rotated tables. Do not
+    remove them: the person decides.
 
 Units: content boxes are in page pixels of the deskewed page (same as
 `page_preview`); margins in mm; DPI integers.
@@ -124,6 +134,7 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
 | `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5 |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
+| `project_diff(original, corrected)` | Per-page differences between the agent's project and a corrected one |
 | `pages_fit_width(project, margin_mm?, percentile?)` | One page width: smaller side margins for pages wider than the typical text block |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertical alignment for all body pages, plus removal candidates for the report |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination)` | `output` |

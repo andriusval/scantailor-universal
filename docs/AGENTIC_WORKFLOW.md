@@ -44,8 +44,11 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
 2. `image_preview(project, images=[0, 1, 3, N/2, -2, -1])` (indeksai). Nuspręsti:
    - **orientation** pagal raidžių kryptį padidintoje iškarpoje;
    - **layout**: `2` atvartams, `1` pavieniams puslapiams;
-   - viršeliai, priešlapiai ir kiti pavieniai skenai (`001`, `9999`, …)
-     dažniausiai `orientation=none, layout=1` (`images_set_geometry`).
+   - viršeliai ir kiti pavieniai skenai (`001`, `9999`, …) dažniausiai
+     `orientation=none, layout=1` (`images_set_geometry`);
+   - kiekvieną tokį skeną peržiūrėti: priešlapio skenas (vidinis viršelis su
+     žemėlapiu ir priešlapis, pvz. `002`, `9998`) paprastai yra atvartas →
+     `layout=2`, orientacija tokia, kokią rodo skenas.
 3. `run_stages(project, 1, 5)` (~0,5 s puslapiui).
 4. **Content:** `check_pages(kind="content")` ir plačiausi/aukščiausi iš
    `pages_list`. Pažymėtus peržiūrėti, tada:
@@ -74,7 +77,8 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
      nuotraukas gali pakreipti), `run_stages(3, 5)`,
      `page_set_content(mode="all_content")` (nuotrauka + parašas, be nugarėlės
      šešėlio), tada `pages_set_output(color_mode="color", dpi=300,
-     white_margins=true, equalize_illumination=true)`.
+     white_margins=true, equalize_illumination=true)` ir
+     `pages_set_layout(<nuotraukų puslapiai>, margin_left=0, margin_right=0)`.
 6. **Viršeliai ir priešlapiai:** `page_set_content(mode="cover")` (randa ir
    tamsius viršelius ant juodo fono; kiekvieną kraštą pritraukia prie viršelio
    krašto ir dar 1 mm į vidų, kad nesimatytų fono), `pages_set_layout(margins_mm=0,
@@ -87,9 +91,11 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    tipinis teksto bloko plotis + po 10 mm iš šonų. Platesniems puslapiams
    šoninės paraštės sumažinamos (iki 0), kad jie neplatintų visos knygos.
 9. **Lygiavimas:** `pages_align_auto(project)`. Įžanginiai puslapiai
-   (titulinis, metrikos, dedikacija, epigrafas) → `vcenter`; trumpi puslapiai
-   (skyrių pabaigos, sąrašai) ir pilni teksto puslapiai be numerio juostos →
-   `top`; kiti → `bottom`. Peržiūrėti `top` ir `vcenter` puslapius, pavienius
+   (titulinis, metrikos, dedikacija, epigrafas) → `vcenter`, bet mažas
+   logotipas viršuje lieka `top`; skyrių ir sąrašų pradžios (tekstas
+   prasideda žemiau nei įprastai) → `bottom`; trumpi puslapiai (skyrių
+   pabaigos, sąrašai) ir pilni teksto puslapiai be numerio juostos → `top`;
+   kiti → `bottom`. Peržiūrėti `top` ir `vcenter` puslapius, pavienius
    pataisyti per `pages_set_layout`. Tada `run_stages(4, 6)`,
    `export_summary`, patikrinti, ar visi teksto puslapiai vienodo dydžio
    (`pages_list(sort_by="content_width", descending=true)`). Peržiūrėti 8–16
@@ -97,11 +103,15 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
 10. `project_for_windows(project)`, jei apdorota per WSL — kad projektą
     atidarytų Windows GUI. Su šios šakos Windows buildu naudoti
     `relative=true`: tada projektas atsidaro ir WSL, ir Windows.
-    Išvalyti agento žurnalus ir atsargines kopijas.
+    Jis taip pat išsaugo `agentas.orig.ScanTailor` — baigto projekto kopiją.
+    Išvalyti agento žurnalus ir paleidimų atsargines kopijas, bet niekada ne
+    `.orig`: `project_diff(orig, pataisytas)` vėliau palygina jį su žmogaus
+    pataisymais, kad rastume naujų taisyklių.
 11. Suvestinė: kas pakeista ir kodėl, iliustracijų sprendimai, kas liko
     žmogui (pvz. antspaudai ar dėmės tekste). Išvardyti `pages_align_auto`
     šalinimo kandidatus (tušti priešlapiai, titulinį kartojantis antraštinis
-    lapas) — nešalinti, sprendžia žmogus.
+    lapas, beveik tušti puslapiai) ir peržiūros sąrašą (aukšti puslapiai su
+    mažai eilučių: pasuktos lentelės) — nešalinti, sprendžia žmogus.
 
 Vienetai: content box — ištiesinto puslapio pikseliais (tie patys, kaip
 `page_preview`); paraštės — mm; DPI — sveikieji skaičiai.
@@ -124,6 +134,7 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
 | `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5 |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
+| `project_diff(original, corrected)` | Skirtumai tarp agento projekto ir žmogaus pataisyto, puslapiais |
 | `pages_fit_width(project, margin_mm?, percentile?)` | Vienas puslapio plotis: mažesnės šoninės paraštės už tipinį teksto bloką platesniems puslapiams |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertikalus lygiavimas visiems teksto puslapiams ir šalinimo kandidatai ataskaitai |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination)` | `output` |

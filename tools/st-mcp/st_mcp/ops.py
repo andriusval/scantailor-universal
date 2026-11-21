@@ -694,17 +694,22 @@ def pages_fit_width(project: str, margin_mm: float = 10.0, percentile: float = 8
             "next": "run_stages(5, 5), then pages_list(sort_by='content_width') to confirm one page size"}
 
 
-def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_ratio: float = 0.95) -> dict:
-    """Vertical alignment for every body page, and a list of pages a person should decide on.
+def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_ratio: float = 0.95,
+                     section_start_offset: float = 0.10) -> dict:
+    """Vertical alignment for every body page, and lists of pages a person should check.
     - Front matter (pages before the first page with at least half the usual number of text lines:
-      title, copyright, dedication, epigraph): vcenter.
+      title, copyright, dedication, epigraph): vcenter. A small element at the top of such a page
+      (series logo, less than 25 % of the usual height): top.
+    - Section starts (the text block starts lower than usual by more than section_start_offset of
+      the page height: preface, list or contents start): bottom, even when the page is short.
     - Short pages (content height below short_ratio of the median: chapter ends, lists): top.
-    - Full text pages without the page-number band (height below missing_number_ratio of the median but
-      the usual number of lines): top, so that their text lines up with the other pages.
+    - Full text pages without the page-number band (height below missing_number_ratio of the median
+      but the usual number of lines): top, so that their text lines up with the other pages.
     - Other body pages: bottom.
-    Also reports blank pages and half-title candidates (front-matter pages with 5 lines or fewer) as
-    removal candidates for the report; it does not remove anything. Covers keep their settings.
-    Then run_stages(5, 5)."""
+    Lists for the report (nothing is removed or changed for them): blank pages, half-title candidates,
+    near-empty pages (no text line, tiny box: mark them empty if they hold only specks or a stamp),
+    and full-height pages with few text lines (rotated tables or pictures: vcenter is usual there).
+    Covers keep their settings. Then run_stages(5, 5)."""
     import statistics
     proj = Path(project).resolve()
     _ensure_idle(proj)
@@ -721,6 +726,17 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
             lines[pid] = checks.check_page(p, pid).get("text_lines") or 0
         return lines[pid]
 
+    def top_rel(c: dict) -> float:
+        cr, pr = c["content_rect_px"], c.get("page_rect_px") or c["content_rect_px"]
+        return (cr["y"] - pr["y"]) / max(1.0, pr["height"])
+
+    # The usual top of the text block, per page side, because left and right scans sit differently.
+    usual_top = {}
+    for side in ("left", "right", "single"):
+        tops = [top_rel(c) for pid, c in body
+                if p.page(pid).side == side and abs(c["content_mm"]["height"] - med_h) < 0.05 * med_h]
+        usual_top[side] = statistics.median(tops) if tops else None
+
     # A sample gives the median number of lines, because the analysis of every page takes long.
     sample = [pid for pid, _ in body[len(body) // 4: len(body) // 4 + 15]]
     med_lines = statistics.median(text_lines(pid) for pid in sample) if sample else 0
@@ -729,18 +745,29 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
         if text_lines(pid) >= 0.5 * med_lines:
             front_end = i
             break
-    else:
-        front_end = 0
-    decided = {"vcenter": [], "top_short": [], "top_no_number_band": [], "bottom": 0}
-    half_titles = []
+    decided = {"vcenter": [], "top_small_header": [], "bottom_section_start": [], "top_short": [],
+               "top_no_number_band": [], "bottom": 0}
+    half_titles, near_empty, full_few_lines = [], [], []
     for i, (pid, c) in enumerate(body):
         h = c["content_mm"]["height"]
         lab = p.page(pid).label
+        ut = usual_top.get(p.page(pid).side)
+        offset = top_rel(c) - ut if ut is not None else 0.0
+        area = c["content_mm"]["width"] * h
+        if area < 0.01 * med_h * med_h and text_lines(pid) == 0:
+            near_empty.append(lab)
         if i < front_end:
-            align = "vcenter"
-            decided["vcenter"].append(lab)
+            if h < 0.25 * med_h and offset < section_start_offset:
+                align = "top"
+                decided["top_small_header"].append(lab)
+            else:
+                align = "vcenter"
+                decided["vcenter"].append(lab)
             if text_lines(pid) <= 5:
                 half_titles.append(lab)
+        elif h < missing_number_ratio * med_h and offset > section_start_offset:
+            align = "bottom"
+            decided["bottom_section_start"].append(lab)
         elif h < short_ratio * med_h:
             align = "top"
             decided["top_short"].append(lab)
@@ -750,13 +777,21 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
         else:
             align = "bottom"
             decided["bottom"] += 1
+            # Picture pages already have their own output mode, so only text-mode pages need this review.
+            if (h >= 0.9 * med_h and text_lines(pid) < 0.5 * med_lines
+                    and p.output(pid).get("color_mode") in (None, "bw")):
+                full_few_lines.append(lab)
         p.set_layout(pid, None, align, None, None)
     p.save()
     blank = [pg.label for pg in p.pages if p.content(pg.id).get("empty")]
     return {"median_height_mm": med_h, "median_text_lines": med_lines, **decided,
+            "review": {"full_height_few_lines": full_few_lines,
+                       "note": "rotated tables or pictures: preview them, vcenter is usual; section starts: "
+                               "preview them too, some books keep them at the top"},
             "report_removal_candidates": {"blank_pages": blank, "half_title_candidates": half_titles,
+                                          "near_empty_pages": near_empty,
                                           "note": "list these in the final report; the user decides, nothing was removed"},
-            "next": "run_stages(5, 5), then preview the top/vcenter pages"}
+            "next": "run_stages(5, 5), then preview the top, vcenter and review pages"}
 
 
 def pages_set_output(project: str, pages: str | list[str], color_mode: str | None = None, dpi: int | None = None,
@@ -832,6 +867,55 @@ def pages_straighten_pictures(project: str, pages: str | list[str], min_change: 
     return {"changed": changed, "next": "run_stages(3, 5), then page_set_content(mode=all_content) on these pages"}
 
 
+def _keep_original(proj: Path) -> str | None:
+    """Copy the finished project to <name>.orig.ScanTailor once, so that later corrections by a person can be compared."""
+    orig = proj.with_name(proj.stem + ".orig" + proj.suffix)
+    if orig.exists():
+        return None
+    shutil.copy2(proj, orig)
+    return str(orig)
+
+
+def project_diff(original: str, corrected: str, limit: int = 60) -> dict:
+    """Compare the project the agent made (e.g. agentas.orig.ScanTailor) with the same project after a
+    person corrected it in the GUI. Lists, per kind, the pages that differ: images removed or added,
+    rotation, split, deskew angle, content box and mode, empty pages, margins, alignment, match size,
+    output mode and DPI. Use it to learn rules for the workflow from the corrections."""
+    a, b = Project(Path(original).resolve()), Project(Path(corrected).resolve())
+
+    def page_state(p: Project, pg) -> dict:
+        c, lay, out = p.content(pg.id), p.layout(pg.id), p.output(pg.id)
+        rect = c.get("content_rect_px")
+        return {
+            "rotation": p.rotation(pg.image_id),
+            "deskew": round(p.deskew_angle(pg.id), 2),
+            "content_mode": c.get("mode"),
+            "content": None if not rect else [round(rect[k]) for k in ("x", "y", "width", "height")],
+            "empty": c.get("empty"),
+            "margins": None if not lay.get("processed") else [round(v, 1) for v in lay["margins_mm"].values()],
+            "align": None if not lay.get("processed") else lay.get("align_v"),
+            "match_size": lay.get("match_size") if lay.get("processed") else None,
+            "output": (out.get("color_mode"), out.get("dpi")),
+        }
+
+    ia = {im.path.name for im in a.images.values()}
+    ib = {im.path.name for im in b.images.values()}
+    la = {pg.label: pg for pg in a.pages}
+    lb = {pg.label: pg for pg in b.pages}
+    by_kind: dict[str, list] = {}
+    for lab in sorted(set(la) & set(lb), key=lambda x: la[x].index):
+        sa, sb = page_state(a, la[lab]), page_state(b, lb[lab])
+        for k in sa:
+            if sa[k] != sb[k]:
+                by_kind.setdefault(k, []).append({"page": lab, "agent": sa[k], "user": sb[k]})
+    return {
+        "images_removed": sorted(ia - ib), "images_added": sorted(ib - ia),
+        "pages_only_in_original": sorted(set(la) - set(lb)), "pages_only_in_corrected": sorted(set(lb) - set(la)),
+        "counts": {k: len(v) for k, v in by_kind.items()},
+        "differences": {k: v[:limit] for k, v in by_kind.items()},
+    }
+
+
 def project_for_windows(project: str, relative: bool = False) -> dict:
     """Last step when the project was processed under WSL: rewrite /mnt/<drive>/... paths in the
     project (scan folder, output folder) to Windows form (C:/..., C:\\...) so the Windows GUI opens it.
@@ -857,9 +941,9 @@ def project_for_windows(project: str, relative: bool = False) -> dict:
                 el.set(attr, new)
                 changed.append(new)
         p.save()
-        return {"project": str(proj), "rewritten": changed,
+        return {"project": str(proj), "rewritten": changed, "original_copy": _keep_original(proj),
                 "note": "relative paths: the project opens under WSL and Windows, in builds from branch "
-                        "agentic/windows-build only"}
+                        "agentic/windows-build only; never delete the .orig copy"}
 
     def win(path: str, backslash: bool) -> str:
         m = re.match(r"^/mnt/([a-zA-Z])/(.*)$", path or "")
@@ -880,8 +964,9 @@ def project_for_windows(project: str, relative: bool = False) -> dict:
             d.set("path", new)
             changed.append(new)
     p.save()
-    return {"project": str(proj), "rewritten": changed,
-            "note": "open this file in the Windows GUI; to process it again under WSL, run_stages refuses "
+    return {"project": str(proj), "rewritten": changed, "original_copy": _keep_original(proj),
+            "note": "never delete the .orig copy: project_diff compares it with the corrections of the user; "
+                    "open this file in the Windows GUI; to process it again under WSL, run_stages refuses "
                     "Windows paths, so re-run on Windows or convert back"}
 
 
@@ -894,7 +979,7 @@ def workflow_guide() -> dict:
     return {"workflow": text}
 
 
-TOOLS = [project_create, project_for_windows, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
+TOOLS = [project_create, project_for_windows, project_diff, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
          pages_preview, image_preview, page_set_content, pages_snap_content, pages_set_layout, pages_fit_width, pages_align_auto, pages_set_output,
          check_pages, export_summary, workflow_guide]
 IMAGE_TOOLS = {"page_preview", "pages_preview", "image_preview"}
