@@ -50,8 +50,9 @@ def dump_masks(project: Project, page_ids: list[str]) -> dict[str, PageMasks]:
         cmd = [find_cli(), "--start-filter=5", "--end-filter=4", "--json-progress",
                "--pages=" + ";".join(_page_ref(project, proj, project.page(i)) for i in page_ids),
                f"--dump-masks={tmp}/masks", str(proj), f"{tmp}/out"]
+        # The time limit stops a CLI that hangs, and the caller then uses its own ink.
         r = subprocess.run(cmd, capture_output=True, env=cli_env(), cwd=str(proj.parent),
-                           text=True, encoding="utf-8", errors="replace")
+                           text=True, encoding="utf-8", errors="replace", timeout=60 + 10 * len(page_ids))
         mdir = Path(tmp) / "masks"
         for i in page_ids:
             j = mdir / (project.output_name(i) + ".json")
@@ -78,4 +79,5 @@ def mask_on_page_grid(mask: np.ndarray, page_to_mask: Affine, k: float, size: tu
     im = Image.fromarray(mask.astype(np.uint8) * 255).transform(
         size, Image.Transform.AFFINE, (m.a, m.c, m.e, m.b, m.d, m.f),
         resample=Image.Resampling.BILINEAR, fillcolor=0)
-    return np.asarray(im) > 64
+    # Any part of a mask pixel counts as ink, so that thin strokes stay after the reduction.
+    return np.asarray(im) > 0

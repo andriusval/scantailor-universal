@@ -130,8 +130,8 @@ def _group(rows: list[int], gap: int = 3) -> list[tuple[int, int]]:
 
 
 def check_page(project: Project, page_id: str, ink: tuple[np.ndarray, float] | None = None) -> dict:
-    """Ink outside the content box (missed page numbers / headers) and junk near box edges.
-    ink: a ready (mask, k) pair, for example from ink_from_masks(); else st-mcp thresholds the page itself."""
+    """Ink outside the content box (missed page numbers / headers) and junk near box edges."""
+    # Without a ready (mask, k) pair from ink_from_masks(), st-mcp thresholds the page itself.
     pg = project.page(page_id)
     c = project.content(pg.id)
     if not c.get("processed"):
