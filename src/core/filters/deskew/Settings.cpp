@@ -71,6 +71,8 @@ Settings::performRelinking(AbstractRelinker const& relinker)
         new_black_on_white.insert(std::map<PageId, bool>::value_type(new_page_id, kv.second));
     }
     m_perPageBlackOnWhite.swap(new_black_on_white);
+    // The estimator names belong to the last run only, so the new paths do not need them.
+    m_perPageSkewEstimator.clear();
 }
 
 void Settings::updateDeviation()
@@ -113,6 +115,7 @@ Settings::clearPageParams(PageId const& page_id)
 {
     QMutexLocker locker(&m_mutex);
     m_perPageParams.erase(page_id);
+    m_perPageSkewEstimator.erase(page_id);
 }
 
 std::unique_ptr<Params>

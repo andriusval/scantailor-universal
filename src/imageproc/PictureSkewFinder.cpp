@@ -156,7 +156,21 @@ PictureSkewFinder::findSkew(GrayImage const& image, BinaryImage const& page_mask
     }
     double const picture_fraction = page_blocks ? double(picture_blocks) / page_blocks : 0.0;
 
-    // A picture cut by the image border has a false straight edge at 0 degrees, so the weight falls to zero at the border.
+    // The page mask is convex, so its extent in each row and column gives the distance to the page edge.
+    std::vector<int> row_first(height, width), row_last(height, -1);
+    std::vector<int> col_first(width, height), col_last(width, -1);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            if (isInPage(page_mask, x, y)) {
+                row_first[y] = std::min(row_first[y], x);
+                row_last[y] = std::max(row_last[y], x);
+                col_first[x] = std::min(col_first[x], y);
+                col_last[x] = std::max(col_last[x], y);
+            }
+        }
+    }
+
+    // A picture cut by the page edge has a false straight edge there, so the weight falls to zero at the page edge.
     float const taper = std::max(1.0f, 0.04f * std::min(width, height));
     std::vector<Point> points;
     float const cx = 0.5f * width;
@@ -165,8 +179,10 @@ PictureSkewFinder::findSkew(GrayImage const& image, BinaryImage const& page_mask
         uint8_t const* line = image.data() + image.stride() * y;
         for (int x = 0; x < width; ++x) {
             if (line[x] < paper * 0.8 && isInPage(page_mask, x, y)) {
-                float const border = float(std::min(std::min(x, width - 1 - x), std::min(y, height - 1 - y)));
-                points.push_back(Point(x + 0.5f - cx, y + 0.5f - cy, std::min(1.0f, border / taper)));
+                int const dx = std::min(x - row_first[y], row_last[y] - x);
+                int const dy = std::min(y - col_first[x], col_last[x] - y);
+                float const edge = float(std::min(dx, dy));
+                points.push_back(Point(x + 0.5f - cx, y + 0.5f - cy, std::min(1.0f, edge / taper)));
             }
         }
     }
