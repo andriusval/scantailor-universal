@@ -10,6 +10,8 @@ SET(CPACK_NSIS_INSTALLED_ICON_NAME "scantailor-universal.exe")
 SET(CPACK_NSIS_EXECUTABLES_DIRECTORY .)
 # Install Runtime
 set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
+# The exe files import vcomp140.dll, so the installer must carry the OpenMP runtime too.
+set(CMAKE_INSTALL_OPENMP_LIBRARIES TRUE)
 INCLUDE(InstallRequiredSystemLibraries)
 # Install Qt
 SET(

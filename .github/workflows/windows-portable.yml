@@ -109,6 +109,37 @@ jobs:
               & $windeployqt --release --no-compiler-runtime --dir $out $_.FullName
               if ($LastExitCode -ne 0) { throw "windeployqt failed for $($_.Name)" }
           }
+          # The bundle must start on a PC without the Visual C++ Redistributable, so it carries the CRT and OpenMP DLLs.
+          $cache = Get-Content "${{ github.workspace }}\build\CMakeCache.txt"
+          $cl = ($cache | Select-String '^CMAKE_CXX_COMPILER:FILEPATH=(.+)$').Matches[0].Groups[1].Value -replace '/', '\'
+          if (-not $cl -or $cl -notmatch '^(.+\\VC)\\Tools\\MSVC\\(\d+\.\d+)[^\\]*\\') { throw "MSVC compiler path not found in CMakeCache.txt: '$cl'" }
+          $vcRoot = $Matches[1]
+          $toolset = [version]$Matches[2]
+          Write-Host "Compiler: $cl (toolset $toolset)"
+          # Take the redist of the same Visual Studio instance, because an older msvcp140.dll can crash the exe files.
+          $redist = Get-ChildItem "$vcRoot\Redist\MSVC" -Directory -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -match '^\d+(\.\d+){1,3}$' } |
+                    Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          if (-not $redist) { throw "No MSVC redist folder under $vcRoot\Redist\MSVC" }
+          $redistVer = [version]$redist.Name
+          if ($redistVer.Major -lt $toolset.Major -or ($redistVer.Major -eq $toolset.Major -and $redistVer.Minor -lt $toolset.Minor)) {
+              throw "MSVC redist $redistVer is older than the toolset $toolset"
+          }
+          Write-Host "MSVC redist: $($redist.FullName)"
+          Get-ChildItem "$($redist.FullName)\x64" -Directory |
+              Where-Object { $_.Name -match '^Microsoft\.VC\d+\.(CRT|OpenMP)$' } |
+              ForEach-Object { Copy-Item "$($_.FullName)\*.dll" $out -Force }
+          foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll', 'vcomp140.dll') {
+              if (-not (Test-Path (Join-Path $out $dll))) { throw "$dll is missing in the bundle" }
+          }
+          # The runner has the redist in System32, so only this check shows a runtime DLL that the bundle does not carry.
+          $dumpbin = Join-Path (Split-Path $cl) 'dumpbin.exe'
+          foreach ($exe in Get-ChildItem $out -Filter *.exe) {
+              $deps = & $dumpbin /nologo /dependents $exe.FullName | Where-Object { $_ -match '^\s+(msvcp|vcruntime|vcomp|concrt)\S*\.dll\s*$' } | ForEach-Object { $_.Trim() }
+              foreach ($dep in $deps) {
+                  if (-not (Test-Path (Join-Path $out $dep))) { throw "$($exe.Name) needs $dep, which is missing in the bundle" }
+              }
+          }
           Get-ChildItem $out | Select-Object Name, Length | Format-Table -AutoSize
       - name: Smoke-test CLI
         shell: powershell
@@ -117,6 +148,7 @@ jobs:
           if (-not $cli) { throw "CLI executable not found in bundle" }
           & $cli.FullName --help
           Write-Host "CLI exit code: $LastExitCode"
+          if ($LastExitCode -ne 0) { throw "CLI --help exited with code $LastExitCode" }
       - name: Upload portable bundle
         uses: actions/upload-artifact@v4
         with:
