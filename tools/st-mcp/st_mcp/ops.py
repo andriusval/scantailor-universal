@@ -1432,11 +1432,15 @@ def pages_straighten_pictures(project: str, pages: str | list[str], min_change: 
     """Picture pages (photos, plates): ScanTailor deskews by text lines, which photos do not have, so it
     can tilt them by several degrees. Re-measures the skew from the edges of the printed pictures (with
     the CLI option --deskew-pictures when the CLI has it, else in Python) and sets a manual deskew angle.
+    Pages where a person cleared "Use picture edges" in the GUI stay unchanged (skipped_text_lines).
     Afterwards run_stages(3, 5), then page_set_content(mode=all_content)."""
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
     ids = _resolve_pages(p, pages)
+    # A person chose the text lines for these pages in the GUI, so the tool does not change them.
+    text_only = [i for i in ids if p.picture_edges_off(i)]
+    ids = [i for i in ids if i not in text_only]
     cli_angles, cli_error = {}, None
     if _cli_supports("deskew-pictures"):
         # Python can measure every page, so a CLI problem must not stop the tool.
@@ -1472,6 +1476,8 @@ def pages_straighten_pictures(project: str, pages: str | list[str], min_change: 
            "next": "run_stages(3, 5), then page_set_content(mode=all_content) on these pages"}
     if cli_error:
         res["cli_error"] = cli_error
+    if text_only:
+        res["skipped_text_lines"] = [p.page(i).label for i in text_only]
     return res
 
 

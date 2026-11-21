@@ -180,7 +180,9 @@ TXT
   on a new project gives picture pages the picture angle already. The tool
   still passes `--deskew-pictures`, so that older builds measure the same way.
   Pages that have an angle in the project keep it, so the tool stays useful
-  for these pages.
+  for these pages. The tool does not change a page with
+  `deskew/page@pictureEdges="0"` (the GUI check box "Use picture edges" is
+  clear), and it lists these pages in `skipped_text_lines`.
 - `run_stages(pages=...)` processes only those pages with a CLI that has
   `--pages`; older builds process all pages. Stage 5 still uses the size of all
   pages. So after margin changes, or after a size warning, run stages 5-6 on
