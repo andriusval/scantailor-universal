@@ -54,3 +54,4 @@ Suggested order: 1 and 4, then 2, then 5 and 6, and 7 to 9 later.
 - The CLI reads the DPI of each scan from the file.
 - The Relinking dialog has "Find in folder...", a summary and a filter.
 - The Windows build uses Qt 6.12.1 LTS, and the minimum Qt is 6.4 or 5.15.
+- Item 7: the CLI option `--dump-masks` writes the content, text and garbage masks with their transform; `check_pages` uses them.
