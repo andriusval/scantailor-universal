@@ -272,6 +272,15 @@ public:
     {
         return output::ColorGrayscaleOptions::parseFillingColor(m_options["filling-color"].toLower());
     }
+    bool hasGrayscaleFirst() const
+    {
+        return contains("grayscale-first");
+    }
+    // Only an explicit "false" turns the option off, so that the bare switch turns it on.
+    bool getGrayscaleFirst() const
+    {
+        return m_options["grayscale-first"].toLower() != "false";
+    }
     bool hasThreshold() const
     {
         return contains("threshold") && !m_options["threshold"].isEmpty();

@@ -1194,6 +1194,12 @@ ConsoleBatch::setupOutput(std::set<PageId> allPages)
             colorParams.setColorGrayscaleOptions(cgo);
         }
 
+        if (cli.hasGrayscaleFirst()) {
+            output::ColorGrayscaleOptions cgo(colorParams.colorGrayscaleOptions());
+            cgo.setConvertToGrayscale(cli.getGrayscaleFirst());
+            colorParams.setColorGrayscaleOptions(cgo);
+        }
+
         if (cli.hasThreshold()) {
             output::BlackWhiteOptions bwo;
             bwo.setThresholdAdjustment(cli.getThreshold());
