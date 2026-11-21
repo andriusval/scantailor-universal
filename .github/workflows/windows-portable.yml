@@ -10,6 +10,16 @@ on:
     branches:
       - master
       - 'agentic/**'
+    # Only when something that goes into the build changes (C++ sources, CMake,
+    # Windows packaging, this workflow) - not for docs or tools/st-mcp (Python).
+    paths:
+      - 'src/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'config.h.in'
+      - 'version.h'
+      - 'packaging/windows/**'
+      - '.github/workflows/windows-portable.yml'
 
 jobs:
 
