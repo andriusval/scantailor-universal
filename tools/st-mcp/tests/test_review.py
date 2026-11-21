@@ -86,3 +86,40 @@ class ReviewTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(SAMPLE.exists(), f"sample project {SAMPLE} not found; set ST_TEST_PROJECT")
+class UprightConfirmTest(unittest.TestCase):
+    setUp = ReviewTest.setUp
+    tearDown = ReviewTest.tearDown
+
+    def _doubt(self, lab, flag=None):
+        pid = self.p.find_page(lab).id
+        with review.Notes(self.p) as n:
+            n.add(pid, "alignment", "align bottom", 0.4, ops.SIDEWAYS_DOUBT)
+            if flag:
+                n.add(pid, "check_content", "flagged: " + flag, 0.5, "x")
+        return pid
+
+    def test_upright_clears_only_the_plain_doubt(self):
+        a = self._doubt(self.labels[0])
+        b = self._doubt(self.labels[1], "ink_below_box, text_runs_vertically")
+        self.assertEqual(ops._sideways_doubts(self.p, [a, b]), [a])
+        self.assertEqual(ops._confirm_upright(self.p, [a, b]), [self.labels[0]])
+        data = review.load(self.p)["pages"]
+        self.assertFalse(data[self.labels[0]]["alignment"]["check"])
+        self.assertTrue(data[self.labels[1]]["alignment"]["check"])
+
+    def test_detector_error_keeps_the_sheet(self):
+        self._doubt(self.labels[0])
+        old = ops._detect_orientation
+
+        def broken(items):
+            raise KeyError("image")
+        ops._detect_orientation = broken
+        try:
+            res = ops.review_sheet(str(self.proj), engine="python")
+        finally:
+            ops._detect_orientation = old
+        self.assertTrue(Path(res["html"]).exists())
+        self.assertNotIn("upright_confirmed", res)

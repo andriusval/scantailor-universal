@@ -148,6 +148,10 @@ GUI.
     `review_note(project, pages, decision, reason, confidence)`. Run the sheet
     before `project_for_windows`, because the CLI previews need paths that
     the CLI can open.
+    st-mcp removes the warning "a rotated table?" (`pages_align_auto`) when
+    the orientation detector finds upright text in the output file
+    (`upright_confirmed`). A page with too little text for the detector, or
+    with a `text_runs_vertically` finding of `check_pages`, stays on the list.
 11. `project_for_windows(project)` when the project was processed under WSL,
     so that the Windows GUI opens it. With a Windows build from this branch,
     use `relative=true`: the project then opens under WSL and Windows.

@@ -1010,7 +1010,7 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
             for pid in ids[key]:
                 notes.add(pid, "alignment", f"align {al}", conf, why)
         for pid in ids["full_few_lines"]:
-            notes.add(pid, "alignment", "align bottom", 0.4, "full height with few text lines: a rotated table?")
+            notes.add(pid, "alignment", "align bottom", 0.4, SIDEWAYS_DOUBT)
         for pid, why in ([(x, "blank page") for x in blank_ids] + [(x, "half-title candidate") for x in ids["half_titles"]]
                          + [(x, "near-empty page: specks or a stamp?") for x in ids["near_empty"]]):
             notes.add(pid, "removal", "removal candidate (not removed)", 0.4, why)
@@ -1193,6 +1193,55 @@ def _apply_book_rotation(results: list[dict]) -> None:
                      reason="text runs across the book, book rotation used")
 
 
+SIDEWAYS_DOUBT = "full height with few text lines: a rotated table?"
+
+
+def _is_upright(ev: dict) -> bool:
+    return ev.get("orientation_detected") == 0 and ev.get("confidence", 0) >= DETECT_THRESHOLD
+
+
+def _content_kinds(note: dict) -> list[str]:
+    decision = note.get("decision", "")
+    return [k.strip() for k in decision.split(":", 1)[1].split(",")] if decision.startswith("flagged:") else []
+
+
+# A page that the profile check also sees as sideways keeps its doubt, because a sideways table with an upright caption can look upright.
+def _sideways_doubts(p: Project, ids: list[str]) -> list[str]:
+    data = review.load(p)
+    res = []
+    for i in ids:
+        notes = data["pages"].get(review.page_key(p, i), {})
+        if (notes.get("alignment", {}).get("reason") == SIDEWAYS_DOUBT
+                and "text_runs_vertically" not in _content_kinds(notes.get("check_content", {}))):
+            res.append(i)
+    return res
+
+
+# The detector reads the finished page, so upright text there shows that a full page with few lines is no sideways table.
+def _confirm_upright(p: Project, upright: list[str]) -> list[str]:
+    doubtful = _sideways_doubts(p, upright)
+    if not doubtful:
+        return []
+    with review.Notes(p) as notes:
+        for i in doubtful:
+            notes.add(i, "alignment", "align bottom", 0.8,
+                      "full height with few text lines; the orientation detector confirmed upright text")
+    # Notes.save drops a write error, so report only the pages whose note is on disk.
+    return [p.page(i).label for i in doubtful if i not in _sideways_doubts(p, [i])]
+
+
+def _upright_outputs(p: Project, ids: list[str]) -> list[str]:
+    files = {}
+    for i in ids:
+        o = p.output(i)
+        f = p.output_dir / (p.output_name(i) + ".tif")
+        # A file from an older output rotation does not show the page as the current setting makes it.
+        if f.exists() and o.get("file_rotation", 0) == o.get("output_rotation", 0):
+            files[i] = f
+    det = _detect_orientation([(f, 0) for f in files.values()])
+    return [i for i, f in files.items() if _is_upright(det.get((str(f), 0)) or {})]
+
+
 def _check_orientation(p: Project, ids: list[str]) -> dict:
     if not _cli_supports("detect-orientation"):
         raise RuntimeError(f"{find_cli()} does not know --detect-orientation: build a newer CLI")
@@ -1234,7 +1283,7 @@ def _check_orientation(p: Project, ids: list[str]) -> dict:
             item["exif_rotation"] = r["exif_rotation"]
         flagged.append(item)
 
-    outputs_ok = 0
+    outputs_ok, upright = 0, []
     for pid, f in outputs.items():
         r = det.get((str(f), 0), missing)
         o = p.output(pid)
@@ -1251,13 +1300,17 @@ def _check_orientation(p: Project, ids: list[str]) -> dict:
                 why.append("low confidence")
             if need != cur:
                 why.append(f"detected output_rotation {need}, project has {cur}")
+        if not why and need == cur and _is_upright(r):
+            upright.append(pid)
         if not why:
             outputs_ok += 1
             continue
         flagged.append({"stage": 6, "page": p.page(pid).label, "output_rotation": cur, "detected": need,
                         "confidence": r.get("confidence", 0), "reason": reason, "why": why})
+    confirmed = _confirm_upright(p, upright)
     return {"checked_scans": len(scans), "scans_ok": scans_ok, "checked_outputs": len(outputs),
             "outputs_ok": outputs_ok, "flagged": flagged, "threshold": DETECT_THRESHOLD,
+            **({"upright_confirmed": confirmed} if confirmed else {}),
             "rule": "preview every flagged scan/page; stage 1: images_set_geometry(images, orientation="
                     "none|right|upsidedown|left for 0|90|180|270), then run_stages(1, 5); stage 6: "
                     "pages_set_output(pages, output_rotation=<detected>), then run_stages(6, 6, pages=...)"}
@@ -1363,13 +1416,24 @@ def review_sheet(project: str, pages: str | list[str] = "all", thumb_px: int = 3
     the content box preview. Pages with low confidence or flags come first, with "CHECK IN GUI".
     Run it after run_stages(4, 6), before project_for_windows (the CLI previews need paths it can open;
     otherwise st-mcp draws them). engine: auto|cli|python for the content box previews.
+    It runs the orientation detector on the output files of pages that pages_align_auto marked as a
+    possible rotated table; upright text there clears the doubt in decisions.json (upright_confirmed).
+    A page with a check_pages text_runs_vertically finding keeps the doubt.
     Returns the pages to check: list them in the final report."""
     p = _proj(project)
     rdir = review.review_dir(p)
     tdir = rdir / "thumbs"
     tdir.mkdir(parents=True, exist_ok=True)
-    data = review.load(p)
     ids = _resolve_pages(p, pages)
+    confirmed = []
+    doubtful = _sideways_doubts(p, ids)
+    # The sheet is only a report, so a missing CLI or any detector error keeps the doubt and the sheet is still written.
+    try:
+        if doubtful and _cli_supports("detect-orientation"):
+            confirmed = _confirm_upright(p, _upright_outputs(p, doubtful))
+    except Exception:
+        confirmed = []
+    data = review.load(p)
     entries = []
     for i in ids:
         pg = p.page(i)
@@ -1424,6 +1488,7 @@ def review_sheet(project: str, pages: str | list[str] = "all", thumb_px: int = 3
     return {"html": str(index), "windows_path": review.win_path(index), "pages": len(entries),
             "with_decisions": sum(1 for e in entries if e["decisions"]), "to_check": to_check[:60],
             "to_check_count": len(to_check), "output_thumbnails": n_out, "preview_engine": used,
+            **({"upright_confirmed": confirmed} if confirmed else {}),
             "next": "list the pages to check in the final report, with the path of the review sheet"}
 
 
