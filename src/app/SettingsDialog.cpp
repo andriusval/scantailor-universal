@@ -28,6 +28,7 @@
 #include <QColorDialog>
 #include <QMessageBox>
 #include <QStyleFactory>
+#include <QSignalBlocker>
 #include "MainWindow.h"
 #include "filters/output/DespeckleLevel.h"
 #include "filters/output/Params.h"
@@ -643,6 +644,8 @@ void SettingsDialog::on_stackedWidget_currentChanged(int /*arg1*/)
     } else if (currentPage == ui.pageDeskew) {
         QString s("QToolButton {background: %1};");
         ui.btnColorDeskew->setStyleSheet(s.arg(m_settings.value(_key_deskew_controls_color, _key_deskew_controls_color_def).toString()));
+        // Without a user change, the settings file must not store the value, so that a new default reaches the user.
+        QSignalBlocker const blocker(ui.cbDeskewPictureEdges);
         ui.cbDeskewPictureEdges->setChecked(m_settings.value(_key_deskew_picture_edges, _key_deskew_picture_edges_def).toBool());
     } else if (currentPage == ui.pageSelectContent) {
         QString s("QToolButton {background: %1};");

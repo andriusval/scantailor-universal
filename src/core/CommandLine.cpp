@@ -915,14 +915,14 @@ CommandLine::fetchDeskewPictures()
     }
 
     // A switch without a value gets "true" from the parser.
-    QString const value = m_options.value("deskew-pictures");
+    QString const value = m_options.value("deskew-pictures").toLower();
     if (value == "true" || value == "1") {
         return true;
     }
     if (value == "false" || value == "0") {
         return false;
     }
-    std::cout << "Wrong --deskew-pictures value " << value.toLocal8Bit().constData()
+    std::cout << "Wrong --deskew-pictures value " << m_options.value("deskew-pictures").toLocal8Bit().constData()
               << ", use true, false, 1 or 0" << std::endl;
     exit(1);
 }
