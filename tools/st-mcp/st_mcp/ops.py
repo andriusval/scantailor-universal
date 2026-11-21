@@ -60,6 +60,22 @@ def cli_env() -> dict:
     return env
 
 
+def cli_threads() -> int:
+    """Pages that the CLI processes at the same time: env ST_CLI_THREADS, else half of the cores."""
+    value = os.environ.get("ST_CLI_THREADS", "").strip()
+    if value:
+        if value == "auto":
+            return 0
+        if value.isdigit():
+            return int(value)
+    return max(1, (os.cpu_count() or 2) // 2)
+
+
+def _cli_threads_args() -> list[str]:
+    # Older CLI builds stop on an unknown option, so pass it only when the help lists it.
+    return [f"--threads={cli_threads()}"] if _cli_supports("threads") else []
+
+
 # ---------------------------------------------------------------- jobs
 
 class Job:
@@ -243,7 +259,7 @@ def project_create(images_dir: str, project: str, output_dir: str | None = None,
                                                    or "none")
         if missing:
             dpi_note += f"; {len(missing)} image(s) without a usable DPI set to {dpi}"
-    cmd = [find_cli(), "--end-filter=1", f"--output-project={proj}"]
+    cmd = [find_cli(), "--end-filter=1", f"--output-project={proj}", *_cli_threads_args()]
     if force_dpi:
         cmd.insert(2, f"--dpi={dpi}")
     # Give the files as arguments to keep the order, and use stdin only for a very long list.
@@ -325,7 +341,7 @@ def run_stages(project: str, start: int = 1, end: int = 5, orientation: str | No
     if not (1 <= start <= end <= 6):
         raise ValueError("need 1 <= start <= end <= 6")
     p = Project(proj)
-    cmd = [find_cli(), "--verbose", f"--start-filter={start}", f"--end-filter={end}"]
+    cmd = [find_cli(), "--verbose", f"--start-filter={start}", f"--end-filter={end}", *_cli_threads_args()]
     if orientation:
         cmd.append(f"--orientation={orientation}")
     if layout:
@@ -517,7 +533,7 @@ def _cli_previews(p: Project, ids: list[str], max_px: int) -> dict[str, Image.Im
     import tempfile
     proj = p.path
     with tempfile.TemporaryDirectory(prefix="st-preview-") as tmp:
-        cmd = [find_cli(), "--start-filter=4", "--end-filter=4",
+        cmd = [find_cli(), "--start-filter=4", "--end-filter=4", *_cli_threads_args(),
                "--pages=" + ";".join(_page_ref(p, proj, p.page(i)) for i in ids),
                f"--render-preview={tmp}/png", f"--render-preview-size={int(max_px)}", str(proj), f"{tmp}/out"]
         r = subprocess.run(cmd, capture_output=True, env=cli_env(), cwd=str(proj.parent),
