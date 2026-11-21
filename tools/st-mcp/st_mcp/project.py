@@ -245,6 +245,7 @@ class Project:
             "despeckle": p.get("despeckleLevel"),
             "white_margins": _cg(cp, "whiteMargins"),
             "equalize_illumination": _cg(cp, "normalizeIllumination"),
+            "grayscale_first": _cg(cp, "convertToGrayscale"),
         }
 
     # ------------------------------------------------------------------ write
@@ -303,7 +304,7 @@ class Project:
     def set_output(self, page_id: str, color_mode: str | None = None, dpi: int | None = None,
                    despeckle: str | None = None, white_margins: bool | None = None,
                    equalize_illumination: bool | None = None, filling_color: str | None = None,
-                   fill_offcut: bool | None = None) -> None:
+                   fill_offcut: bool | None = None, grayscale_first: bool | None = None) -> None:
         p = self._page_params("output", page_id)
         if p is None:
             raise RuntimeError(f"page {page_id}: output params missing (run stages 1-5 first)")
@@ -330,6 +331,16 @@ class Project:
                 if cg is None:
                     cg = ET.SubElement(cp, "color-or-grayscale")
                 cg.set(attr, val if isinstance(val, str) else ("1" if val else "0"))
+        # ScanTailor writes this attribute only for a true value, so a false value removes it.
+        if grayscale_first is not None:
+            cp = p.find("color-params")
+            cg = cp.find("color-or-grayscale")
+            if cg is None:
+                cg = ET.SubElement(cp, "color-or-grayscale")
+            if grayscale_first:
+                cg.set("convertToGrayscale", "1")
+            elif "convertToGrayscale" in cg.attrib:
+                del cg.attrib["convertToGrayscale"]
 
     def _filters(self) -> ET.Element:
         f = self.root.find("./filters")
