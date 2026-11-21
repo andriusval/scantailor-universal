@@ -20,6 +20,7 @@
 #define OUTPUT_UTILS_H_
 
 class Dpi;
+class QImage;
 class QString;
 class QTransform;
 
@@ -36,6 +37,9 @@ public:
     static QString specklesDir(QString const& out_dir);
 
     static QTransform scaleFromToDpi(Dpi const& from, Dpi const& to);
+
+    // Turns an image clockwise by a multiple of 90 degrees; the DPI values swap with the axes.
+    static QImage rotateImage(QImage const& image, int degrees);
 };
 
 } // namespace output

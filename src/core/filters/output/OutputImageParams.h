@@ -99,6 +99,16 @@ public:
         m_blackOnWhite = black_on_white;
     }
 
+    int outputRotation() const
+    {
+        return m_outputRotation;
+    }
+
+    void setOutputRotation(int degrees)
+    {
+        m_outputRotation = degrees;
+    }
+
     QDomElement toXml(QDomDocument& doc, QString const& name) const;
 
     /**
@@ -167,6 +177,9 @@ private:
     QString m_TiffCompression;
 
     bool m_blackOnWhite;
+
+    // The size and the content box above stay in the unrotated output geometry.
+    int m_outputRotation;
 };
 
 } // namespace output

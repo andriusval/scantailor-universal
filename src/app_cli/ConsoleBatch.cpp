@@ -937,6 +937,9 @@ ConsoleBatch::pageResult(int idx, PageId const& page_id) const
             res["color_mode"] = QStringLiteral("mixed");
             break;
         }
+        if (params.outputRotation() != 0) {
+            res["output_rotation"] = params.outputRotation();
+        }
     }
     return res;
 }
@@ -1211,6 +1214,9 @@ ConsoleBatch::setupOutput(std::set<PageId> allPages)
         }
         if (cli.hasDepthPerception()) {
             params.setDepthPerception(cli.getDepthPerception());
+        }
+        if (cli.hasOutputRotation()) {
+            params.setOutputRotation(cli.getOutputRotation());
         }
 
         if (cli.hasTiffCompressionBW()) {

@@ -33,7 +33,7 @@ namespace output
 
 Params::Params()
     :  RegenParams(), m_dpi(CommandLine::get().getDefaultOutputDpi()),
-       m_blackOnWhite(true), m_blackOnWhiteSetManually(false)
+       m_blackOnWhite(true), m_blackOnWhiteSetManually(false), m_outputRotation(0)
 {
     QSettings s;
     m_despeckleLevel = (DespeckleLevel) s.value(_key_output_despeckling_default_lvl, _key_output_despeckling_default_lvl_def).toUInt();
@@ -47,7 +47,8 @@ Params::Params(QDomElement const& el)
         m_dewarpingMode(el.attribute("dewarpingMode")),
         m_despeckleLevel(despeckleLevelFromString(el.attribute("despeckleLevel"))),
         m_blackOnWhite(el.attribute("blackOnWhite", "1") == "1"),
-        m_blackOnWhiteSetManually(el.attribute("blackOnWhiteSetManually") == "1")
+        m_blackOnWhiteSetManually(el.attribute("blackOnWhiteSetManually") == "1"),
+        m_outputRotation(normalizeOutputRotation(el.attribute("outputRotation").toInt()))
 //        m_TiffCompression(el.attribute("tiff-compression"))
 
 {
@@ -80,6 +81,9 @@ Params::toXml(QDomDocument& doc, QString const& name) const
     if (m_blackOnWhiteSetManually) {
         el.setAttribute("blackOnWhiteSetManually", "1");
     }
+    if (m_outputRotation != 0) {
+        el.setAttribute("outputRotation", m_outputRotation);
+    }
 //    el.setAttribute("tiff-compression", m_TiffCompression);
     el.appendChild(marshaller.dpi(m_dpi, "dpi"));
 
@@ -99,6 +103,14 @@ Params::toXml(QDomDocument& doc, QString const& name) const
     el.appendChild(cp);
 
     return el;
+}
+
+int
+Params::normalizeOutputRotation(int const degrees)
+{
+    // Only quarter turns keep the pixels exact, so any other value counts as no rotation.
+    int const d = ((degrees % 360) + 360) % 360;
+    return (d % 90 == 0) ? d : 0;
 }
 
 ColorParams::ColorMode

@@ -86,6 +86,7 @@
 #include "filters/output/Filter.h"
 #include "filters/output/Task.h"
 #include "filters/output/CacheDrivenTask.h"
+#include "filters/output/Settings.h"
 #include "LoadFileTask.h"
 #include "CompositeCacheDrivenTask.h"
 #include "ScopedIncDec.h"
@@ -2178,6 +2179,7 @@ MainWindow::ExportOutput(exporting::ExportSettings settings)
             rec.filename = out_file_path;
             rec.page_id = page_id;
             rec.zones_info = m_ptrStages->outputFilter()->getZonesInfo(page_id);
+            rec.output_rotation = m_ptrStages->outputFilter()->getSettings()->getParams(page_id).outputRotation();
             outpaths_vector.append(rec);
         }
 

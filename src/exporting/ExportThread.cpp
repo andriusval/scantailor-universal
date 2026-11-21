@@ -27,6 +27,7 @@
 #endif
 #include <QDir>
 #include <QMetaType>
+#include <QTransform>
 
 
 
@@ -201,6 +202,9 @@ ExportThread::run()
                 QString filepath_automask = fi.path() + "/cache/automask/" + fi.fileName();
                 QImage automask_img = (QFile::exists(filepath_automask)) ? ImageLoader::load(filepath_automask) :
                                                                            ImageSplitOps::GenerateBlankImage(out_img, out_img.format(), 0x00000000);
+                if (rec.output_rotation != 0 && QFile::exists(filepath_automask)) {
+                    automask_img = automask_img.transformed(QTransform().rotate(rec.output_rotation));
+                }
                 QString out_filepath_mask = mask_dir + QDir::separator() + name + ".auto.tif";
                 TiffWriter::writeImage(m_settings.export_to_multipage ? out_file_path_no_split : out_filepath_mask,
                                        automask_img,
