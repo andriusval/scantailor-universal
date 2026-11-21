@@ -134,6 +134,19 @@ public:
         m_blackOnWhiteSetManually = set_manually;
     }
 
+    // A sideways table needs an upright output file, but stages 1-5 must keep the book orientation.
+    int outputRotation() const
+    {
+        return m_outputRotation;
+    }
+
+    void setOutputRotation(int degrees)
+    {
+        m_outputRotation = normalizeOutputRotation(degrees);
+    }
+
+    static int normalizeOutputRotation(int degrees);
+
     QDomElement toXml(QDomDocument& doc, QString const& name) const;
 private:
     static ColorParams::ColorMode parseColorMode(QString const& str);
@@ -149,6 +162,7 @@ private:
     DespeckleLevel m_despeckleLevel;
     bool m_blackOnWhite;
     bool m_blackOnWhiteSetManually;
+    int m_outputRotation;
 //    QString m_TiffCompression;
 };
 

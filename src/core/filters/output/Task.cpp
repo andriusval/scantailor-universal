@@ -126,6 +126,8 @@ private:
     QImage m_downscaledOrigImage;
     QImage m_outputImage;
     QImage m_downscaledOutputImage;
+    QImage m_rotatedOutputImage;
+    QImage m_downscaledRotatedOutputImage;
     BinaryImage m_pictureMask;
     DespeckleState m_despeckleState;
     DespeckleVisualization m_despeckleVisualization;
@@ -298,6 +300,8 @@ Task::process(
     if (grayscale_measured) {
         new_output_image_params.setGrayscaleDetection(grayscale_chroma, grayscale_detected);
     }
+    int const output_rotation = params.outputRotation();
+    new_output_image_params.setOutputRotation(output_rotation);
 
 //begin of modified by monday2000
 //Quadro_Zoner
@@ -345,8 +349,11 @@ Task::process(
                       m_ptrDbg.get(), &m_pageId, &m_ptrSettings
                   );
 
+        // The export combines this image with the output file on disk, so use the rotation of that file.
+        std::unique_ptr<OutputParams> const stored_params(m_ptrSettings->getOutputParams(m_pageId));
+        int const file_rotation = stored_params.get() ? stored_params->outputImageParams().outputRotation() : output_rotation;
 //Original_Foreground_Mixed
-        *m_p_orig_fore_subscan = out_img;
+        *m_p_orig_fore_subscan = Utils::rotateImage(out_img, file_rotation);
 
         return FilterResultPtr(0);
     }
@@ -450,6 +457,8 @@ Task::process(
             out_img = ImageLoader::load(out_file, 0);
         }
         need_reprocess = out_img.isNull();
+        // The automask, the speckles and the zone editors use the unrotated geometry, thus turn the file back.
+        out_img = Utils::rotateImage(out_img, (360 - output_rotation) % 360);
 
         if (need_picture_editor && !need_reprocess) {
             QFile automask_file(automask_file_path);
@@ -525,7 +534,8 @@ Task::process(
 
         QString TiffCompressionUsed;
 
-        if (!TiffWriter::writeImage(out_file_path, out_img, false, 0, &TiffCompressionUsed)) {
+        QImage const file_img(Utils::rotateImage(out_img, output_rotation));
+        if (!TiffWriter::writeImage(out_file_path, file_img, false, 0, &TiffCompressionUsed)) {
             invalidate_params = true;
         } else {
             deleteMutuallyExclusiveOutputFiles();
@@ -583,7 +593,7 @@ Task::process(
             m_ptrSettings->setOutputParams(m_pageId, out_params);
         }
 
-        m_ptrThumbnailCache->recreateThumbnail(ImageId(out_file_path), out_img);
+        m_ptrThumbnailCache->recreateThumbnail(ImageId(out_file_path), file_img);
     }
 
     QImage despeckle_src(out_img);
@@ -681,12 +691,16 @@ Task::UiUpdater::UiUpdater(
         m_downscaledOrigImage(ImageView::createDownscaledImage(orig_image)),
         m_outputImage(output_image),
         m_downscaledOutputImage(ImageView::createDownscaledImage(output_image)),
+        m_rotatedOutputImage(batch ? QImage() : Utils::rotateImage(output_image, params.outputRotation())),
         m_pictureMask(picture_mask),
         m_despeckleState(despeckle_state),
         m_despeckleVisualization(despeckle_visualization),
         m_batchProcessing(batch),
         m_debug(debug)
 {
+    if (params.outputRotation() != 0 && !batch) {
+        m_downscaledRotatedOutputImage = ImageView::createDownscaledImage(m_rotatedOutputImage);
+    }
 }
 
 void
@@ -706,8 +720,14 @@ Task::UiUpdater::updateUI(FilterUiInterface* ui)
         return;
     }
 
+    opt_widget->setAutoRotationImage(m_pageId, m_outputImage);
+
+    int const output_rotation = m_params.outputRotation();
+
+    // Only the Output tab shows the rotated image, so that the zone editors keep their coordinates.
     std::unique_ptr<ImageViewBase> image_view(
-        new ImageView(m_outputImage, m_downscaledOutputImage)
+        output_rotation == 0 ? new ImageView(m_outputImage, m_downscaledOutputImage)
+        : new ImageView(m_rotatedOutputImage, m_downscaledRotatedOutputImage)
     );
 
     std::shared_ptr<QImage> alt_image_ptr;
@@ -715,13 +735,19 @@ Task::UiUpdater::updateUI(FilterUiInterface* ui)
 
     if (QSettings().value(_key_output_show_orig_on_space, _key_output_show_orig_on_space_def).toBool()) {
         alt_image_ptr.reset(getAlternativeImage());
-        if (alt_image_ptr) {
+        if (alt_image_ptr && output_rotation == 0) {
             image_view->setAlternativeImage(alt_image_ptr, shared_ptr<QPixmap>());
             alt_downscaled_pixmap_ptr = image_view->getAlternativePixmap();
+        } else if (alt_image_ptr) {
+            std::shared_ptr<QImage> rotated_alt(new QImage(Utils::rotateImage(*alt_image_ptr, output_rotation)));
+            image_view->setAlternativeImage(rotated_alt, shared_ptr<QPixmap>());
         }
     }
 
-    QPixmap const downscaled_output_pixmap(image_view->downscaledPixmap());
+    QPixmap const downscaled_output_pixmap(
+        output_rotation == 0 ? image_view->downscaledPixmap()
+        : QPixmap::fromImage(m_downscaledOutputImage)
+    );
 
     std::unique_ptr<ImageViewBase> dewarping_view(
         new DewarpingView(

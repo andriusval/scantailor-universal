@@ -115,6 +115,8 @@ CommandLine::parseCli(QStringList const& argv)
     opts << "despeckle";
     opts << "dewarping";
     opts << "depth-perception";
+    opts << "output-rotate";
+    opts << "detect-orientation";
     opts << "start-filter";
     opts << "end-filter";
     opts << "output-project";
@@ -302,6 +304,7 @@ CommandLine::setup()
     m_endFilterIdx = fetchEndFilterIdx();
     m_matchLayoutTolerance = fetchMatchLayoutTolerance();
     m_dewarpingMode = fetchDewarpingMode();
+    m_outputRotation = fetchOutputRotation();
     m_compressionBW = fetchCompressionBW();
     m_compressionColor = fetchCompressionColor();
     m_language = fetchLanguage();
@@ -389,7 +392,8 @@ CommandLine::printHelp()
     std::cout << "\t\t\t1.5: one page layout but cutting is needed" << std::endl;
     std::cout << "\t\t\t  2: two page layout" << std::endl;
     std::cout << "\t--layout-direction=, -ld=<lr|rl>\t-- default: lr" << std::endl;
-    std::cout << "\t--orientation=<left|right|upsidedown|none>\n\t\t\t\t\t\t-- default: none" << std::endl;
+    std::cout << "\t--orientation=<left|right|upsidedown|none|auto>\n\t\t\t\t\t\t-- default: none" << std::endl;
+    std::cout << "\t\t\t\t\t\t   auto: find the rotation of each image from its text; an image without a clear result keeps its rotation" << std::endl;
     std::cout << "\t--rotate=<0.0...360.0>\t\t\t-- it also sets deskew to manual mode" << std::endl;
     std::cout << "\t--deskew=<auto|manual>\t\t\t-- default: auto" << std::endl;
     std::cout << "\t--deskew-pictures\t\t\t-- default: off; on a page that is mostly a photo or a plate, find the" << std::endl;
@@ -456,6 +460,11 @@ CommandLine::printHelp()
     std::cout << "\t--despeckle=<off|cautious|normal|aggressive>\n\t\t\t\t\t\t-- default: normal" << std::endl;
     std::cout << "\t--dewarping=<off|auto>\t\t\t-- default: off" << std::endl;
     std::cout << "\t--depth-perception=<1.0...3.0>\t\t-- default: 2.0" << std::endl;
+    std::cout << "\t--output-rotate=<0|90|180|270|auto>\t-- turns only the final output image clockwise, for example a sideways table;" << std::endl;
+    std::cout << "\t\t\t\t\t\t   filters 1-5 keep the book orientation. With 90 or 270, width and height swap. default: 0" << std::endl;
+    std::cout << "\t\t\t\t\t\t   auto: find the rotation from the text of each output page; a page without a clear result keeps its rotation" << std::endl;
+    std::cout << "\t--detect-orientation=<list file>\t-- print one JSON line with the detected rotation for each image path in the file," << std::endl;
+    std::cout << "\t\t\t\t\t\t   one path (or path, tab, page) per line, and stop; it needs no project and no output directory" << std::endl;
     std::cout << "\t--start-filter=<1...6>\t\t\t-- default: 4" << std::endl;
     std::cout << "\t--end-filter=<1...6>\t\t\t-- default: 6" << std::endl;
     std::cout << "\t--output-project=, -o=<project_name>" << std::endl;
@@ -792,6 +801,10 @@ CommandLine::fetchOrientation()
         orient = RIGHT;
     } else if (cli_orient == "upsidedown") {
         orient = UPSIDEDOWN;
+    } else if (cli_orient == "auto") {
+        orient = AUTO_ORIENTATION;
+    } else if (cli_orient == "none") {
+        orient = TOP;
     } else {
         std::cout << "Wrong orientation " << m_options.value("orientation").toLocal8Bit().constData() << std::endl;
         exit(1);
@@ -866,6 +879,29 @@ CommandLine::fetchEndFilterIdx()
     }
 
     return m_options.value("end-filter").toInt() - 1;
+}
+
+int
+CommandLine::fetchOutputRotation()
+{
+    if (!hasOutputRotation()) {
+        return 0;
+    }
+
+    QString const value = m_options.value("output-rotate");
+    if (value == "auto") {
+        m_outputRotationAuto = true;
+        return 0;
+    }
+    bool ok = false;
+    int const degrees = value.toInt(&ok);
+    if (!ok || (degrees != 0 && degrees != 90 && degrees != 180 && degrees != 270)) {
+        std::cout << "Wrong output rotation " << value.toLocal8Bit().constData()
+                  << ", use 0, 90, 180, 270 or auto" << std::endl;
+        exit(1);
+    }
+
+    return degrees;
 }
 
 output::DewarpingMode

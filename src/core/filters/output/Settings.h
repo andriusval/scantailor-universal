@@ -76,6 +76,8 @@ public:
 
     void setBlackOnWhite(PageId const& page_id, bool black_on_white, bool set_manually);
 
+    void setOutputRotation(PageId const& page_id, int degrees);
+
     std::unique_ptr<OutputParams> getOutputParams(PageId const& page_id) const;
 
     void removeOutputParams(PageId const& page_id);

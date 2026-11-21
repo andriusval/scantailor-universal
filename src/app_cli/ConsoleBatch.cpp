@@ -114,6 +114,7 @@
 
 #include "ConsoleBatch.h"
 #include "CommandLine.h"
+#include "imageproc/OrientationDetector.h"
 
 namespace
 {
@@ -352,6 +353,14 @@ consoleMutex()
     return mutex;
 }
 
+// Parallel pages write the detected output rotations, so one lock guards that map.
+QMutex&
+rotationResultsMutex()
+{
+    static QMutex mutex;
+    return mutex;
+}
+
 void
 useOneOpenMpThread()
 {
@@ -554,7 +563,8 @@ ConsoleBatch::checkImageFiles()
 bool
 ConsoleBatch::processPage(
     int const stage, PageInfo const& page, int const index, int const num_pages,
-    IntrusivePtr<LoadFileTask> const& task, IntrusivePtr<output::Task> const& output_task)
+    IntrusivePtr<LoadFileTask> const& task, IntrusivePtr<output::Task> const& output_task,
+    IntrusivePtr<LoadFileTask> const& again_task)
 {
     CommandLine const& cli = CommandLine::get();
     bool const json = cli.isJsonProgress();
@@ -610,6 +620,24 @@ ConsoleBatch::processPage(
         return false;
     }
 
+    // The detector needs the finished page, thus a page that must turn goes through the output stage again.
+    if (again_task && detectOutputRotation(page.id())) {
+        try {
+            (*again_task)();
+        } catch (std::exception const& e) {
+            {
+                QMutexLocker const locker(&consoleMutex());
+                ++m_pageErrors;
+            }
+            if (json) {
+                ev["event"] = QStringLiteral("page_error");
+                ev["error"] = QString::fromLocal8Bit(e.what());
+                printJsonLine(ev);
+            }
+            throw;
+        }
+    }
+
     if (json) {
         ev["event"] = QStringLiteral("page_done");
         // The output stage reuses a file that is still current, and the caller can then see that nothing changed.
@@ -631,9 +659,15 @@ ConsoleBatch::processPagesInParallel(int const stage, std::vector<PageInfo> cons
     // The main thread makes all tasks, because createCompositeTask() changes members.
     std::vector<IntrusivePtr<LoadFileTask> > tasks;
     std::vector<IntrusivePtr<output::Task> > output_tasks(pages.size());
+    std::vector<IntrusivePtr<LoadFileTask> > again_tasks(pages.size());
+    bool const rotate_again = stage == m_ptrStages->outputFilterIdx() && CommandLine::get().isOutputRotationAuto();
     tasks.reserve(pages.size());
     for (size_t i = 0; i < pages.size(); ++i) {
         tasks.push_back(createCompositeTask(pages[i], stage, &output_tasks[i]));
+        // The automatic output rotation can need a second output run, and only this thread may make tasks.
+        if (rotate_again) {
+            again_tasks[i] = createCompositeTask(pages[i], stage);
+        }
     }
 
     int const num_pages = int(pages.size());
@@ -656,7 +690,7 @@ ConsoleBatch::processPagesInParallel(int const stage, std::vector<PageInfo> cons
                 return;
             }
             try {
-                if (!processPage(stage, pages[i], i, num_pages, tasks[i], output_tasks[i])) {
+                if (!processPage(stage, pages[i], i, num_pages, tasks[i], output_tasks[i], again_tasks[i])) {
                     failed_pages.fetchAndAddOrdered(1);
                 }
             } catch (...) {
@@ -765,10 +799,12 @@ ConsoleBatch::process()
         if (num_threads > 1) {
             failed_pages = processPagesInParallel(j, pages, num_threads);
         } else {
+            bool const rotate_again = j == m_ptrStages->outputFilterIdx() && cli.isOutputRotationAuto();
             for (size_t i = 0; i < pages.size(); ++i) {
                 IntrusivePtr<output::Task> output_task;
                 IntrusivePtr<LoadFileTask> const task(createCompositeTask(pages[i], j, &output_task));
-                if (!processPage(j, pages[i], int(i), num_pages, task, output_task)) {
+                IntrusivePtr<LoadFileTask> const again(rotate_again ? createCompositeTask(pages[i], j) : IntrusivePtr<LoadFileTask>());
+                if (!processPage(j, pages[i], int(i), num_pages, task, output_task, again)) {
                     ++failed_pages;
                 }
             }
@@ -1259,6 +1295,15 @@ modeToString(AutoManualMode mode)
     return mode == MODE_MANUAL ? QStringLiteral("manual") : QStringLiteral("auto");
 }
 
+// A page without a decision gets null, so that the agent can tell it from a decision for 0 degrees.
+static void
+addDetectionResult(QJsonObject& res, char const* key, imageproc::OrientationResult const& result)
+{
+    res[QLatin1String(key)] = result.isDecided() ? QJsonValue(result.angle()) : QJsonValue();
+    res["confidence"] = std::round(result.confidence() * 1000.0) / 1000.0;
+    res["reason"] = result.reason();
+}
+
 QJsonObject
 ConsoleBatch::pageResult(int idx, PageId const& page_id) const
 {
@@ -1266,6 +1311,11 @@ ConsoleBatch::pageResult(int idx, PageId const& page_id) const
     if (idx == m_ptrStages->fixOrientationFilterIdx()) {
         res["rotation"] = m_ptrStages->fixOrientationFilter()->getSettings()
                           ->getRotationFor(page_id.imageId()).toDegrees();
+        std::map<ImageId, imageproc::OrientationResult>::const_iterator const it(
+            m_orientationResults.find(page_id.imageId()));
+        if (it != m_orientationResults.end()) {
+            addDetectionResult(res, "orientation_detected", it->second);
+        }
     } else if (idx == m_ptrStages->pageSplitFilterIdx()) {
         page_split::Settings::Record const record(
             m_ptrStages->pageSplitFilter()->getSettings()->getPageRecord(page_id.imageId()));
@@ -1343,6 +1393,15 @@ ConsoleBatch::pageResult(int idx, PageId const& page_id) const
             // A null chroma means that the page had too few mid-tone pixels for a measurement.
             res["chroma"] = chroma >= 0.0 ? QJsonValue(qRound(chroma * 10.0) / 10.0) : QJsonValue();
         }
+        if (params.outputRotation() != 0) {
+            res["output_rotation"] = params.outputRotation();
+        }
+        QMutexLocker const locker(&rotationResultsMutex());
+        std::map<PageId, imageproc::OrientationResult>::const_iterator const it(
+            m_outputRotationResults.find(page_id));
+        if (it != m_outputRotationResults.end()) {
+            addDetectionResult(res, "output_rotation_detected", it->second);
+        }
     }
     return res;
 }
@@ -1371,6 +1430,11 @@ ConsoleBatch::setupFixOrientation(std::set<PageId> allPages)
     IntrusivePtr<fix_orientation::Filter> fix_orientation = m_ptrStages->fixOrientationFilter();
     CommandLine const& cli = CommandLine::get();
 
+    if (cli.hasOrientation() && cli.getOrientation() == CommandLine::AUTO_ORIENTATION) {
+        setupAutoOrientation(allPages);
+        return;
+    }
+
     for (PageId const& page : allPages) {
 
         OrthogonalRotation rotation;
@@ -1393,6 +1457,107 @@ ConsoleBatch::setupFixOrientation(std::set<PageId> allPages)
             fix_orientation->getSettings()->applyRotation(page.imageId(), rotation);
         }
     }
+}
+
+static OrthogonalRotation
+rotationFromDegrees(int const degrees)
+{
+    OrthogonalRotation rotation;
+    for (int i = 0; i < degrees / 90; ++i) {
+        rotation.nextClockwiseDirection();
+    }
+    return rotation;
+}
+
+void
+ConsoleBatch::setupAutoOrientation(std::set<PageId> const& pages)
+{
+    using imageproc::OrientationDetector;
+    using imageproc::OrientationResult;
+
+    CommandLine const& cli = CommandLine::get();
+    std::set<ImageId> images;
+    for (PageId const& page : pages) {
+        if (!isResourcePath(page.imageId().filePath())) {
+            images.insert(page.imageId());
+        }
+    }
+    // With --pages, the other scans still vote for the book rotation, so that a sideways table keeps that rotation.
+    std::set<ImageId> voters(images);
+    if (m_hasPageFilter) {
+        for (PageInfo const& page : m_ptrPages->toPageSequence(IMAGE_VIEW)) {
+            if (!isResourcePath(page.imageId().filePath())) {
+                voters.insert(page.imageId());
+            }
+        }
+    }
+
+    // The detector sees the whole scan before the split, so both pages of a spread get the same rotation.
+    std::vector<ImageId> const ids(voters.begin(), voters.end());
+    std::vector<OrientationResult> results;
+    for (ImageId const& image_id : ids) {
+        QImage const image(ImageLoader::load(image_id));
+        if (image.isNull()) {
+            results.push_back(OrientationResult(0, 0.0, false, QStringLiteral("cannot load the image")));
+        } else {
+            results.push_back(OrientationDetector::detect(image, OrientationDetector::exifRotation(image_id.filePath())));
+        }
+    }
+    OrientationDetector::applyBookRotation(results);
+
+    fix_orientation::Settings* const settings = m_ptrStages->fixOrientationFilter()->getSettings();
+    for (size_t i = 0; i < ids.size(); ++i) {
+        OrientationResult const& result = results[i];
+        if (images.count(ids[i]) == 0) {
+            continue;
+        }
+        m_orientationResults[ids[i]] = result;
+        if (!result.isDecided()) {
+            continue;
+        }
+        settings->applyRotation(ids[i], rotationFromDegrees(result.angle()));
+        if (cli.isVerbose()) {
+            std::cout << "Orientation: " << ids[i].filePath().toLocal8Bit().constData()
+                      << " " << result.angle() << " (" << result.reason().toLocal8Bit().constData()
+                      << ", " << result.confidence() << ")" << std::endl;
+        }
+    }
+}
+
+bool
+ConsoleBatch::detectOutputRotation(PageId const& page_id)
+{
+    using imageproc::OrientationDetector;
+    using imageproc::OrientationResult;
+
+    output::Settings* const settings = m_ptrStages->outputFilter()->getSettings();
+    QImage const out_image(ImageLoader::load(m_outFileNameGen.filePathFor(page_id), 0));
+    OrientationResult const result(
+        out_image.isNull()
+        ? OrientationResult(0, 0.0, false, QStringLiteral("no output file"))
+        : OrientationDetector::detect(out_image)
+    );
+    if (!result.isDecided()) {
+        QMutexLocker const locker(&rotationResultsMutex());
+        m_outputRotationResults[page_id] = result;
+        return false;
+    }
+
+    // The file on disk already has its old rotation, so the detected angle adds to it.
+    std::unique_ptr<output::OutputParams> const stored(settings->getOutputParams(page_id));
+    int const current = settings->getParams(page_id).outputRotation();
+    int const file_rotation = stored.get() ? stored->outputImageParams().outputRotation() : current;
+    int const target = (file_rotation + result.angle()) % 360;
+    // The JSON reports the rotation that the page needs, because a value relative to the file would mislead the agent.
+    {
+        QMutexLocker const locker(&rotationResultsMutex());
+        m_outputRotationResults[page_id] = OrientationResult(target, result.confidence(), true, result.reason());
+    }
+    if (target == current) {
+        return false;
+    }
+    settings->setOutputRotation(page_id, target);
+    return true;
 }
 
 void
@@ -1635,6 +1800,10 @@ ConsoleBatch::setupOutput(std::set<PageId> allPages)
         }
         if (cli.hasDepthPerception()) {
             params.setDepthPerception(cli.getDepthPerception());
+        }
+        // With auto, the page keeps its rotation until the detector sees the finished output page.
+        if (cli.hasOutputRotation() && !cli.isOutputRotationAuto()) {
+            params.setOutputRotation(cli.getOutputRotation());
         }
 
         if (cli.hasTiffCompressionBW()) {

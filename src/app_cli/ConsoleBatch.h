@@ -23,6 +23,7 @@
 
 #include <QString>
 #include <QJsonObject>
+#include <map>
 #include <set>
 #include <vector>
 
@@ -41,6 +42,7 @@
 #include "StageSequence.h"
 #include "PageSelectionAccessor.h"
 #include "ProjectReader.h"
+#include "imageproc/OrientationDetector.h"
 
 namespace output
 {
@@ -89,12 +91,16 @@ private:
     bool m_hasPageFilter;
     std::set<PageId> m_filterPages;
     std::set<ImageId> m_filterImages;
+    std::map<ImageId, imageproc::OrientationResult> m_orientationResults;
+    std::map<PageId, imageproc::OrientationResult> m_outputRotationResults;
 
     void parsePageFilter(QString const& value);
     std::set<PageId> selectedPages(PageSequence const& pages) const;
 
     void setupFilter(int idx, std::set<PageId> allPages);
     void setupFixOrientation(std::set<PageId> allPages);
+    void setupAutoOrientation(std::set<PageId> const& pages);
+    bool detectOutputRotation(PageId const& page_id);
     void setupPageSplit(std::set<PageId> allPages);
     void setupDeskew(std::set<PageId> allPages);
     void setupSelectContent(std::set<PageId> allPages);
@@ -108,7 +114,8 @@ private:
 
     bool processPage(
         int stage, PageInfo const& page, int index, int num_pages,
-        IntrusivePtr<LoadFileTask> const& task, IntrusivePtr<output::Task> const& output_task);
+        IntrusivePtr<LoadFileTask> const& task, IntrusivePtr<output::Task> const& output_task,
+        IntrusivePtr<LoadFileTask> const& again_task);
     int processPagesInParallel(int stage, std::vector<PageInfo> const& pages, int num_threads);
 
     IntrusivePtr<LoadFileTask> createCompositeTask(

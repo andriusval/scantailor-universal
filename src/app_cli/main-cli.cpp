@@ -24,6 +24,7 @@
 #include <QFileInfo>
 #include <QJsonObject>
 #include <iostream>
+#include <cmath>
 
 #include "CommandLine.h"
 #include "PngMetadataLoader.h"
@@ -37,7 +38,11 @@
 #endif
 #include "GenericMetadataLoader.h"
 #include "ConsoleBatch.h"
+#include "ImageLoader.h"
+#include "imageproc/OrientationDetector.h"
 #include "config.h"
+#include <QFile>
+#include <QImage>
 
 static void
 printRunError(QString const& message, ConsoleBatch const* batch = nullptr)
@@ -51,6 +56,53 @@ printRunError(QString const& message, ConsoleBatch const* batch = nullptr)
         ev["warnings"] = batch->warningCount();
     }
     ConsoleBatch::printJsonLine(ev);
+}
+
+// A check of many files must not change a project, thus this mode only reads the images and prints the results.
+static int
+detectOrientation(QString const& list_file)
+{
+    using imageproc::OrientationDetector;
+    using imageproc::OrientationResult;
+
+    QFile file(list_file);
+    if (!file.open(QIODevice::ReadOnly)) {
+        std::cerr << "Cannot read the list file " << list_file.toLocal8Bit().constData() << std::endl;
+        printRunError(QStringLiteral("cannot read the list file"));
+        return 1;
+    }
+    QStringList const lines(QString::fromUtf8(file.readAll()).split(QLatin1Char('\n')));
+    for (QString const& line : lines) {
+        // A multi-page file needs the page number, thus a line can hold the path, a tab and the zero-based page.
+        QStringList const parts(line.trimmed().split(QLatin1Char('\t')));
+        QString const path(parts.value(0).trimmed());
+        if (path.isEmpty()) {
+            continue;
+        }
+        int const page = parts.size() > 1 ? parts[1].trimmed().toInt() : 0;
+        OrientationResult result;
+        int exif = -1;
+        try {
+            QImage const image(ImageLoader::load(path, page));
+            exif = OrientationDetector::exifRotation(path);
+            result = image.isNull() ? OrientationResult(0, 0.0, false, QStringLiteral("cannot load the image"))
+                     : OrientationDetector::detect(image, exif);
+        } catch (std::exception const& e) {
+            result = OrientationResult(0, 0.0, false, QString::fromLocal8Bit(e.what()));
+        }
+        QJsonObject ev;
+        ev["event"] = QStringLiteral("orientation");
+        ev["image"] = path;
+        ev["page"] = page;
+        ev["orientation_detected"] = result.isDecided() ? QJsonValue(result.angle()) : QJsonValue();
+        ev["confidence"] = std::round(result.confidence() * 1000.0) / 1000.0;
+        ev["reason"] = result.reason();
+        if (exif >= 0) {
+            ev["exif_rotation"] = exif;
+        }
+        ConsoleBatch::printJsonLine(ev);
+    }
+    return 0;
 }
 
 int main(int argc, char** argv)
@@ -98,6 +150,18 @@ int main(int argc, char** argv)
             printRunError(QStringLiteral("invalid command line"));
         }
         return 1;
+    }
+
+    // The parser gives "true" for an option without a value, and that is not a list file.
+    if (cli.hasDetectOrientation() && cli.getDetectOrientationList() == "true") {
+        std::cerr << "Use --detect-orientation=<list file>." << std::endl;
+        if (json) {
+            printRunError(QStringLiteral("--detect-orientation needs a list file"));
+        }
+        return 1;
+    }
+    if (cli.hasDetectOrientation() && !cli.hasHelp()) {
+        return detectOrientation(cli.getDetectOrientationList());
     }
 
     if (cli.hasHelp() || cli.outputDirectory().isEmpty() || (cli.images().size() == 0 && cli.projectFile().isEmpty())) {

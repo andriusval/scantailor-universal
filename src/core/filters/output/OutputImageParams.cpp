@@ -49,7 +49,8 @@ OutputImageParams::OutputImageParams(QSize const& out_image_size, QRect const& c
         m_blackOnWhite(true),
         m_grayscaleMeasured(false),
         m_grayscaleChroma(-1.0),
-        m_grayscaleDetected(false)
+        m_grayscaleDetected(false),
+        m_outputRotation(0)
 {
     // For historical reasons, we disregard post-cropping and post-scaling here.
     xform.setPostCropArea(QPolygonF()); // Resets post-scale as well.
@@ -69,7 +70,8 @@ OutputImageParams::OutputImageParams(QDomElement const& el)
         m_blackOnWhite(el.attribute("blackOnWhite", "1") == "1"),
         m_grayscaleMeasured(el.hasAttribute("grayscaleDetected")),
         m_grayscaleChroma(el.attribute("grayscaleChroma", "-1").toDouble()),
-        m_grayscaleDetected(el.attribute("grayscaleDetected", "0") == "1")
+        m_grayscaleDetected(el.attribute("grayscaleDetected", "0") == "1"),
+        m_outputRotation(Params::normalizeOutputRotation(el.attribute("outputRotation").toInt()))
 {
 }
 
@@ -99,6 +101,9 @@ OutputImageParams::toXml(QDomDocument& doc, QString const& name) const
             el.setAttribute("grayscaleChroma", QString::number(m_grayscaleChroma, 'f', 2));
         }
     }
+    if (m_outputRotation != 0) {
+        el.setAttribute("outputRotation", m_outputRotation);
+    }
 
     return el;
 }
@@ -127,6 +132,10 @@ OutputImageParams::matches(OutputImageParams const& other) const
     }
 
     if (m_blackOnWhite != other.m_blackOnWhite) {
+        return false;
+    }
+
+    if (m_outputRotation != other.m_outputRotation) {
         return false;
     }
 

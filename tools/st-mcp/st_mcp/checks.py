@@ -245,6 +245,14 @@ def check_page(project: Project, page_id: str, ink: tuple[np.ndarray, float] | N
             if b and line_h and b["height"] * k <= 2 * line_h and b["width"] * k < 0.15 * (bx1 - bx0):
                 number_pos = "bottom" if f["kind"] == "ink_below_box" else "top"
                 f["hint"] = f"looks like a page number missed by the content box ({number_pos})"
+    # Sideways text makes many thin ink bands across the columns, and only a few tall bands across the rows.
+    col_lines = [g for g in _group(_cols_with_ink(ink, bx0, bx1, by0, by1, 0.01)) if g[1] - g[0] + 1 >= 3]
+    col_w = statistics.median([b - a + 1 for a, b in col_lines]) if col_lines else 0
+    if len(col_lines) >= 8 and len(col_lines) > len(lines) and 2 * col_w < line_h:
+        findings.append({"kind": "text_runs_vertically", "column_bands": len(col_lines),
+                         "row_bands": len(lines),
+                         "hint": "sideways table or picture: keep stages 1-5, preview, then "
+                                 "pages_set_output(output_rotation=270 if lines run top-to-bottom, else 90)"})
     return {"page_id": pg.id, "label": pg.label, "findings": findings,
             "text_lines": len(lines), "page_number_in_box": number_pos}
 

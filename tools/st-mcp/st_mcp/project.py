@@ -247,6 +247,8 @@ class Project:
             "equalize_illumination": _cg(cp, "normalizeIllumination"),
             "grayscale_first": GRAYSCALE_FIRST_NAMES.get(_cg_raw(cp, "convertToGrayscale"), "off"),
             **self.grayscale_detection(page_id),
+            "output_rotation": int(p.get("outputRotation", "0")),
+            "file_rotation": self._file_rotation(page_id),
         }
 
     def grayscale_detection(self, page_id: str) -> dict:
@@ -258,6 +260,12 @@ class Project:
         chroma = img.get("grayscaleChroma")
         return {"grayscale_chroma": None if chroma is None else float(chroma),
                 "grayscale_detected": img.get("grayscaleDetected") == "1"}
+
+    # The output file keeps the rotation of its last run, which can differ from the new setting.
+    def _file_rotation(self, page_id: str) -> int:
+        f = self.filter_el("output")
+        el = f.find(f"./page[@id='{page_id}']/output-params/image") if f is not None else None
+        return int(el.get("outputRotation", "0")) if el is not None else 0
 
     # ------------------------------------------------------------------ write
     def set_content(self, page_id: str, rect: dict | None) -> None:
@@ -315,7 +323,8 @@ class Project:
     def set_output(self, page_id: str, color_mode: str | None = None, dpi: int | None = None,
                    despeckle: str | None = None, white_margins: bool | None = None,
                    equalize_illumination: bool | None = None, filling_color: str | None = None,
-                   fill_offcut: bool | None = None, grayscale_first: bool | str | None = None) -> None:
+                   fill_offcut: bool | None = None, grayscale_first: bool | str | None = None,
+                   output_rotation: int | None = None) -> None:
         p = self._page_params("output", page_id)
         if p is None:
             raise RuntimeError(f"page {page_id}: output params missing (run stages 1-5 first)")
@@ -327,6 +336,14 @@ class Project:
             d = p.find("dpi")
             d.set("horizontal", str(int(dpi)))
             d.set("vertical", str(int(dpi)))
+        if output_rotation is not None:
+            if output_rotation not in (0, 90, 180, 270):
+                raise ValueError("output_rotation must be 0, 90, 180 or 270")
+            # ScanTailor writes the attribute only for a rotation, so that other projects stay the same.
+            if output_rotation:
+                p.set("outputRotation", str(output_rotation))
+            else:
+                p.attrib.pop("outputRotation", None)
         if despeckle is not None:
             if despeckle not in ("off", "cautious", "normal", "aggressive"):
                 raise ValueError("despeckle must be off|cautious|normal|aggressive")

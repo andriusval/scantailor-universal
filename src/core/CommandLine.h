@@ -54,7 +54,7 @@ class CommandLine
 {
     // Member-wise copying is OK.
 public:
-    enum Orientation {TOP, LEFT, RIGHT, UPSIDEDOWN};
+    enum Orientation {TOP, LEFT, RIGHT, UPSIDEDOWN, AUTO_ORIENTATION};
 
     static CommandLine const& get()
     {
@@ -319,6 +319,18 @@ public:
     {
         return contains("match-layout-tolerance") && !m_options["match-layout-tolerance"].isEmpty();
     }
+    bool hasDetectOrientation() const
+    {
+        return contains("detect-orientation") && !m_options["detect-orientation"].isEmpty();
+    }
+    QString getDetectOrientationList() const
+    {
+        return m_options.value("detect-orientation");
+    }
+    bool hasOutputRotation() const
+    {
+        return contains("output-rotate") && !m_options["output-rotate"].isEmpty();
+    }
     bool hasDepthPerception() const
     {
         return contains("depth-perception") && !m_options["depth-perception"].isEmpty();
@@ -475,6 +487,14 @@ public:
     {
         return m_depthPerception;
     }
+    int getOutputRotation() const
+    {
+        return m_outputRotation;
+    }
+    bool isOutputRotationAuto() const
+    {
+        return m_outputRotationAuto;
+    }
     float getMatchLayoutTolerance() const
     {
         return m_matchLayoutTolerance;
@@ -575,6 +595,8 @@ private:
     int m_startFilterIdx;
     int m_endFilterIdx;
     output::DewarpingMode m_dewarpingMode;
+    int m_outputRotation = 0;
+    bool m_outputRotationAuto = false;
     output::DespeckleLevel m_despeckleLevel;
     output::DepthPerception m_depthPerception;
     float m_matchLayoutTolerance;
@@ -616,6 +638,7 @@ private:
     int fetchStartFilterIdx();
     int fetchEndFilterIdx();
     output::DewarpingMode fetchDewarpingMode();
+    int fetchOutputRotation();
     output::DespeckleLevel fetchDespeckleLevel();
     output::DepthPerception fetchDepthPerception();
     float fetchMatchLayoutTolerance();
