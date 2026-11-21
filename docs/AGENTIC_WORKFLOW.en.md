@@ -53,11 +53,21 @@ thumbnails), after 8–9 (covers and picture pages) and before 11.
    numbers and running heads) and nothing else (no spine shadow, fingers,
    scan junk). Fix with `page_set_content` (`expand_*` in page px; negative
    shrinks).
-5. **Content (height / page numbers):** `check_pages(kind="content")`. For
+5. **Content (height / page numbers / junk):** `check_pages(kind="content")`.
+   `box_exceeds_text` means the box is larger than the text block on the
+   listed sides (ScanTailor counted faint junk next to the text as content;
+   these are the widest/tallest pages in the GUI sort) →
+   `page_set_content(mode="tighten")`, then check the preview. Tighten keeps
+   page numbers and running heads and never trims a side whose strip has ink in
+   3+ text lines (`kept_sides`). For
    every `ink_below_box`/`ink_above_box` finding, preview the page; if it is a
    page number or a running head, extend the box to include it. For
-   `thin_*_line_isolated`, preview; if it is junk, `page_set_content(mode="tighten")`. For
-   `empty_but_ink`, decide whether the page really is blank.
+   `thin_*_line_isolated` (top/bottom) and `thin_*_column_isolated` (left/right),
+   preview; if it is junk, `page_set_content(mode="tighten")` (shrinks all four
+   sides, keeps page numbers). For `ink_left_of_box`/`ink_right_of_box`, preview:
+   if lines are cut off at the box side, extend (`expand_left/right`); spine
+   shadows and solid dark areas are not reported. For `empty_but_ink`, decide
+   whether the page really is blank.
 6. `run_stages(4, 5)` to propagate content changes.
 7. **Margins:** `pages_set_layout("all", margin_left=10, margin_right=10, margin_top=5, margin_bottom=5, align_v=<suggested_align_v
    from check_pages>, align_h="center")`.

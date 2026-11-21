@@ -54,10 +54,20 @@ miniatiūromis), po 8–9 (viršeliai ir iliustracijų puslapiai) ir prieš 11.
    (taip pat puslapių numerius ir antraštes) ir nieko daugiau (jokio nugarėlės
    šešėlio, pirštų, skenavimo šiukšlių). Taisyti `page_set_content`
    (`expand_*` puslapio pikseliais; neigiama reikšmė — mažina).
-5. **Content (aukštis / puslapių numeriai):** `check_pages(kind="content")`.
+5. **Content (aukštis / puslapių numeriai / šiukšlės):** `check_pages(kind="content")`.
+   `box_exceeds_text` — rėmelis nurodytose pusėse didesnis už teksto bloką
+   (ScanTailor įskaitė blankias šiukšles prie teksto; GUI rūšiuojant tai
+   plačiausi/aukščiausi puslapiai) → `page_set_content(mode="tighten")`, tada
+   peržiūra. Tighten palieka puslapių numerius ir antraštes ir nekerpa pusės,
+   kurios juostoje rašalo yra 3+ eilutėse (`kept_sides`).
    Kiekvienam `ink_below_box`/`ink_above_box` — peržiūrėti; jei tai puslapio
    numeris ar antraštė — praplėsti. `thin_*_line_isolated` — peržiūrėti; jei
-   šiukšlė — sumažinti. `empty_but_ink` — nuspręsti, ar puslapis tikrai tuščias.
+   šiukšlė — `page_set_content(mode="tighten")`. Tas pats
+   `thin_*_column_isolated` (šiukšlė kairėje/dešinėje; `tighten` mažina visas
+   keturias puses, numerius palieka). `ink_left_of_box`/`ink_right_of_box` —
+   peržiūrėti: jei eilutės nukirptos šone, praplėsti (`expand_left/right`);
+   nugarėlės šešėliai ir vientisos tamsios sritys nepranešami.
+   `empty_but_ink` — nuspręsti, ar puslapis tikrai tuščias.
 6. `run_stages(4, 5)`, kad content pakeitimai pasiektų paraštes.
 7. **Paraštės:** `pages_set_layout("all", margin_left=10, margin_right=10, margin_top=5, margin_bottom=5, align_v=<suggested_align_v
    iš check_pages>, align_h="center")`.

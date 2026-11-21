@@ -69,6 +69,14 @@ Values are JSON when they parse as JSON (`10`, `true`, `["a","b"]`), else string
   (threads mostly spin) and output pixels differ slightly from run to run.
   Whole 191-scan / 380-page book, all six stages: 54 min → 5 min 49 s, same
   parameters, deterministic output.
+- Image and output paths in the project may be absolute, relative to the
+  project file, or Windows paths (`C:/nes/book`, written by the Windows GUI);
+  under WSL the latter are read from `/mnt/c/...`. Reading/previews/checks work
+  on such projects; `run_stages` from WSL still needs paths the Linux CLI can open.
+- `run_stages` starts the CLI in the project's folder (ScanTailor resolves
+  relative paths against the working directory) and first checks that every
+  scan can be opened: the CLI itself "processes" missing images with exit 0 and
+  then saves a project pointing at the wrong folder.
 - `run_stages` always processes all pages (a CLI limitation); re-runs after
   content/layout changes are faster because ScanTailor caches.
 - Heuristics (`check_pages`) report evidence; the agent is expected to look at

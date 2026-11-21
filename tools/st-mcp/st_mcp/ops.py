@@ -72,8 +72,9 @@ class Job:
         self.current_filter = start
         self.processed = 0
         self._split_done = start > 2
+        # cwd = project folder: ScanTailor resolves relative paths in the project against the cwd
         self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=cli_env(),
-                                      text=True, encoding="utf-8", errors="replace")
+                                      cwd=str(project.parent), text=True, encoding="utf-8", errors="replace")
         threading.Thread(target=self._pump, daemon=True).start()
 
     def _pump(self) -> None:
@@ -218,6 +219,18 @@ def project_create(images_dir: str, project: str, output_dir: str | None = None,
                     "then run_stages(1, 5, orientation=..., layout=...)"}
 
 
+def _check_inputs_reachable(p: Project) -> None:
+    """The CLI silently 'processes' missing images (exit 0) and then saves a broken project, so check
+    first that it will be able to open every scan with the paths written in the project."""
+    raw = [d.get("path", "") for d in p.root.findall("./directories/directory")]
+    if os.name != "nt" and any(re.match(r"^[A-Za-z]:[\\/]", d) for d in raw):
+        raise RuntimeError(f"project has Windows paths {raw}: the Linux CLI cannot open them; run it with the "
+                           "Windows CLI (ST_CLI=...scantailor-universal-cli.exe) or fix the paths")
+    missing = [str(im.path) for im in p.images.values() if not im.path.exists()]
+    if missing:
+        raise RuntimeError(f"{len(missing)} scan(s) not found, e.g. {missing[:3]}")
+
+
 def run_stages(project: str, start: int = 1, end: int = 5, orientation: str | None = None,
                layout: str | None = None, layout_direction: str | None = None,
                dpi: int | None = None, content_detection: str | None = None,
@@ -246,6 +259,7 @@ def run_stages(project: str, start: int = 1, end: int = 5, orientation: str | No
         cmd.append(f"--content-detection={content_detection}")
     cmd += [f"--output-project={proj}", str(proj), str(p.output_dir)]
     shutil.copy2(proj, proj.with_suffix(proj.suffix + f".before-run{start}-{end}"))
+    _check_inputs_reachable(p)
     job = Job(cmd, proj, start, end, len(p.images) if start <= 2 else len(p.pages))
     _jobs[job.id] = job
     return job_status(job.id, wait_s) if wait_s else job.status()
@@ -409,8 +423,9 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
 
     mode=auto: back to automatic detection. mode=full: whole page.
     mode=cover: detect the book cover on a darker scanner background and use its bounds (covers).
-    mode=tighten: shrink the box vertically to the text, dropping isolated specks at its top/bottom
-    edge (keeps page numbers). Check the preview afterwards.
+    mode=tighten: fit the box to the text block on all four sides, dropping junk and faint specks at
+    its edges (keeps page numbers and running heads; a side whose strip has ink in 3+ text lines is
+    left as is and reported in kept_sides). Use for box_exceeds_text findings. Check the preview.
     mode=manual: set x/y/width/height, and/or grow (+) or shrink (-) individual edges with expand_*.
     Afterwards run_stages(4, 5) (or (4, 6)) so margins/output pick it up.
     """
@@ -429,6 +444,7 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
             rect = checks.tighten_rect(p, pg.id)
             if rect is None:
                 raise RuntimeError("nothing to tighten (empty or unprocessed content)")
+            note = rect.pop("kept_sides", None)
         elif mode == "cover":
             rect = checks.detect_cover_rect(p, pg.id)
             if rect is None:
@@ -453,9 +469,13 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
             raise ValueError(f"resulting box is empty: {rect}")
         p.set_content(pg.id, rect)
     p.save()
-    return {"page": pg.label, "before": before.get("content_rect_px"),
-            "after": Project(proj).content(pg.id).get("content_rect_px"), "mode": mode,
-            "next": "run_stages(4, 5) to propagate"}
+    res = {"page": pg.label, "before": before.get("content_rect_px"),
+           "after": Project(proj).content(pg.id).get("content_rect_px"), "mode": mode,
+           "next": "run_stages(4, 5) to propagate"}
+    if mode == "tighten" and note:
+        res["kept_sides"] = note
+        res["warning"] = "these sides were not trimmed: the strip had ink in 3+ text lines; check the preview"
+    return res
 
 
 def pages_set_layout(project: str, pages: str | list[str] = "all", margins_mm: float | None = None,
@@ -498,8 +518,9 @@ def pages_set_output(project: str, pages: str | list[str], color_mode: str | Non
 
 
 def check_pages(project: str, pages: str | list[str] = "all", kind: str = "content") -> dict:
-    """Heuristic checks with evidence. kind=content: ink outside the box (missed page numbers, headers),
-    isolated junk lines inside it, empty boxes on pages with ink, and where page numbers sit.
+    """Heuristic checks with evidence. kind=content: ink outside the box above/below (missed page numbers,
+    headers) and left/right (cut-off text, marginalia), isolated junk at the box's top/bottom lines and
+    left/right sides, empty boxes on pages with ink, and where page numbers sit.
     kind=pictures: fraction of the content that looks like a photo/illustration (>0.05 -> mixed/color)."""
     p = _proj(project)
     ids = _resolve_pages(p, pages)

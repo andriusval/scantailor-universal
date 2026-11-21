@@ -6,6 +6,7 @@ XML is preserved untouched, so the project stays openable in the GUI.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import tempfile
 import xml.etree.ElementTree as ET
@@ -78,8 +79,8 @@ class Project:
     # ------------------------------------------------------------------ index
     def _index(self) -> None:
         r = self.root
-        dirs = {d.get("id"): d.get("path") for d in r.findall("./directories/directory")}
-        files = {f.get("id"): Path(dirs[f.get("dirId")]) / f.get("name") for f in r.findall("./files/file")}
+        dirs = {d.get("id"): self.local_path(d.get("path")) for d in r.findall("./directories/directory")}
+        files = {f.get("id"): dirs[f.get("dirId")] / f.get("name") for f in r.findall("./files/file")}
         self.images: dict[str, ImageInfo] = {}
         for i, im in enumerate(r.findall("./images/image")):
             size, dpi = im.find("size"), im.find("dpi")
@@ -95,9 +96,18 @@ class Project:
                                        side=p.get("subPage", "single"), index=i, image=img))
         self.pages_by_id = {p.id: p for p in self.pages}
 
+    def local_path(self, p: str) -> Path:
+        """A path as written in the project, usable on this machine: relative paths are taken from the
+        project file's folder; a Windows drive path (C:\\x or C:/x) maps to /mnt/c/x under WSL/Linux."""
+        m = re.match(r"^([A-Za-z]):[\\/](.*)$", p or "")
+        if m and os.name != "nt":
+            return Path("/mnt", m.group(1).lower(), *re.split(r"[\\/]+", m.group(2)))
+        q = Path(p or ".")
+        return q if q.is_absolute() else (self.path.parent / q).resolve()
+
     @property
     def output_dir(self) -> Path:
-        return Path(self.root.get("outputDirectory", ""))
+        return self.local_path(self.root.get("outputDirectory", ""))
 
     def filter_el(self, name: str) -> ET.Element | None:
         return self.root.find(f"./filters/{name}")

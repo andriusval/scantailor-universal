@@ -56,12 +56,55 @@ def _ink_mask(project: Project, page_id: str) -> tuple[np.ndarray, float]:
     return ink, k
 
 
-def _rows_with_ink(ink: np.ndarray, x0: int, x1: int, y0: int, y1: int, min_frac: float = 0.01) -> list[int]:
+def _rows_with_ink(ink: np.ndarray, x0: int, x1: int, y0: int, y1: int, min_frac: float = 0.01,
+                   min_px: int = 2) -> list[int]:
     if y1 <= y0 or x1 <= x0:
         return []
     band = ink[y0:y1, x0:x1]
     counts = band.sum(axis=1)
-    return [y0 + i for i, c in enumerate(counts) if c >= max(2, min_frac * (x1 - x0))]
+    return [y0 + i for i, c in enumerate(counts) if c >= max(min_px, min_frac * (x1 - x0))]
+
+
+def _dilate(m: np.ndarray) -> np.ndarray:
+    d = m.copy()
+    d[1:, :] |= m[:-1, :]
+    d[:-1, :] |= m[1:, :]
+    e = d.copy()
+    e[:, 1:] |= d[:, :-1]
+    e[:, :-1] |= d[:, 1:]
+    return e
+
+
+def _cols_with_ink(ink: np.ndarray, x0: int, x1: int, y0: int, y1: int, min_frac: float = 0.004) -> list[int]:
+    if y1 <= y0 or x1 <= x0:
+        return []
+    counts = ink[y0:y1, x0:x1].sum(axis=0)
+    return [x0 + i for i, c in enumerate(counts) if c >= max(2, min_frac * (y1 - y0))]
+
+
+def _side_junk(ink: np.ndarray, bx0: int, bx1: int, by0: int, by1: int, line_h: float) -> list[dict]:
+    """Narrow ink column groups at the left/right edge of the box, separated from the text block by a
+    wide empty gap (spine-shadow edges, specks, finger marks that stretched the box sideways)."""
+    gap = max(3, int(line_h))
+    groups = _group(_cols_with_ink(ink, bx0, bx1, by0, by1), gap=gap)
+    if len(groups) < 2:
+        return []
+    bw = bx1 - bx0
+    main = max(groups, key=lambda g: g[1] - g[0])
+    lines = [ln for ln in _group(_rows_with_ink(ink, bx0, bx1, by0, by1, 0.004)) if ln[1] - ln[0] + 1 >= 3]
+    edge_lines = [lines[0], lines[-1]] if lines else []
+    out = []
+    for side, grp, nxt in (("left", groups[0], groups[1]), ("right", groups[-1], groups[-2])):
+        if grp == main:
+            continue
+        width = grp[1] - grp[0] + 1
+        dist = (nxt[0] - grp[1]) if side == "left" else (grp[0] - nxt[1])
+        rows = np.where(ink[by0:by1, grp[0]:grp[1] + 1].any(axis=1))[0] + by0
+        if len(rows) and any(a - 2 <= rows.min() and rows.max() <= b + 2 for a, b in edge_lines):
+            continue  # sits only in the first/last line: a page number or running head in a corner
+        if width < 0.08 * bw and dist > 2 * max(line_h, 3):
+            out.append({"side": side, "x0": grp[0], "x1": grp[1], "gap": dist, "width": width})
+    return out
 
 
 def _group(rows: list[int], gap: int = 3) -> list[tuple[int, int]]:
@@ -115,6 +158,42 @@ def check_page(project: Project, page_id: str) -> dict:
                 "distance_px": round(((by0 - b) if where == "above" else (a - by1)) / k),
                 "hint": "possibly a page number or running head outside the content box",
             })
+
+    # ink left / right of the box (text cut off by the box, marginalia, junk)
+    for where, (x0, x1) in (("left", (ex, bx0 - 2)), ("right", (bx1 + 2, W - ex))):
+        for a, b in _group(_cols_with_ink(ink, x0, x1, by0, by1), gap=max(3, int(line_h))):
+            band = ink[by0:by1, a:b + 1]
+            rows = np.where(band.any(axis=1))[0]
+            if band.sum() < max(12, line_h * line_h) or not len(rows):
+                continue  # specks
+            if band[rows.min():rows.max() + 1].mean() > 0.35:
+                continue  # solid dark area: spine shadow, finger, scan border - not text, already outside
+            dist = (bx0 - b) if where == "left" else (a - bx1)
+            n_lines = len([g for g in _group(list(rows)) if g[1] - g[0] + 1 >= 3])
+            findings.append({
+                "kind": f"ink_{where}_of_box",
+                "band_px": {"x": round(a / k), "y": round((by0 + rows.min()) / k),
+                            "width": round((b - a + 1) / k), "height": round((rows.max() - rows.min() + 1) / k)},
+                "distance_px": round(dist / k), "text_lines_touched": n_lines,
+                "hint": ("text-like ink right next to the box: lines may be cut off, consider expanding"
+                         if dist <= 3 * max(line_h, 3) and n_lines >= 2
+                         else "ink beside the box: marginalia, cut text or junk; check preview"),
+            })
+
+    # junk at the left/right edge inside the box (stretches the box sideways)
+    for j in _side_junk(ink, bx0, bx1, by0, by1, line_h):
+        findings.append({"kind": f"thin_{j['side']}_column_isolated", "gap_px": round(j["gap"] / k),
+                         "width_px": round(j["width"] / k),
+                         "hint": "isolated narrow ink at box side: likely scan junk, consider mode=tighten"})
+
+    # empty space between the box and the text block (faint junk ScanTailor counted as content)
+    ex = box_excess(project, pg.id)
+    if ex:
+        over = {s_: v for s_, v in ex["excess_px"].items() if v > ex["threshold_px"]}
+        if over:
+            findings.append({"kind": "box_exceeds_text", "excess_px": over, "threshold_px": ex["threshold_px"],
+                             "hint": "box is larger than the text on these sides (junk at the edge): "
+                                     "page_set_content(mode=tighten), then preview"})
 
     # page-number position inside the box: short isolated last/first line
     number_pos = None
@@ -214,9 +293,12 @@ def picture_score(project: Project, page_id: str) -> dict:
     return {"page_id": pg.id, "label": pg.label, "picture_fraction": round(float(pic.mean()), 3)}
 
 
-def tighten_rect(project: Project, page_id: str) -> dict | None:
-    """Shrink the content box vertically to the text block: drop tiny isolated specks at the top or
-    bottom edge (scan junk) but keep page numbers and real text lines. Returns the new rect (page px)."""
+def text_block(project: Project, page_id: str) -> dict | None:
+    """Where the printed text really is inside the content box (analysis px), ignoring specks and junk.
+
+    Top/bottom: first/last ink line that is not a speck. Left/right: on justified text, the column where
+    at least a quarter of the full-width lines have ink (junk next to the text touches only 1-2 lines);
+    otherwise the ink extent after dropping isolated side junk."""
     pg = project.page(page_id)
     c = project.content(pg.id)
     if not c.get("processed") or c.get("empty"):
@@ -225,21 +307,81 @@ def tighten_rect(project: Project, page_id: str) -> dict | None:
     r = c["content_rect_px"]
     bx0, by0 = int(r["x"] * k), int(r["y"] * k)
     bx1, by1 = int((r["x"] + r["width"]) * k), int((r["y"] + r["height"]) * k)
-    lines = _group(_rows_with_ink(ink, bx0, bx1, by0, by1, 0.004))
+    # thin strokes (page-number digits) break into 1-px fragments at analysis scale: dilate 3x3 so a
+    # glyph stays one blob, then any row with ink counts (specks are dropped below by their size)
+    ink = _dilate(ink)
+    lines = _group(_rows_with_ink(ink, bx0, bx1, by0, by1, 0.0, min_px=1))
     if not lines:
         return None
 
-    def cols(a: int, b: int) -> int:
+    def ncols(a: int, b: int) -> int:
         return int(ink[a:b + 1, bx0:bx1].any(axis=0).sum())
 
     real = [ln for ln in lines if ln[1] - ln[0] + 1 >= 3]
     line_h = statistics.median([b - a + 1 for a, b in real]) if real else 3
     # a speck: very short in both directions compared with a text line
-    keep = [ln for ln in lines if not (ln[1] - ln[0] + 1 < 0.5 * line_h and cols(*ln) < 2 * line_h)]
+    keep = [ln for ln in lines if not (ln[1] - ln[0] + 1 < 0.5 * line_h and ncols(*ln) < 2 * line_h)]
     if not keep:
         return None
     top, bottom = keep[0][0], keep[-1][1]
-    pad = max(2, int(0.2 * line_h))
-    y0 = max(by0, top - pad)
-    y1 = min(by1, bottom + pad)
-    return {"x": r["x"], "y": y0 / k, "width": r["width"], "height": (y1 - y0) / k}
+
+    body = [ln for ln in keep if ln[1] - ln[0] + 1 >= 0.6 * line_h and ncols(*ln) > 0.5 * (bx1 - bx0)]
+    justified = False
+    if len(body) >= 6:
+        cov = np.zeros(bx1 - bx0)
+        for a, b in body:
+            cov += ink[a:b + 1, bx0:bx1].any(axis=0)
+        idx = np.where(cov >= 0.25 * len(body))[0]
+        if len(idx):
+            w = max(2, int(0.3 * line_h))
+            left, right = bx0 + int(idx[0]), bx0 + int(idx[-1]) + 1
+            # a sharp edge (justified text): many lines end within a few px of it
+            justified = bool(cov[idx[0]:idx[0] + w].max() >= 0.5 * len(body)
+                         and cov[max(0, idx[-1] - w + 1):idx[-1] + 1].max() >= 0.5 * len(body))
+    if not justified:
+        lo, hi = bx0, bx1
+        for j in _side_junk(ink, bx0, bx1, top, bottom + 1, line_h):
+            if j["side"] == "left":
+                lo = j["x1"] + 1
+            else:
+                hi = j["x0"]
+        inked = _cols_with_ink(ink, lo, hi, top, bottom + 1)
+        left, right = (inked[0], inked[-1] + 1) if inked else (bx0, bx1)
+    return {"k": k, "box": (bx0, by0, bx1, by1), "line_h": line_h, "justified": justified,
+            "left": left, "top": top, "right": right, "bottom": bottom + 1}
+
+
+def box_excess(project: Project, page_id: str) -> dict | None:
+    """Empty space between each side of the content box and the text block, in page px."""
+    tb = text_block(project, page_id)
+    if tb is None:
+        return None
+    k, (bx0, by0, bx1, by1) = tb["k"], tb["box"]
+    ex = {"left": tb["left"] - bx0, "right": bx1 - tb["right"], "top": tb["top"] - by0, "bottom": by1 - tb["bottom"]}
+    return {"excess_px": {s: round(float(v) / k) for s, v in ex.items()}, "line_h_px": round(float(tb["line_h"]) / k),
+            "justified": tb["justified"], "threshold_px": round(0.6 * float(tb["line_h"]) / k)}
+
+
+def tighten_rect(project: Project, page_id: str) -> dict | None:
+    """Fit the content box to the text block on all four sides: drops specks and junk at the edges
+    (including faint junk next to the text) but keeps page numbers, running heads and real lines.
+    Safety: a side is left as it was if the strip it would cut has ink in 3+ text lines (that is text,
+    not junk). Returns the new rect (page px) plus `kept_sides` when that happened."""
+    tb = text_block(project, page_id)
+    if tb is None:
+        return None
+    k, (bx0, by0, bx1, by1) = tb["k"], tb["box"]
+    pad = max(2, int(0.25 * tb["line_h"]))
+    x0, y0 = max(bx0, tb["left"] - pad), max(by0, tb["top"] - pad)
+    x1, y1 = min(bx1, tb["right"] + pad), min(by1, tb["bottom"] + pad)
+    ink, _ = _ink_mask(project, page_id)
+    lines = [ln for ln in _group(_rows_with_ink(ink, bx0, bx1, by0, by1, 0.004)) if ln[1] - ln[0] + 1 >= 3]
+    kept = []
+    for side, (c0, c1) in (("left", (bx0, x0)), ("right", (x1, bx1))):
+        if c1 > c0 and sum(1 for a, b in lines if ink[a:b + 1, c0:c1].any()) >= 3:
+            kept.append(side)
+            x0, x1 = (bx0, x1) if side == "left" else (x0, bx1)
+    rect = {"x": x0 / k, "y": y0 / k, "width": (x1 - x0) / k, "height": (y1 - y0) / k}
+    if kept:
+        rect["kept_sides"] = kept
+    return rect
