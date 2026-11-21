@@ -394,6 +394,25 @@ def tighten_rect(project: Project, page_id: str) -> dict | None:
         if c1 > c0 and sum(1 for a, b in lines if ink[a:b + 1, c0:c1].any()) >= 3:
             kept.append(side)
             x0, x1 = (bx0, x1) if side == "left" else (x0, bx1)
+            continue
+        # a single line running past the text edge (hyphen, overhang, long list entry) is text, not
+        # junk: if ink in the cut strip continues a line within a word gap, move the edge to include it
+        lh = tb["line_h"]
+        for a, b in lines:
+            strip = ink[a:b + 1, c0:c1]
+            if c1 <= c0 or strip.sum() < max(6, 0.15 * lh * lh):
+                continue
+            cols = np.where(strip.any(axis=0))[0] + c0
+            inner = np.where(ink[a:b + 1, x0:x1].any(axis=0))[0] + x0
+            if not len(inner):
+                continue
+            gap = (inner.min() - cols.max()) if side == "left" else (cols.min() - inner.max())
+            if gap <= 0.8 * lh:
+                if side == "left":
+                    x0 = max(bx0, min(x0, int(cols.min()) - pad))
+                else:
+                    x1 = min(bx1, max(x1, int(cols.max()) + 1 + pad))
+                kept.append(f"{side}:line")
     rect = {"x": x0 / k, "y": y0 / k, "width": (x1 - x0) / k, "height": (y1 - y0) / k}
     if kept:
         rect["kept_sides"] = kept
