@@ -204,11 +204,15 @@ CommandLine::parseCli(QStringList const& argv)
             // handle input images and output directory
             QFileInfo file(argv[i]);
             if (i == (argv.size() - 1)) {
-                // output directory
+                // output directory: created when it does not exist yet
+                if (!file.exists() && QDir().mkpath(file.filePath())) {
+                    file.refresh();
+                }
                 if (file.isDir()) {
                     CommandLine::m_outputDirectory = file.filePath();
                 } else {
-                    std::cout << "Error: Last argument must be an existing directory" << std::endl;
+                    std::cout << "Error: Last argument must be the output directory "
+                              "(it could not be created, or it is a file)" << std::endl;
                     exit(1);
                 }
             } else if (file.filePath() == "-") {

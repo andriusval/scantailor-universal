@@ -148,7 +148,14 @@ private:
     >
     > Pages;
 
-    QDomElement processDirectories(QDomDocument& doc) const;
+    QDomElement processDirectories(QDomDocument& doc, QString const& project_dir) const;
+
+    /**
+     * \p path relative to \p project_dir when it is that folder or inside it
+     * ("." or "sub/dir"), so a project kept next to its scans can be moved or copied
+     * with them; any other path is returned unchanged (absolute).
+     */
+    static QString packDirPath(QString const& path, QString const& project_dir);
 
     QDomElement processFiles(QDomDocument& doc) const;
 
