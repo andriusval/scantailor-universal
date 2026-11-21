@@ -14,6 +14,22 @@ opened in the GUI at any point.
 
 Needs Python ≥ 3.10 and a built `scantailor-universal-cli`.
 
+To build the CLI on Ubuntu 24.04 (Ninja, ccache and mold are optional; they make
+rebuilds and new build folders much faster):
+
+```sh
+sudo apt install -y g++ cmake pkg-config ninja-build ccache mold \
+    qt6-base-dev qt6-svg-dev qt6-tools-dev libtiff-dev libjpeg-dev libpng-dev \
+    libboost-all-dev libcanberra-dev libopenjp2-7-dev libexiv2-dev python3-venv
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DQtPkgList=Qt6 \
+    -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+    -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=mold
+ninja -C build scantailor-universal-cli
+```
+
+Run these commands in the repository root. Add `libmupdf-dev` for PDF input.
+
 ```sh
 cd tools/st-mcp
 python3 -m venv .venv            # Windows: py -m venv .venv
