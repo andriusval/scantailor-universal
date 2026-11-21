@@ -169,6 +169,9 @@ def check_page(project: Project, page_id: str) -> dict:
             if band[rows.min():rows.max() + 1].mean() > 0.35:
                 continue  # solid dark area: spine shadow, finger, scan border - not text, already outside
             dist = (bx0 - b) if where == "left" else (a - bx1)
+            bw_, bh_ = b - a + 1, rows.max() - rows.min() + 1
+            if line_h and bw_ < 1.5 * line_h and bh_ > 5 * line_h and dist > 0.5 * line_h:
+                continue  # tall narrow band away from the text: spine/page edge or its shadow, not text
             n_lines = len([g for g in _group(list(rows)) if g[1] - g[0] + 1 >= 3])
             findings.append({
                 "kind": f"ink_{where}_of_box",
@@ -176,7 +179,7 @@ def check_page(project: Project, page_id: str) -> dict:
                             "width": round((b - a + 1) / k), "height": round((rows.max() - rows.min() + 1) / k)},
                 "distance_px": round(dist / k), "text_lines_touched": n_lines,
                 "hint": ("text-like ink right next to the box: lines may be cut off, consider expanding"
-                         if dist <= 3 * max(line_h, 3) and n_lines >= 2
+                         if dist <= 0.5 * max(line_h, 3) and n_lines >= 2
                          else "ink beside the box: marginalia, cut text or junk; check preview"),
             })
 
@@ -234,15 +237,20 @@ def check_page(project: Project, page_id: str) -> dict:
 def detect_cover_rect(project: Project, page_id: str) -> dict | None:
     """Bounding box of the book cover lying on a darker scanner background (page px)."""
     pg = project.page(page_id)
-    im = render_page(project, pg.id, max_px=ANALYSIS_PX, overlay=False)
+    # area outside the scan is painted black like the scanner background, so it never looks like cover
+    im = render_page(project, pg.id, max_px=ANALYSIS_PX, overlay=False, pad=(0, 0, 0))
     g = np.asarray(im.convert("L"), dtype=np.float32)
     pt = project.transform(pg.id)
     k = min(1.0, ANALYSIS_PX / max(pt.width, pt.height))
-    bg = np.percentile(g, 10)
+    f = max(2, int(0.03 * min(g.shape)))
+    frame = np.concatenate([g[:f].ravel(), g[-f:].ravel(), g[:, :f].ravel(), g[:, -f:].ravel()])
+    bg = float(np.percentile(frame, 90))  # scanner background (black lid) seen around the cover
     fg = np.percentile(g, 90)
-    if fg - bg < 40:
+    if fg - bg < 15:
         return None  # no contrast between cover and background
-    light = g > (bg + 0.35 * (fg - bg))
+    # dark covers (e.g. dark green on black) are only a few tens of levels above the background
+    light = g > bg + min(0.35 * (fg - bg), max(12.0, 0.5 * (np.median(g[g > bg + 12]) - bg)
+                                                if (g > bg + 12).any() else 12.0))
 
     def longest_run(mask: np.ndarray) -> tuple[int, int] | None:
         best, start = None, None
@@ -290,7 +298,11 @@ def picture_score(project: Project, page_id: str) -> dict:
     # mid-tone fraction per block: text is mostly paper or ink, photos are full of mid-tones
     mid = ((blocks > paper * 0.25) & (blocks < paper * 0.80)).mean(axis=1)
     pic = (mid > 0.5) & (mean < paper * 0.85)
-    return {"page_id": pg.id, "label": pg.label, "picture_fraction": round(float(pic.mean()), 3)}
+    # line art (engravings, drawings, maps): blocks densely covered with ink; body text stays far below
+    ink_frac = (blocks < paper * 0.55).mean(axis=1)
+    dense = ink_frac > 0.45
+    return {"page_id": pg.id, "label": pg.label, "picture_fraction": round(float(pic.mean()), 3),
+            "line_art_fraction": round(float(dense.mean()), 3)}
 
 
 def text_block(project: Project, page_id: str) -> dict | None:
@@ -307,6 +319,9 @@ def text_block(project: Project, page_id: str) -> dict | None:
     r = c["content_rect_px"]
     bx0, by0 = int(r["x"] * k), int(r["y"] * k)
     bx1, by1 = int((r["x"] + r["width"]) * k), int((r["y"] + r["height"]) * k)
+    # typical text-line height from the plain mask (dilation would merge close lines at small scale)
+    raw = [ln for ln in _group(_rows_with_ink(ink, bx0, bx1, by0, by1, 0.004)) if ln[1] - ln[0] + 1 >= 3]
+    line_h = statistics.median([b - a + 1 for a, b in raw]) if raw else 3
     # thin strokes (page-number digits) break into 1-px fragments at analysis scale: dilate 3x3 so a
     # glyph stays one blob, then any row with ink counts (specks are dropped below by their size)
     ink = _dilate(ink)
@@ -317,8 +332,6 @@ def text_block(project: Project, page_id: str) -> dict | None:
     def ncols(a: int, b: int) -> int:
         return int(ink[a:b + 1, bx0:bx1].any(axis=0).sum())
 
-    real = [ln for ln in lines if ln[1] - ln[0] + 1 >= 3]
-    line_h = statistics.median([b - a + 1 for a, b in real]) if real else 3
     # a speck: very short in both directions compared with a text line
     keep = [ln for ln in lines if not (ln[1] - ln[0] + 1 < 0.5 * line_h and ncols(*ln) < 2 * line_h)]
     if not keep:
@@ -385,3 +398,89 @@ def tighten_rect(project: Project, page_id: str) -> dict | None:
     if kept:
         rect["kept_sides"] = kept
     return rect
+
+
+def _print_mask(g: np.ndarray, B: int = 8) -> tuple[np.ndarray, int]:
+    """Blocks (B px) holding printed matter (photo detail, halftone, letters), specks removed.
+
+    Uses local texture (mean neighbour difference) rather than darkness: spine shadows, scan-border
+    bands and page-curvature gradients can be dark but are smooth, so they are not print."""
+    hf = np.zeros_like(g)
+    hf[:-1, :-1] = (np.abs(np.diff(g, axis=1))[:-1, :] + np.abs(np.diff(g, axis=0))[:, :-1]) / 2
+    paper = np.percentile(g, 95)
+    h, w = (g.shape[0] // B) * B, (g.shape[1] // B) * B
+
+    def blocks(a: np.ndarray) -> np.ndarray:
+        return a[:h, :w].reshape(h // B, B, w // B, B).swapaxes(1, 2).reshape(h // B, w // B, -1)
+
+    bh, bg = blocks(hf).mean(axis=2), blocks(g).mean(axis=2)
+    plain = bh[bg > 0.9 * paper]
+    base = float(np.median(plain)) if plain.size else 2.5
+    m = bh > max(4.0, 1.8 * base)
+    # drop isolated blocks (specks): keep blocks with at least 2 marked neighbours
+    p = np.pad(m, 1)
+    nb = sum(np.roll(np.roll(p, dy, 0), dx, 1) for dy in (-1, 0, 1) for dx in (-1, 0, 1))[1:-1, 1:-1] - m
+    return m & (nb >= 2), B
+
+
+def all_content_rect(project: Project, page_id: str) -> dict | None:
+    """Box around everything printed on the page (photos, plates, captions), page px.
+    For picture pages, where ScanTailor's text-oriented detection crops or misses images."""
+    pg = project.page(page_id)
+    im = render_page(project, pg.id, max_px=ANALYSIS_PX, overlay=False, pad=(255, 255, 255))
+    g = np.asarray(im.convert("L"), dtype=np.float32)
+    pt = project.transform(pg.id)
+    k = min(1.0, ANALYSIS_PX / max(pt.width, pt.height))
+    m, B = _print_mask(g)
+    H, W = m.shape
+    e = max(1, int(0.015 * max(H, W)))  # page edges: shadows, scan borders
+    m[:e, :] = m[-e:, :] = False
+    m[:, :e] = m[:, -e:] = False
+    # side columns with only scattered marks (textured spine shadow): an image edge fills its column
+    col = m.sum(axis=0)
+    thr = max(2, int(0.03 * H))
+    xs_ok = np.where(col >= thr)[0]
+    if len(xs_ok):
+        m[:, :xs_ok[0]] = False
+        m[:, xs_ok[-1] + 1:] = False
+    # thin vertical strips at the sides (page edge, gutter seam) separated from the print by an empty
+    # gap; a picture printed to the very edge has no gap and stays. Only columns: captions are thin
+    # horizontal strips and must stay.
+    for axis in (0,):
+        prof = m.any(axis=axis)
+        groups = _group(list(np.where(prof)[0]), gap=1)
+        while len(groups) > 1 and groups[0][1] - groups[0][0] < 3 and groups[1][0] - groups[0][1] > 2:
+            a, b = groups.pop(0)
+            if axis == 0:
+                m[:, a:b + 1] = False
+            else:
+                m[a:b + 1, :] = False
+        while len(groups) > 1 and groups[-1][1] - groups[-1][0] < 3 and groups[-1][0] - groups[-2][1] > 2:
+            a, b = groups.pop()
+            if axis == 0:
+                m[:, a:b + 1] = False
+            else:
+                m[a:b + 1, :] = False
+    ys, xs = np.where(m)
+    if not len(ys):
+        return None
+    x0, x1 = xs.min() * B, (xs.max() + 1) * B
+    y0, y1 = ys.min() * B, (ys.max() + 1) * B
+    return {"x": x0 / k, "y": y0 / k, "width": (x1 - x0) / k, "height": (y1 - y0) / k}
+
+
+def picture_skew(project: Project, page_id: str) -> float | None:
+    """Residual skew (degrees, counter-clockwise positive as in PIL) of the printed rectangles on a
+    picture page, from sharpness of the row/column profiles of its print mask."""
+    pg = project.page(page_id)
+    im = render_page(project, pg.id, max_px=800, overlay=False, pad=(255, 255, 255))
+    g = np.asarray(im.convert("L"), dtype=np.float32)
+    paper = np.percentile(g, 95)
+    mask = Image.fromarray(((g < paper * 0.8) * 255).astype(np.uint8))
+    best, best_a = -1.0, 0.0
+    for a in np.arange(-10, 10.01, 0.25):
+        r = np.asarray(mask.rotate(a, resample=Image.Resampling.NEAREST, fillcolor=0), dtype=np.float32)
+        score = float((np.diff(r.sum(axis=0)) ** 2).sum() + (np.diff(r.sum(axis=1)) ** 2).sum())
+        if score > best:
+            best, best_a = score, float(a)
+    return best_a

@@ -195,6 +195,8 @@ class Project:
             "color_mode": cp.get("colorMode") if cp is not None else None,
             "dpi": int(_f(dpi, "horizontal", 600)),
             "despeckle": p.get("despeckleLevel"),
+            "white_margins": _cg(cp, "whiteMargins"),
+            "equalize_illumination": _cg(cp, "normalizeIllumination"),
         }
 
     # ------------------------------------------------------------------ write
@@ -247,7 +249,8 @@ class Project:
             a.set("null", "0" if match_size else "1")
 
     def set_output(self, page_id: str, color_mode: str | None = None, dpi: int | None = None,
-                   despeckle: str | None = None) -> None:
+                   despeckle: str | None = None, white_margins: bool | None = None,
+                   equalize_illumination: bool | None = None) -> None:
         p = self._page_params("output", page_id)
         if p is None:
             raise RuntimeError(f"page {page_id}: output params missing (run stages 1-5 first)")
@@ -263,6 +266,14 @@ class Project:
             if despeckle not in ("off", "cautious", "normal", "aggressive"):
                 raise ValueError("despeckle must be off|cautious|normal|aggressive")
             p.set("despeckleLevel", despeckle)
+        # Color/Grayscale (and Mixed) options: "White margins", "Equalize illumination"
+        for attr, val in (("whiteMargins", white_margins), ("normalizeIllumination", equalize_illumination)):
+            if val is not None:
+                cp = p.find("color-params")
+                cg = cp.find("color-or-grayscale")
+                if cg is None:
+                    cg = ET.SubElement(cp, "color-or-grayscale")
+                cg.set(attr, "1" if val else "0")
 
     def _filters(self) -> ET.Element:
         f = self.root.find("./filters")
@@ -275,6 +286,14 @@ class Project:
         if el is None:
             el = ET.SubElement(self._filters(), name)
         return el
+
+    def set_deskew(self, page_id: str, angle: float) -> None:
+        """Manual deskew angle (degrees, ScanTailor's sign). Stages 3+ must be re-run afterwards."""
+        p = self._page_params("deskew", page_id)
+        if p is None:
+            raise RuntimeError(f"page {page_id}: deskew not run yet (run stages 1-3 first)")
+        p.set("mode", "manual")
+        p.set("angle", repr(float(angle)))
 
     def set_rotation(self, image_id: str, degrees: int) -> None:
         """Per-image orientation fix (Fix Orientation filter): 0, 90, 180, 270 clockwise."""
@@ -312,3 +331,8 @@ class Project:
         os.close(fd)
         self.tree.write(tmp, encoding="utf-8", xml_declaration=False)
         os.replace(tmp, self.path)
+
+
+def _cg(cp: ET.Element | None, attr: str) -> bool | None:
+    cg = cp.find("color-or-grayscale") if cp is not None else None
+    return None if cg is None else cg.get(attr) == "1"

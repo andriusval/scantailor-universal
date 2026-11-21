@@ -21,7 +21,7 @@ def _load(path: Path) -> Image.Image:
 
 def render_page(project: Project, page_id: str, max_px: int = 1200,
                 extra_rects: list[tuple[dict, tuple[int, int, int]]] | None = None,
-                overlay: bool = True) -> Image.Image:
+                overlay: bool = True, pad: tuple[int, int, int] = (128, 128, 128)) -> Image.Image:
     """overlay=False returns the bare page (for analysis: no box outlines or label bar)."""
     pg = project.page(page_id)
     pt = project.transform(pg.id)
@@ -35,11 +35,11 @@ def render_page(project: Project, page_id: str, max_px: int = 1200,
     inv = fwd.inverted()
     page = src.transform((w, h), Image.Transform.AFFINE,
                          (inv.a, inv.c, inv.e, inv.b, inv.d, inv.f),
-                         resample=Image.Resampling.BILINEAR, fillcolor=(128, 128, 128))
+                         resample=Image.Resampling.BILINEAR, fillcolor=pad)
     # grey-out everything outside the page outline
     mask = Image.new("L", (w, h), 0)
     ImageDraw.Draw(mask).polygon([(x * k, y * k) for x, y in pt.outline], fill=255)
-    page = Image.composite(page, Image.new("RGB", (w, h), (128, 128, 128)), mask)
+    page = Image.composite(page, Image.new("RGB", (w, h), pad), mask)
 
     if not overlay:
         return page

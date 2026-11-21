@@ -32,62 +32,61 @@ Principai (perimti iš craft-anything):
 | 10 | Išsaugo projektą | Projektas saugomas po kiekvieno pakeitimo (su `.bak`) | (automatiškai) |
 | 11 | Priekinis viršelis → *Output → Play* | Paleidžia 6 filtrą, patikrina rezultatus | `run_stages(4, 6)`, `export_summary` |
 
-Žmogaus patvirtinimas (kaip craft-anything „approval card“) prašomas:
-po 1 žingsnio (orientacija/atvartai), po 3–5 (pakeistų content box sąrašas su
-miniatiūromis), po 8–9 (viršeliai ir iliustracijų puslapiai) ir prieš 11.
+Workflow vyksta **iki galo be stabdymo patvirtinimui**. Agentas sprendžia
+pagal peržiūras ir skaičius, o kiekvieną sprendimą (puslapiai + kodėl) įrašo į
+galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
 
-## Agento procedūra (tai, ką grąžina `workflow_guide`)
+## Agento procedūra (`workflow_guide` grąžina EN versiją)
 
-1. `project_create(images_dir, project)`. Pranešti DPI pastabą.
-2. `image_preview(project, "first3")` ir vienas iš vidurio. Nuspręsti:
-   - **orientation**: tekstas turi skaitytis normaliai. `right` = pasukti 90°
-     pagal laikrodžio rodyklę, `left` = prieš, `upsidedown`, `none`;
-   - **layout**: `2`, jei skenas yra atversta knyga (du puslapiai greta),
-     `1` — pavieniai puslapiai, `0` (auto) — tik jei neaišku.
-   - Paprašyti žmogaus patvirtinimo, parodyti peržiūrą.
-3. `run_stages(project, 1, 5, orientation=…, layout=…)`, tada
-   `job_status(job_id, wait_s=60)`, kol `state` = `ok`.
-   Apytiksliai 1–2 s vienam puslapiui.
-4. **Content (plotis):** `pages_list(sort_by="z_width", descending=true, limit=12)`
-   ir tas pats didėjančia tvarka. Kandidatus peržiūrėti su `pages_preview`
-   (iki 16 viename lape). Mėlynas rėmelis turi apimti visą spausdintą tekstą
-   (taip pat puslapių numerius ir antraštes) ir nieko daugiau (jokio nugarėlės
-   šešėlio, pirštų, skenavimo šiukšlių). Taisyti `page_set_content`
-   (`expand_*` puslapio pikseliais; neigiama reikšmė — mažina).
-5. **Content (aukštis / puslapių numeriai / šiukšlės):** `check_pages(kind="content")`.
-   `box_exceeds_text` — rėmelis nurodytose pusėse didesnis už teksto bloką
-   (ScanTailor įskaitė blankias šiukšles prie teksto; GUI rūšiuojant tai
-   plačiausi/aukščiausi puslapiai) → `page_set_content(mode="tighten")`, tada
-   peržiūra. Tighten palieka puslapių numerius ir antraštes ir nekerpa pusės,
-   kurios juostoje rašalo yra 3+ eilutėse (`kept_sides`).
-   Kiekvienam `ink_below_box`/`ink_above_box` — peržiūrėti; jei tai puslapio
-   numeris ar antraštė — praplėsti. `thin_*_line_isolated` — peržiūrėti; jei
-   šiukšlė — `page_set_content(mode="tighten")`. Tas pats
-   `thin_*_column_isolated` (šiukšlė kairėje/dešinėje; `tighten` mažina visas
-   keturias puses, numerius palieka). `ink_left_of_box`/`ink_right_of_box` —
-   peržiūrėti: jei eilutės nukirptos šone, praplėsti (`expand_left/right`);
-   nugarėlės šešėliai ir vientisos tamsios sritys nepranešami.
-   `empty_but_ink` — nuspręsti, ar puslapis tikrai tuščias.
-6. `run_stages(4, 5)`, kad content pakeitimai pasiektų paraštes.
-7. **Paraštės:** `pages_set_layout("all", margin_left=10, margin_right=10, margin_top=5, margin_bottom=5, align_v=<suggested_align_v
-   iš check_pages>, align_h="center")`.
-8. **Layout išskirtys:** puslapiai, kurių turinys daug žemesnis už medianą
-   (skyrių pabaigos, antraštinis lapas, leidyklos sąrašai), turi išlaikyti
-   originalią poziciją: skyrių pabaigos ir sąrašai → `align_v="top"`; tekstas,
-   kuris originale yra puslapio apačioje (kolofonas) → palikti `bottom`.
-   Pilno aukščio puslapiams (taip pat skyrių pradžioms, kurių rėmelis siekia
-   puslapio numerį) vertikalus lygiavimas neturi įtakos.
-9. **Viršeliai:** priekinis ir galinis (vėliava `cover_candidate`; patvirtinti
-   peržiūra) → `page_set_content(mode="full")`,
-   `pages_set_layout([...], margins_mm=0, match_size=false)`,
-   `pages_set_output([...], color_mode="color", dpi=300)`.
-10. **Paveikslėliai:** `check_pages(kind="pictures")`; peržiūrėti pažymėtus;
-    iliustracijos tekste → `color_mode="mixed"`; viso puslapio vaizdai →
-    `color_mode="color", dpi=300`.
-11. Parodyti žmogui visų pakeitimų suvestinę (puslapiai + kodėl) ir paklausti
-    prieš galutinį paleidimą.
-12. `run_stages(5, 6)` (arba `4, 6`, jei content vėl keistas),
-    `export_summary`. Patikrinti 3–4 išvesties TIFF.
+1. `project_create(images_dir, project, output_dir)`. Jei kataloge jau yra
+   žmogaus projektas (pvz. `projektas.ScanTailor`) ar `out/` — jų neliesti:
+   naudoti `agentas.ScanTailor` ir `out-agentas/`.
+2. `image_preview(project, images=[0, 1, 3, N/2, -2, -1])` (indeksai). Nuspręsti:
+   - **orientation** pagal raidžių kryptį padidintoje iškarpoje;
+   - **layout**: `2` atvartams, `1` pavieniams puslapiams;
+   - viršeliai, priešlapiai ir kiti pavieniai skenai (`001`, `9999`, …)
+     dažniausiai `orientation=none, layout=1` (`images_set_geometry`).
+3. `run_stages(project, 1, 5)` (~0,5 s puslapiui).
+4. **Content:** `check_pages(kind="content")` ir plačiausi/aukščiausi iš
+   `pages_list`. Pažymėtus peržiūrėti, tada:
+   - `box_exceeds_text` → `page_set_content(mode="tighten")` (numerius
+     palieka; pusė, kurios juostoje rašalo 3+ eilutėse, lieka — `kept_sides`;
+     jei peržiūroje tai šiukšlė, pvz. ranka rašytas bibliotekos šifras, kraštą
+     nustatyti `mode="manual"`);
+   - rašalas virš/po rėmeliu su „looks like a page number missed“ →
+     `mode="include_numbers"`;
+   - tuščias lapas, kuriame aptiktos tik dulkės ar persišviečiantis tekstas →
+     `mode="empty"`;
+   - `ink_left/right_of_box` „lines may be cut off“ → peržiūrėti; jei tikra —
+     praplėsti.
+5. **Puslapiai su iliustracijomis:** `check_pages(kind="pictures")`; peržiūrėti
+   kiekvieną pažymėtą (padidinus iliustraciją):
+   - juodai baltos linijos (graviūros, piešiniai, žemėlapiai) → Output
+     **B/W 600**;
+   - grayscale iliustracijos (nuotraukos, rastras) →
+     `pages_straighten_pictures` (ScanTailor tiesina pagal teksto eilutes ir
+     nuotraukas gali pakreipti), `run_stages(3, 5)`,
+     `page_set_content(mode="all_content")` (nuotrauka + parašas, be nugarėlės
+     šešėlio), tada `pages_set_output(color_mode="color", dpi=300,
+     white_margins=true, equalize_illumination=true)`.
+6. **Viršeliai ir priešlapiai:** `page_set_content(mode="cover")` (randa ir
+   tamsius viršelius ant juodo fono), `pages_set_layout(margins_mm=0,
+   match_size=false)`, `pages_set_output(color_mode="color", dpi=300)`.
+7. **Paraštės:** `pages_set_layout("all", margin_left=10, margin_right=10,
+   margin_top=5, margin_bottom=5, align_v=<suggested_align_v>,
+   align_h="center")`, tada vėl viršelių layout (6 žingsnis).
+8. **Layout išskirtys:** puslapiai daug žemesni už medianą: skyrių pabaigos,
+   serijos logotipas, portretai, trumpi sąrašai → `align_v="top"`; turinys
+   puslapio viduryje → `center`; kolofonas ir skyrių pradžios (rėmelis siekia
+   numerį) lieka `bottom`.
+9. `run_stages(4, 6)`, `export_summary`. Patikrinti, ar visi teksto puslapiai
+   vienodo dydžio: jei ne, dydį lemia plačiausias content — rasti per
+   `pages_list(sort_by="content_width", descending=true)`, pataisyti, paleisti
+   iš naujo. Peržiūrėti 8–16 išvesties puslapių.
+10. `project_for_windows(project)`, jei apdorota per WSL — kad projektą
+    atidarytų Windows GUI. Išvalyti agento žurnalus ir atsargines kopijas.
+11. Suvestinė: kas pakeista ir kodėl, iliustracijų sprendimai, kas liko
+    žmogui (pvz. antspaudai ar dėmės tekste).
 
 Vienetai: content box — ištiesinto puslapio pikseliais (tie patys, kaip
 `page_preview`); paraštės — mm; DPI — sveikieji skaičiai.
@@ -107,11 +106,13 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `job_status(job_id, wait_s?)` | Progresas / rezultatas |
 | `pages_list(project, sort_by, descending, limit, offset)` | Lentelė: id, label, content dydis + z-score, paraštės, lygiavimas, match size, spalvų režimas, DPI, vėliavos (`outlier_width`, `outlier_height`, `empty_content`, `cover_candidate`) |
 | `page_preview(project, page)` / `pages_preview(project, pages)` | Puslapis(-iai) su content box overlay |
-| `page_set_content(project, page, mode=manual\|auto\|full, x,y,width,height, expand_*)` | `select-content` |
+| `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
-| `pages_set_output(project, pages, color_mode, dpi, despeckle)` | `output` |
+| `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination)` | `output` |
 | `check_pages(project, pages, kind=content\|pictures)` | Heuristikos su įrodymais |
 | `export_summary(project)` | Išvesties TIFF sąrašas ir kas trūksta |
+| `pages_straighten_pictures(project, pages)` | Nuotraukų puslapių kampas pagal spaudos stačiakampius |
+| `project_for_windows(project)` | /mnt/c keliai → C:/ Windows GUI (paskutinis žingsnis per WSL) |
 
 ## Kas jau patikrinta (2026-11-20, Onetti „Trumpas gyvenimas“, 300 DPI JPG)
 

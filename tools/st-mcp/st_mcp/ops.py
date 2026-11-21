@@ -421,11 +421,16 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
                      expand_right: float = 0) -> dict:
     """Change one page's content box (page px, same coords as page_preview / pages_list).
 
-    mode=auto: back to automatic detection. mode=full: whole page.
+    mode=auto: back to automatic detection. mode=full: whole page. mode=empty: blank page (no content;
+    for flyleaves where only specks or bleed-through were detected).
     mode=cover: detect the book cover on a darker scanner background and use its bounds (covers).
     mode=tighten: fit the box to the text block on all four sides, dropping junk and faint specks at
     its edges (keeps page numbers and running heads; a side whose strip has ink in 3+ text lines is
     left as is and reported in kept_sides). Use for box_exceeds_text findings. Check the preview.
+    mode=all_content: box around everything printed (photos, plates, captions) - for picture pages,
+    where ScanTailor's text-oriented detection crops or misses the image.
+    mode=include_numbers: extend the box to page numbers that check_pages reports as missed
+    ("looks like a page number missed by the content box").
     mode=manual: set x/y/width/height, and/or grow (+) or shrink (-) individual edges with expand_*.
     Afterwards run_stages(4, 5) (or (4, 6)) so margins/output pick it up.
     """
@@ -436,6 +441,8 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
     before = p.content(pg.id)
     if mode == "auto":
         p.set_content(pg.id, None)
+    elif mode == "empty":
+        p.set_content(pg.id, {"x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0})
     else:
         pr = before["page_rect_px"]
         if mode == "full":
@@ -445,6 +452,28 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
             if rect is None:
                 raise RuntimeError("nothing to tighten (empty or unprocessed content)")
             note = rect.pop("kept_sides", None)
+        elif mode == "all_content":
+            rect = checks.all_content_rect(p, pg.id)
+            if rect is None:
+                raise RuntimeError("nothing printed found on the page")
+            pad = 0.004 * max(pr["width"], pr["height"])
+            rect = {"x": rect["x"] - pad, "y": rect["y"] - pad,
+                    "width": rect["width"] + 2 * pad, "height": rect["height"] + 2 * pad}
+        elif mode == "include_numbers":
+            res = checks.check_page(p, pg.id)
+            bands = [f for f in res.get("findings", []) if f["kind"] in ("ink_below_box", "ink_above_box")
+                     and f["hint"].startswith("looks like a page number")]
+            if not bands:
+                raise RuntimeError("no missed page number found outside the box")
+            cur = dict(before["content_rect_px"])
+            x0, y0 = cur["x"], cur["y"]
+            x1, y1 = x0 + cur["width"], y0 + cur["height"]
+            for f in bands:
+                b = f["band_px"]
+                pad = max(4, b["height"] * 0.3)
+                x0, y0 = min(x0, b["x"] - pad), min(y0, b["y"] - pad)
+                x1, y1 = max(x1, b["x"] + b["width"] + pad), max(y1, b["y"] + b["height"] + pad)
+            rect = {"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0}
         elif mode == "cover":
             rect = checks.detect_cover_rect(p, pg.id)
             if rect is None:
@@ -459,7 +488,7 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
             rect["y"] -= expand_top
             rect["height"] += expand_top + expand_bottom
         else:
-            raise ValueError("mode must be auto|manual|full|cover|tighten")
+            raise ValueError("mode must be auto|empty|manual|full|cover|tighten|include_numbers|all_content")
         # clamp to page
         rect["x"] = max(pr["x"], rect["x"])
         rect["y"] = max(pr["y"], rect["y"])
@@ -504,30 +533,39 @@ def pages_set_layout(project: str, pages: str | list[str] = "all", margins_mm: f
 
 
 def pages_set_output(project: str, pages: str | list[str], color_mode: str | None = None, dpi: int | None = None,
-                     despeckle: str | None = None) -> dict:
-    """Output mode per page. color_mode: bw | color (=color/grayscale) | mixed. Text: bw 600; covers and
-    picture pages: color 300 or mixed."""
+                     despeckle: str | None = None, white_margins: bool | None = None,
+                     equalize_illumination: bool | None = None) -> dict:
+    """Output mode per page. color_mode: bw | color (=color/grayscale) | mixed.
+    Text and pages with black-and-white line illustrations: bw 600. Pages with grayscale (halftone/photo)
+    illustrations: color, white_margins=true, equalize_illumination=true. Covers: color 300.
+    white_margins / equalize_illumination are the GUI's Color/Grayscale checkboxes."""
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
     ids = _resolve_pages(p, pages)
     for i in ids:
-        p.set_output(i, color_mode, dpi, despeckle)
+        p.set_output(i, color_mode, dpi, despeckle, white_margins, equalize_illumination)
     p.save()
-    return {"updated_pages": len(ids), "color_mode": color_mode, "dpi": dpi, "despeckle": despeckle}
+    return {"updated_pages": len(ids), "color_mode": color_mode, "dpi": dpi, "despeckle": despeckle,
+            "white_margins": white_margins, "equalize_illumination": equalize_illumination}
 
 
 def check_pages(project: str, pages: str | list[str] = "all", kind: str = "content") -> dict:
     """Heuristic checks with evidence. kind=content: ink outside the box above/below (missed page numbers,
     headers) and left/right (cut-off text, marginalia), isolated junk at the box's top/bottom lines and
     left/right sides, empty boxes on pages with ink, and where page numbers sit.
-    kind=pictures: fraction of the content that looks like a photo/illustration (>0.05 -> mixed/color)."""
+    kind=pictures: pages with illustrations: picture_fraction (grayscale/halftone areas) and
+    line_art_fraction (dense black-ink drawings); each flagged page has `likely` and must be previewed."""
     p = _proj(project)
     ids = _resolve_pages(p, pages)
     if kind == "pictures":
         res = [checks.picture_score(p, i) for i in ids]
-        flagged = [r for r in res if r["picture_fraction"] > 0.05]
-        return {"checked": len(res), "flagged": flagged}
+        flagged = [r for r in res if r["picture_fraction"] > 0.05 or r["line_art_fraction"] > 0.01]
+        for r in flagged:
+            r["likely"] = "grayscale" if r["picture_fraction"] > 0.05 else "line_art"
+        return {"checked": len(res), "flagged": flagged,
+                "rule": "preview each: grayscale illustrations (photos, halftones) -> color_mode=color, "
+                        "white_margins=true, equalize_illumination=true; black-and-white line art -> keep bw 600"}
     if kind != "content":
         raise ValueError("kind must be content|pictures")
     res = [checks.check_page(p, i) for i in ids]
@@ -549,6 +587,55 @@ def export_summary(project: str) -> dict:
             "total_mb": round(sum(f.stat().st_size for f in files.values()) / 1e6, 1)}
 
 
+def pages_straighten_pictures(project: str, pages: str | list[str], min_change: float = 0.25) -> dict:
+    """Picture pages (photos, plates): ScanTailor deskews by text lines, which photos do not have, so it
+    can tilt them by several degrees. Re-measures the skew from the printed rectangles' edges and sets
+    a manual deskew angle. Afterwards run_stages(3, 5), then page_set_content(mode=all_content)."""
+    proj = Path(project).resolve()
+    _ensure_idle(proj)
+    p = Project(proj)
+    changed = []
+    for i in _resolve_pages(p, pages):
+        res = checks.picture_skew(p, i)
+        if res is not None and abs(res) >= min_change:
+            old = p.deskew_angle(i)
+            p.set_deskew(i, old - res)
+            changed.append({"page": p.page(i).label, "angle_before": round(old, 3), "angle_after": round(old - res, 3)})
+    p.save()
+    return {"changed": changed, "next": "run_stages(3, 5), then page_set_content(mode=all_content) on these pages"}
+
+
+def project_for_windows(project: str) -> dict:
+    """Last step when the project was processed under WSL: rewrite /mnt/<drive>/... paths in the
+    project (scan folder, output folder) to Windows form (C:/..., C:\\...) so the Windows GUI opens it.
+    Run it only after all stages are done (the Linux CLI cannot use the rewritten project)."""
+    proj = Path(project).resolve()
+    _ensure_idle(proj)
+    p = Project(proj)
+
+    def win(path: str, backslash: bool) -> str:
+        m = re.match(r"^/mnt/([a-zA-Z])/(.*)$", path or "")
+        if not m:
+            return path
+        rest = m.group(2).replace("/", "\\") if backslash else m.group(2)
+        return f"{m.group(1).upper()}:{'\\' if backslash else '/'}{rest}"
+
+    changed = []
+    out = p.root.get("outputDirectory", "")
+    if win(out, True) != out:
+        p.root.set("outputDirectory", win(out, True))
+        changed.append(p.root.get("outputDirectory"))
+    for d in p.root.findall("./directories/directory"):
+        new = win(d.get("path", ""), False)
+        if new != d.get("path"):
+            d.set("path", new)
+            changed.append(new)
+    p.save()
+    return {"project": str(proj), "rewritten": changed,
+            "note": "open this file in the Windows GUI; to process it again under WSL, run_stages refuses "
+                    "Windows paths, so re-run on Windows or convert back"}
+
+
 WORKFLOW = (Path(__file__).resolve().parents[3] / "docs" / "AGENTIC_WORKFLOW.en.md")
 
 
@@ -558,7 +645,7 @@ def workflow_guide() -> dict:
     return {"workflow": text}
 
 
-TOOLS = [project_create, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
+TOOLS = [project_create, project_for_windows, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
          pages_preview, image_preview, page_set_content, pages_set_layout, pages_set_output,
          check_pages, export_summary, workflow_guide]
 IMAGE_TOOLS = {"page_preview", "pages_preview", "image_preview"}

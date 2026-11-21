@@ -30,64 +30,62 @@ Principles (borrowed from craft-anything):
 | 10 | Save the project | The project is saved after every change (with a `.bak`) | (automatic) |
 | 11 | Front cover → *Output → Play* | Runs filter 6, spot-checks results | `run_stages(4, 6)`, `export_summary` |
 
-Ask the person for approval (like craft-anything's approval card): after step 1
-(orientation/spreads), after 3–5 (list of changed content boxes with
-thumbnails), after 8–9 (covers and picture pages) and before 11.
+The workflow runs **to the end without stopping for approval**. The agent
+decides from previews and numbers, and writes every decision (pages + why) into
+its final summary; the person checks the result by opening the project in the
+GUI.
 
 ## Agent procedure (what `workflow_guide` returns)
 
-1. `project_create(images_dir, project)`. Report the DPI note.
-2. `image_preview(project, "first3")` and one from the middle
-   (`images=[N/2]`). Decide:
-   - **orientation**: text must read normally. `right` = rotate 90° clockwise,
-     `left` = 90° counter-clockwise, `upsidedown`, `none`.
-   - **layout**: `2` if each scan is an open book (two pages side by side),
-     `1` if single pages, `0` (auto) only when unsure.
-   - Ask the person to confirm; show them the preview.
-3. `run_stages(project, 1, 5, orientation=…, layout=…)`, then
-   `job_status(job_id, wait_s=60)` until `state` is `ok`.
-   About 1–2 s per page on a desktop CPU.
-4. **Content (width):** `pages_list(sort_by="z_width", descending=true, limit=12)`
-   and the same ascending. Preview candidates with `pages_preview` (up to 16
-   per sheet). The blue box must cover all printed text (including page
-   numbers and running heads) and nothing else (no spine shadow, fingers,
-   scan junk). Fix with `page_set_content` (`expand_*` in page px; negative
-   shrinks).
-5. **Content (height / page numbers / junk):** `check_pages(kind="content")`.
-   `box_exceeds_text` means the box is larger than the text block on the
-   listed sides (ScanTailor counted faint junk next to the text as content;
-   these are the widest/tallest pages in the GUI sort) →
-   `page_set_content(mode="tighten")`, then check the preview. Tighten keeps
-   page numbers and running heads and never trims a side whose strip has ink in
-   3+ text lines (`kept_sides`). For
-   every `ink_below_box`/`ink_above_box` finding, preview the page; if it is a
-   page number or a running head, extend the box to include it. For
-   `thin_*_line_isolated` (top/bottom) and `thin_*_column_isolated` (left/right),
-   preview; if it is junk, `page_set_content(mode="tighten")` (shrinks all four
-   sides, keeps page numbers). For `ink_left_of_box`/`ink_right_of_box`, preview:
-   if lines are cut off at the box side, extend (`expand_left/right`); spine
-   shadows and solid dark areas are not reported. For `empty_but_ink`, decide
-   whether the page really is blank.
-6. `run_stages(4, 5)` to propagate content changes.
-7. **Margins:** `pages_set_layout("all", margin_left=10, margin_right=10, margin_top=5, margin_bottom=5, align_v=<suggested_align_v
-   from check_pages>, align_h="center")`.
-8. **Layout outliers:** pages whose content is much shorter than the median
-   (chapter endings, half-title, publisher lists) must keep the original
-   position: chapter endings and lists → `align_v="top"`; text that sits at the
-   bottom of the original page (colophon) → keep `bottom`. Full-height pages
-   (including chapter openings, whose box reaches the page number) are
-   unaffected by vertical alignment.
-9. **Covers:** for the front and back cover pages (flag `cover_candidate`;
-   confirm with a preview) → `page_set_content(mode="full")`,
-   `pages_set_layout([...], margins_mm=0, match_size=false)`,
-   `pages_set_output([...], color_mode="color", dpi=300)`.
-10. **Pictures:** `check_pages(kind="pictures")`; preview flagged pages;
-    illustrations inside text → `color_mode="mixed"`; full-page images →
-    `color_mode="color", dpi=300`.
-11. Show the person a summary of everything changed (pages + why) and ask
-    before the final run.
-12. `run_stages(5, 6)` (or `4, 6` if content changed again),
-    `export_summary`. Spot-check 3–4 output TIFFs.
+1. `project_create(images_dir, project, output_dir)`. If the folder already
+   has the person's own project (e.g. `projektas.ScanTailor`) or `out/`, never
+   touch them: use `agentas.ScanTailor` and `out-agentas/`.
+2. `image_preview(project, images=[0, 1, 3, N/2, -2, -1])` (indices). Decide:
+   - **orientation** from the direction of the letters in a zoomed crop:
+     `right` = rotate 90° clockwise, `left`, `upsidedown`, `none`;
+   - **layout**: `2` for open-book spreads, `1` for single pages;
+   - covers, endpapers and other one-image scans (`001`, `9999`, …) usually
+     `orientation=none, layout=1`: `images_set_geometry` for them.
+3. `run_stages(project, 1, 5)` (about 0.5 s per page).
+4. **Content:** `check_pages(kind="content")` and the widest/tallest pages
+   from `pages_list`. Preview what is flagged (`pages_preview`, zoom on edges
+   when unsure). Then:
+   - `box_exceeds_text` → `page_set_content(mode="tighten")` (keeps page
+     numbers; a side whose strip has ink in 3+ lines stays — `kept_sides`; if
+     the preview shows that strip is junk such as a handwritten library mark,
+     set the edge with `mode="manual"`);
+   - ink above/below with hint "looks like a page number missed" →
+     `mode="include_numbers"`;
+   - only specks/bleed-through on a blank leaf → `mode="empty"`;
+   - `ink_left/right_of_box` "lines may be cut off" → preview; extend if real.
+5. **Picture pages:** `check_pages(kind="pictures")`; preview every flagged
+   page (zoom into the illustration):
+   - black-and-white line art (engravings, drawings, maps) → keep output
+     **B/W 600**;
+   - grayscale illustrations (photos, halftones) →
+     `pages_straighten_pictures` (ScanTailor deskews by text lines and can
+     tilt photos), `run_stages(3, 5)`, `page_set_content(mode="all_content")`
+     (photo + caption, no spine shadow), then
+     `pages_set_output(color_mode="color", dpi=300, white_margins=true,
+     equalize_illumination=true)`.
+6. **Covers and endpapers:** `page_set_content(mode="cover")` (also finds dark
+   covers on the black scanner lid), `pages_set_layout(margins_mm=0,
+   match_size=false)`, `pages_set_output(color_mode="color", dpi=300)`.
+7. **Margins:** `pages_set_layout("all", margin_left=10, margin_right=10,
+   margin_top=5, margin_bottom=5, align_v=<suggested_align_v>,
+   align_h="center")`, then the covers again (step 6 layout).
+8. **Layout outliers:** preview pages much shorter than the median: chapter
+   endings, series logo, portraits, short lists → `align_v="top"`; contents
+   in the middle of the page → `center`; colophon and chapter openings (box
+   reaches the page number) stay `bottom`.
+9. `run_stages(4, 6)`, `export_summary`. Check that all body pages have the
+   same size: if not, the widest content box defines it — find it with
+   `pages_list(sort_by="content_width", descending=true)`, fix, re-run. Look
+   at 8–16 output pages (corrected ones, picture pages, covers).
+10. `project_for_windows(project)` when the project was processed under WSL,
+    so the Windows GUI opens it. Remove the agent's job logs and backups.
+11. Summarise: pages changed and why, picture decisions, anything left for a
+    person (e.g. stamps or stains inside the text).
 
 Units: content boxes are in page pixels of the deskewed page (same as
 `page_preview`); margins in mm; DPI integers.
@@ -107,11 +105,13 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `job_status(job_id, wait_s?)` | Progress / result |
 | `pages_list(project, sort_by, descending, limit, offset)` | Table: id, label, content size + z-scores, margins, alignment, match size, color mode, DPI, flags (`outlier_width`, `outlier_height`, `empty_content`, `cover_candidate`) |
 | `page_preview(project, page)` / `pages_preview(project, pages)` | Page(s) with the content box overlay |
-| `page_set_content(project, page, mode=manual\|auto\|full, x,y,width,height, expand_*)` | `select-content` |
+| `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
-| `pages_set_output(project, pages, color_mode, dpi, despeckle)` | `output` |
+| `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination)` | `output` |
 | `check_pages(project, pages, kind=content\|pictures)` | Heuristics with evidence |
 | `export_summary(project)` | Output TIFF list and anything missing |
+| `pages_straighten_pictures(project, pages)` | Re-measure skew of photo pages from the printed rectangles |
+| `project_for_windows(project)` | Rewrite /mnt/c paths to C:/ for the Windows GUI (last step under WSL) |
 
 ## Verified so far (2026-11-20, Onetti "Trumpas gyvenimas", 300 DPI JPG)
 

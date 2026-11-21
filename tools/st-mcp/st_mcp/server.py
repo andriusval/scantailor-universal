@@ -14,7 +14,8 @@ from .preview import to_png
 INSTRUCTIONS = """\
 ScanTailor Universal for agents: turns a folder of book scans into clean page TIFFs.
 Start with workflow_guide and follow it step by step. Look at previews before
-deciding anything; ask the user at the approval points the guide lists.
+deciding anything. Run the whole workflow to the end without asking for approval;
+report every decision (pages + why) in the final summary.
 Long stages run in the background: run_stages returns a job, poll job_status(wait_s=60).
 Pages can be referred to by id ("9") or label ("0100_2R").
 """
