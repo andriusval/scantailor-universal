@@ -296,7 +296,7 @@ ImageView::correctContentBox(QPointF const& pos, Qt::KeyboardModifiers const mas
         : ContentMask::SNAP_NEAREST;
 
     QRectF rect(m_contentRect);
-    // same minimum as dragging (m_minBoxSize is in widget px)
+    // Use the same minimum size as a drag, and convert it from widget pixels.
     double const min_size = std::max(
         widgetToVirtual().mapRect(QRectF(QPointF(0, 0), m_minBoxSize)).width(), 1.0);
     if (!m_contentMask.snapContentRect(rect, widgetToVirtual().map(pos), mode, virtualDisplayRect(), min_size)) {

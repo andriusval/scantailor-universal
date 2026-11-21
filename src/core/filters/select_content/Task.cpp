@@ -175,8 +175,7 @@ Task::process(TaskStatus const& status, FilterData const& data)
                            : m_pageId.subPage() == PageId::RIGHT_PAGE ? QChar('R') : QChar();
         QVector<ContentSnapRequest> reqs;
         for (ContentSnapRequest const& r : parseContentSnap(CommandLine::get().contentSnap())) {
-            // a bare name matches any folder; a path (absolute or relative to the project)
-            // must match the end of the image path
+            // A path tells apart scans with the same name in different folders.
             QString const want(QDir::fromNativeSeparators(r.fileName));
             bool const same_file = want.contains('/')
                                    ? (file_path == want || file_path.endsWith(QChar('/') + want))
@@ -310,7 +309,7 @@ Task::process(TaskStatus const& status, FilterData const& data)
                    ui_data.pageRect(), ui_data.contentRect()
                );
     } else {
-        // the mask is only used by the interactive view (double-click snapping)
+        // Only the interactive view uses the mask, so batch runs do not make it.
         ContentMask const content_mask = m_batchProcessing
                                          ? ContentMask() : ContentMask(data.grayImage(), data.xform(), status);
         status.throwIfCancelled();

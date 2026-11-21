@@ -79,7 +79,7 @@ private:
     RelinkingSortingModel* m_pSortingModel;
     QString m_projectFileDir;
     QLabel* m_pSummaryLabel;
-    QLabel* m_pResultLabel; /**< outcome of "Find in folder" (errorLabel is only for merge errors) */
+    QLabel* m_pResultLabel; // errorLabel shows merge errors only, because selectionChanged() reads it as an error flag.
     QCheckBox* m_pOnlyMissing;
     QPushButton* m_pFindButton;
 };

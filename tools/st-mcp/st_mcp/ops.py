@@ -187,8 +187,7 @@ def project_create(images_dir: str, project: str, output_dir: str | None = None,
     dpis = {f.name: _image_dpi(f) for f in files}
     missing = [n for n, d in dpis.items() if d is None]
     found = [round(d[0]) for d in dpis.values() if d]
-    # The CLI does not read DPI from files given via a list and silently assumes 600,
-    # so the DPI is always passed explicitly (one value for the whole project).
+    # Older CLI builds ignore the DPI in listed files, so the tool always gives one DPI.
     if force_dpi or not found:
         use_dpi = dpi
         dpi_note = f"DPI set to {dpi}" + (" (forced)" if force_dpi else " (images have no DPI)")
@@ -199,8 +198,7 @@ def project_create(images_dir: str, project: str, output_dir: str | None = None,
             dpi_note += (f"; WARNING mixed/missing DPI: {sorted(set(found))}, {len(missing)} without DPI"
                          " - all pages treated as " + str(use_dpi))
     cmd = [find_cli(), "--end-filter=1", f"--dpi={use_dpi}", f"--output-project={proj}"]
-    # Pass files explicitly (keeps our order). Arguments are Unicode-safe on Windows (paths like
-    # "Knygų"); stdin ("-") is only used when the list would exceed the Windows command-line limit.
+    # Give the files as arguments to keep the order, and use stdin only for a very long list.
     stdin = None
     if sum(len(str(f)) + 3 for f in files) < 28000:
         cmd += [str(f) for f in files] + [str(out)]
@@ -320,8 +318,7 @@ def pages_snap_content(project: str, pages: str | list[str], sides: str | list[s
             pt = checks.snap_point(p, pg.id, side)
             if pt is None:
                 continue
-            # explicit edge: the GUI's nearest-edge rule would move the opposite edge when the
-            # text block sits closer to it (e.g. a short page)
+            # Name the edge, because on a short page the nearest edge can be the opposite one.
             reqs.append(f"{image_ref(pg.image.path)}{sub_}@{pt['x']},{pt['y']}:{side}")
             done.append({"side": side, "at": pt})
         if done:
@@ -567,7 +564,7 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
             rect["height"] += expand_top + expand_bottom
         else:
             raise ValueError("mode must be auto|empty|manual|full|cover|tighten|include_numbers|all_content")
-        # clamp to page: clip each edge on its own (moving x/y must not push the far edge outwards)
+        # Clip each edge to the page separately, so that a clip does not move the opposite edge.
         rx0, ry0 = max(pr["x"], rect["x"]), max(pr["y"], rect["y"])
         rx1 = min(pr["x"] + pr["width"], rect["x"] + rect["width"])
         ry1 = min(pr["y"] + pr["height"], rect["y"] + rect["height"])

@@ -86,7 +86,7 @@ def orthogonal_rotation(degrees: int, w: float, h: float) -> Affine:
         t = translate(0, w)
     else:
         raise ValueError(f"not an orthogonal rotation: {degrees}")
-    # Qt: t.translate(...); t.rotate(deg)  => point is rotated first, then translated
+    # Qt applies the rotation first and the translation second.
     return rotate(degrees).then(t)
 
 
@@ -107,17 +107,17 @@ def page_transform(
     page_outline_rotated: list[Point] | None,
     deskew_deg: float,
 ) -> PageTransform:
-    # 1. pre-scale to equalise DPI (preScaleToEqualizeDpi)
+    # Step 1 is preScaleToEqualizeDpi, as in ScanTailor.
     m = min(dpi_x, dpi_y) or 1.0
     sx, sy = m / (dpi_x or m), m / (dpi_y or m)
     pre_scale = scale(sx, sy)
     sw, sh = img_w * sx, img_h * sy
 
-    # 2. pre-rotate
+    # Step 2 is the orthogonal rotation.
     pre_rot = orthogonal_rotation(rotation_deg, sw, sh)
     t12 = pre_scale.then(pre_rot)
 
-    # 3. pre-crop (outline is already in pre-rotated coordinates)
+    # Step 3 is the crop, and the outline already uses rotated coordinates.
     if page_outline_rotated:
         crop_area = list(page_outline_rotated)
     else:
@@ -125,7 +125,7 @@ def page_transform(
     x0, y0, _, _ = bbox(crop_area)
     pre_crop = translate(-x0, -y0)
 
-    # 4. post-rotate around the crop centre, then re-normalise bbox to the pre-rotate bbox origin
+    # Step 4 is the deskew rotation around the crop centre.
     post_rot = Affine()
     if deskew_deg:
         bx0, by0, bx1, by1 = bbox(crop_area)

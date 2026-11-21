@@ -78,11 +78,7 @@ private:
 
     virtual void onMouseDoubleClickEvent(QMouseEvent* event, InteractionState& interaction);
 
-    /**
-     * Double-click adjustment (from ScanTailor Advanced): inside the box, the nearest edge
-     * (Shift: nearest left/right, Ctrl: nearest top/bottom, Ctrl+Shift: nearest corner)
-     * snaps to the ink found around \p pos; outside the box, that ink is added to the box.
-     */
+    // This is the double-click adjustment from ScanTailor Advanced.
     void correctContentBox(QPointF const& pos, Qt::KeyboardModifiers mask);
 
     QPointF cornerPosition(int edge_mask) const;
@@ -132,9 +128,7 @@ private:
 
     QPointF m_moveStart;
 
-    /**
-     * Binarized page used by correctContentBox(); null in batch mode.
-     */
+    // The mask is null in batch mode, because only the interactive view uses it.
     ContentMask m_contentMask;
 };
 

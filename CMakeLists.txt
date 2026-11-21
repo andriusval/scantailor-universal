@@ -133,10 +133,7 @@ else()
         find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Core Widgets Gui Xml Network Svg LinguistTools REQUIRED)
 endif()
 
-# Oldest Qt still maintained somewhere: 6.4 is what Debian 12 / Ubuntu 24.04 ship (with
-# distribution security backports); 5.15 is the last Qt5 and the only one distributions
-# still patch. Builds that bundle Qt (Windows, macOS, AppImage) should use a supported
-# release with all advisories fixed (6.12 LTS at the time of writing).
+# Debian 12 and Ubuntu 24.04 ship a patched Qt 6.4, and distributions patch Qt 5.15 only.
 if (QT_VERSION_MAJOR EQUAL 5)
         SET(QT_MIN_VERSION 5.15.0)
 else()

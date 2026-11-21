@@ -104,7 +104,7 @@ def _side_junk(ink: np.ndarray, bx0: int, bx1: int, by0: int, by1: int, line_h: 
         dist = (nxt[0] - grp[1]) if side == "left" else (grp[0] - nxt[1])
         rows = np.where(ink[by0:by1, grp[0]:grp[1] + 1].any(axis=1))[0] + by0
         if len(rows) and any(a - 2 <= rows.min() and rows.max() <= b + 2 for a, b in edge_lines):
-            continue  # sits only in the first/last line: a page number or running head in a corner
+            continue  # Ink only in the first or last line is a page number or a header in a corner.
         if width < 0.08 * bw and dist > 2 * max(line_h, 3):
             out.append({"side": side, "x0": grp[0], "x1": grp[1], "gap": dist, "width": width})
     return out
@@ -146,7 +146,7 @@ def check_page(project: Project, page_id: str) -> dict:
     lines = [ln for ln in _group(_rows_with_ink(ink, bx0, bx1, by0, by1)) if ln[1] - ln[0] + 1 >= 3]
     line_h = statistics.median([b - a + 1 for a, b in lines]) if lines else 0
 
-    # ink bands above / below the box (page numbers, running heads)
+    # Ink bands above or below the box are often page numbers or page headers.
     for where, (y0, y1) in (("above", (ey, by0 - 2)), ("below", (by1 + 2, H - ey))):
         bands = _group(_rows_with_ink(ink, max(ex, bx0 - 20), min(W - ex, bx1 + 20), y0, y1, 0.004))
         for a, b in bands:
@@ -174,7 +174,7 @@ def check_page(project: Project, page_id: str) -> dict:
             dist = (bx0 - b) if where == "left" else (a - bx1)
             bw_, bh_ = b - a + 1, rows.max() - rows.min() + 1
             if line_h and bw_ < 1.5 * line_h and bh_ > 5 * line_h and dist > 0.5 * line_h:
-                continue  # tall narrow band away from the text: spine/page edge or its shadow, not text
+                continue  # A tall narrow band away from the text is the spine, the page edge or a shadow.
             n_lines = len([g for g in _group(list(rows)) if g[1] - g[0] + 1 >= 3])
             findings.append({
                 "kind": f"ink_{where}_of_box",
@@ -205,7 +205,7 @@ def check_page(project: Project, page_id: str) -> dict:
     number_pos = None
     if len(lines) >= 3:
         def width_of(a: int, b: int) -> int:
-            # number of columns with ink (not the extent: edge shadows would span the whole box)
+            # Count the columns with ink, because an edge shadow can span the full box width.
             return int(ink[a:b + 1, bx0:bx1].any(axis=0).sum())
         bw = bx1 - bx0
         gaps = [lines[i + 1][0] - lines[i][1] for i in range(len(lines) - 1)]
@@ -215,7 +215,7 @@ def check_page(project: Project, page_id: str) -> dict:
         elif width_of(*lines[0]) < 0.15 * bw and gaps[0] > 1.5 * tg:
             number_pos = "top"
 
-    # junk: ink touching the box edge but separated from text by a big gap
+    # Ink at the box edge with a big gap to the text is junk.
     if len(lines) >= 3:
         gaps = [lines[i + 1][0] - lines[i][1] for i in range(len(lines) - 1)]
         typical_gap = statistics.median(gaps)
@@ -227,7 +227,7 @@ def check_page(project: Project, page_id: str) -> dict:
                                  "height_px": round(hgt / k),
                                  "hint": "isolated thin ink line at box edge: likely scan junk; pages_snap_content(sides=auto)"})
 
-    if number_pos is None:  # a small isolated block right outside the box also tells where numbers sit
+    if number_pos is None:  # A small block just outside the box also shows where the page numbers are.
         for f in findings:
             if f["kind"] not in ("ink_above_box", "ink_below_box"):
                 continue  # marks beside the text say nothing about where page numbers sit
@@ -242,7 +242,7 @@ def check_page(project: Project, page_id: str) -> dict:
 def detect_cover_rect(project: Project, page_id: str) -> dict | None:
     """Bounding box of the book cover lying on a darker scanner background (page px)."""
     pg = project.page(page_id)
-    # area outside the scan is painted black like the scanner background, so it never looks like cover
+    # Paint the area outside the scan black, so that it looks like the scanner background and not like the cover.
     im = render_page(project, pg.id, max_px=ANALYSIS_PX, overlay=False, pad=(0, 0, 0))
     g = np.asarray(im.convert("L"), dtype=np.float32)
     pt = project.transform(pg.id)
@@ -327,8 +327,7 @@ def text_block(project: Project, page_id: str) -> dict | None:
     # typical text-line height from the plain mask (dilation would merge close lines at small scale)
     raw = [ln for ln in _group(_rows_with_ink(ink, bx0, bx1, by0, by1, 0.004)) if ln[1] - ln[0] + 1 >= 3]
     line_h = statistics.median([b - a + 1 for a, b in raw]) if raw else 3
-    # thin strokes (page-number digits) break into 1-px fragments at analysis scale: dilate 3x3 so a
-    # glyph stays one blob, then any row with ink counts (specks are dropped below by their size)
+    # Dilate 3x3, because thin page-number digits break into 1 px parts at the analysis scale.
     ink = _dilate(ink)
     lines = _group(_rows_with_ink(ink, bx0, bx1, by0, by1, 0.0, min_px=1))
     if not lines:
@@ -353,7 +352,7 @@ def text_block(project: Project, page_id: str) -> dict | None:
         if len(idx):
             w = max(2, int(0.3 * line_h))
             left, right = bx0 + int(idx[0]), bx0 + int(idx[-1]) + 1
-            # a sharp edge (justified text): many lines end within a few px of it
+            # Justified text has a sharp edge where many lines end within a few pixels.
             justified = bool(cov[idx[0]:idx[0] + w].max() >= 0.5 * len(body)
                          and cov[max(0, idx[-1] - w + 1):idx[-1] + 1].max() >= 0.5 * len(body))
     if not justified:
@@ -394,8 +393,7 @@ def tighten_rect(project: Project, page_id: str) -> dict | None:
     x1, y1 = min(bx1, tb["right"] + pad), min(by1, tb["bottom"] + pad)
     ink, _ = _ink_mask(project, page_id)
     lines = [ln for ln in _group(_rows_with_ink(ink, bx0, bx1, by0, by1, 0.004)) if ln[1] - ln[0] + 1 >= 3]
-    # isolated thin edge columns (spine shadow, page-edge line) cross every line but are not text:
-    # leave them out of the safety rule, otherwise the side they sit on could never be trimmed
+    # Thin junk columns at the edge cross every line, so the safety rule must ignore them.
     ink = ink.copy()
     for j in _side_junk(ink, bx0, bx1, by0, by1, tb["line_h"]):
         ink[by0:by1, j["x0"]:j["x1"] + 1] = False
@@ -405,8 +403,7 @@ def tighten_rect(project: Project, page_id: str) -> dict | None:
             kept.append(side)
             x0, x1 = (bx0, x1) if side == "left" else (x0, bx1)
             continue
-        # a single line running past the text edge (hyphen, overhang, long list entry) is text, not
-        # junk: if ink in the cut strip continues a line within a word gap, move the edge to include it
+        # Ink that continues a line within a word gap is text, so the edge moves out to keep it.
         lh = tb["line_h"]
         for a, b in lines:
             strip = ink[a:b + 1, c0:c1]
@@ -472,9 +469,7 @@ def all_content_rect(project: Project, page_id: str) -> dict | None:
     if len(xs_ok):
         m[:, :xs_ok[0]] = False
         m[:, xs_ok[-1] + 1:] = False
-    # thin vertical strips at the sides (page edge, gutter seam) separated from the print by an empty
-    # gap; a picture printed to the very edge has no gap and stays. Only columns: captions are thin
-    # horizontal strips and must stay.
+    # Remove only thin vertical strips with a gap, because captions are thin horizontal strips.
     for axis in (0,):
         prof = m.any(axis=axis)
         groups = _group(list(np.where(prof)[0]), gap=1)

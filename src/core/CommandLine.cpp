@@ -205,8 +205,7 @@ CommandLine::parseCli(QStringList const& argv)
             // handle input images and output directory
             QFileInfo file(argv[i]);
             if (i == (argv.size() - 1)) {
-                // output directory: the CLI creates it when it does not exist yet (only when a
-                // project or images were given before it, so a lone mistyped file name is an error)
+                // A lone argument stays an error, because it is often a file name with a typo.
                 bool const have_input = !m_projectFile.isEmpty() || !m_files.empty() || !m_images.empty();
                 if (!m_gui && have_input && !file.exists() && QDir().mkpath(file.filePath())) {
                     file.refresh();
@@ -317,8 +316,7 @@ CommandLine::setup()
         // create ImageFileInfo and push to images
         std::vector<ImageMetadata> vMetadata;
         if (!m_gui) {
-            // CLI: DPI (and size, pages) from the file itself, as the GUI does; --dpi forces one
-            // value; files without a usable DPI get the --dpi default (600)
+            // The CLI reads DPI, size and pages from the file, as the GUI does.
             ImageMetadataLoader::load(
                 m_files[i].absoluteFilePath(), [&](ImageMetadata const& m) { vMetadata.push_back(m); }
             );

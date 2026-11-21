@@ -539,8 +539,7 @@ MainWindow::switchToNewProject(
 bool
 MainWindow::haveMissingImages() const
 {
-    // Some scans can't be found (folder moved / renamed): offer relinking right away
-    // instead of showing empty thumbnails.
+    // Open the Relinking dialog at once, because empty thumbnails do not tell the user why scans are missing.
     class Checker : public VirtualFunction1<void, RelinkablePath const&>
     {
     public:
@@ -556,8 +555,7 @@ MainWindow::haveMissingImages() const
     Checker checker;
     m_ptrPages->listRelinkablePaths(checker);
 
-    // folders first: few of them, and a moved or offline folder is found without
-    // touching every file in it
+    // Check the folders first, because an offline folder makes each file check slow.
     std::set<QString> dirs;
     for (QString const& f : checker.files) {
         dirs.insert(QFileInfo(f).path());

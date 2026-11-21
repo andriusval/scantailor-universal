@@ -114,7 +114,7 @@ ProjectReader::resolvePath(QString const& path) const
     }
     QString const from_project(QDir::cleanPath(QDir(m_projectDir).absoluteFilePath(path)));
     if (!QFileInfo::exists(from_project) && QFileInfo::exists(path)) {
-        // projects written by older builds: relative to the working directory
+        // Older builds wrote paths relative to the current directory, so this keeps their projects usable.
         return QDir::cleanPath(QFileInfo(path).absoluteFilePath());
     }
     return from_project;

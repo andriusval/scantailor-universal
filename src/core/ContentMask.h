@@ -37,10 +37,7 @@ class GrayImage;
 class ImageTransformation;
 class TaskStatus;
 
-/**
- * \brief A binarized, despeckled 150 DPI copy of the page, used by the content box
- *        double-click adjustment: the box edge snaps to the ink found near the click.
- */
+// The GUI double-click and the CLI option --content-snap use this 150 DPI binary page to find ink near a point.
 class ContentMask
 {
 public:
@@ -49,27 +46,16 @@ public:
     ContentMask(imageproc::GrayImage const& gray_image,
                 ImageTransformation const& xform, TaskStatus const& status);
 
-    /**
-     * \brief Bounding box (mask pixels) of the black pixels inside \p area,
-     *        grown by 1 px; a null rect if there are none.
-     */
+    // The result grows by 1 px on each side, as in ScanTailor Advanced.
     QRect findContentInArea(QRect const& area) const;
 
-    /** Which box edges a snap may move (GUI: no modifier / Shift / Ctrl / Ctrl+Shift). */
+    // The GUI modifiers select the first four modes, and only the CLI can name one edge.
     enum SnapMode {
         SNAP_NEAREST = 0, SNAP_HORIZONTAL = 1, SNAP_VERTICAL = 2, SNAP_CORNER = 3,
-        // explicit edge (CLI only): that edge moves to the ink, wherever the point is in the box
         SNAP_LEFT, SNAP_RIGHT, SNAP_TOP, SNAP_BOTTOM
     };
 
-    /**
-     * \brief The content box double-click adjustment (shared by the GUI and --content-snap).
-     *
-     * \p content_rect, \p pos and \p bounds are in virtual (page) coordinates. Ink is looked for
-     * in a 30x30 px (150 DPI) square around \p pos. If \p pos is inside the box, the nearest edge
-     * (limited by \p mode) moves to that ink; otherwise the ink is added to the box.
-     * \return false (and \p content_rect untouched) when there is no ink near \p pos.
-     */
+    // All arguments use page coordinates, so that the GUI and the CLI share one implementation.
     bool snapContentRect(QRectF& content_rect, QPointF const& pos, SnapMode mode,
                          QRectF const& bounds, double min_size = 10.0) const;
 
@@ -100,11 +86,7 @@ private:
     QTransform m_contentToVirtualXform;
 };
 
-/**
- * \brief One request of the CLI option
- *        --content-snap="<file>[:L|R]@<x>,<y>[:nearest|h|v|hv|left|right|top|bottom];..."
- *        (page coordinates as in the project's content rect; L/R for split pages).
- */
+// The CLI help text gives the syntax of one --content-snap entry.
 struct ContentSnapRequest {
     QString fileName;
     QChar side;            // 'L', 'R' or 0 (single page / any)
@@ -112,7 +94,7 @@ struct ContentSnapRequest {
     ContentMask::SnapMode mode;
 };
 
-/** Parses the --content-snap value; malformed entries are reported in \p errors and skipped. */
+// The parser skips an entry that it cannot read and adds that entry to errors.
 QVector<ContentSnapRequest> parseContentSnap(QString const& value, QStringList* errors = 0);
 
 #endif

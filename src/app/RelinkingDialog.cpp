@@ -209,7 +209,7 @@ RelinkingDialog::findInFolderClicked()
         return;
     }
 
-    // so that Undo reverts only this search; a change that failed the merge check is dropped
+    // Commit the earlier change so that Undo reverts only this search, but drop a change with a merge error.
     if (ui.errorLabel->isVisible()) {
         m_model.rollbackChanges();
     } else {

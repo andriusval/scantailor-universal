@@ -26,7 +26,7 @@ class RelinkingSortingModel : public QSortFilterProxyModel
 public:
     RelinkingSortingModel(QObject* parent = 0);
 
-    /** Show only paths that are missing (or still being checked). */
+    // Paths that are still under check stay visible, because they can be missing.
     void setOnlyMissing(bool only_missing);
 protected:
     virtual bool lessThan(QModelIndex const& left, QModelIndex const& right) const;

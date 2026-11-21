@@ -42,11 +42,7 @@ class ProjectReader
 public:
     typedef IntrusivePtr<AbstractFilter> FilterPtr;
 
-    /**
-     * \p project_file, when given, is where \p doc was read from: relative directory and
-     * output paths in the project are then taken from the project file's folder (not from
-     * the working directory). Absolute paths are used as they are.
-     */
+    // Relative paths start at the folder of project_file, so that a project can move together with its scans.
     ProjectReader(QDomDocument const& doc, QString const& project_file = QString());
 
     ~ProjectReader();

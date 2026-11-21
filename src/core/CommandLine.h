@@ -178,7 +178,7 @@ public:
     {
         return contains("skew-deviation") && !m_options["skew-deviation"].isEmpty();
     }
-    /** --dpi / --dpi-x / --dpi-y given (forces one DPI for all images). */
+    // Any of these options forces one DPI for all images.
     bool hasDpi() const
     {
         return contains("dpi") || contains("dpi-x") || contains("dpi-y");
