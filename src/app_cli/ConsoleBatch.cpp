@@ -282,7 +282,8 @@ ConsoleBatch::ConsoleBatch(QString const project_file)
 IntrusivePtr<LoadFileTask>
 ConsoleBatch::createCompositeTask(
     PageInfo const& page,
-    int const last_filter_idx)
+    int const last_filter_idx,
+    IntrusivePtr<output::Task>* output_task_out)
 {
     IntrusivePtr<fix_orientation::Task> fix_orientation_task;
     IntrusivePtr<page_split::Task> page_split_task;
@@ -300,6 +301,9 @@ ConsoleBatch::createCompositeTask(
                           page.id(), m_ptrThumbnailCache, m_outFileNameGen, batch, debug
                       );
         debug = false;
+    }
+    if (output_task_out) {
+        *output_task_out = output_task;
     }
     if (last_filter_idx >= m_ptrStages->pageLayoutFilterIdx()) {
         page_layout_task = m_ptrStages->pageLayoutFilter()->createTask(
@@ -481,7 +485,8 @@ ConsoleBatch::process()
             }
             ++page_index;
 
-            IntrusivePtr<LoadFileTask> bgTask = createCompositeTask(page, j);
+            IntrusivePtr<output::Task> output_task;
+            IntrusivePtr<LoadFileTask> bgTask = createCompositeTask(page, j, &output_task);
             try {
                 (*bgTask)();
             } catch (std::exception const& e) {
@@ -513,6 +518,10 @@ ConsoleBatch::process()
 
             if (json) {
                 ev["event"] = QStringLiteral("page_done");
+                // The output stage reuses a file that is still current, and the caller can then see that nothing changed.
+                if (output_task) {
+                    ev["skipped"] = output_task->outputReused();
+                }
                 QJsonObject const res(pageResult(j, page.id()));
                 for (QJsonObject::const_iterator it = res.constBegin(); it != res.constEnd(); ++it) {
                     ev.insert(it.key(), it.value());

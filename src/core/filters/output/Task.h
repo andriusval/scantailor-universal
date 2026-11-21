@@ -70,6 +70,12 @@ public:
         QPolygonF const& content_rect_phys);
 
     QObject* getSettingsListener();
+
+    // The CLI reports this flag, because then the caller knows that the output file did not change.
+    bool outputReused() const
+    {
+        return m_outputReused;
+    }
 private:
     class UiUpdater;
 
@@ -87,6 +93,7 @@ private:
     bool m_keep_orig_fore_subscan;
 //Original_Foreground_Mixed
     QImage* m_p_orig_fore_subscan;
+    bool m_outputReused;
 };
 
 } // namespace output
