@@ -648,6 +648,117 @@ def pages_set_layout(project: str, pages: str | list[str] = "all", margins_mm: f
             "align_h": align_h, "match_size": match_size, "next": "run_stages(5, 5) to propagate"}
 
 
+def _body_pages(p: Project) -> list[tuple[str, dict]]:
+    """Pages that take part in the common page size: content found, match size on, not a cover."""
+    out = []
+    for pg in p.pages:
+        c = p.content(pg.id)
+        lay = p.layout(pg.id)
+        if not c.get("processed") or c.get("empty") or not c.get("content_mm"):
+            continue
+        if c.get("mode") == "cover" or (lay.get("processed") and not lay.get("match_size", True)):
+            continue
+        out.append((pg.id, c))
+    return out
+
+
+def pages_fit_width(project: str, margin_mm: float = 10.0, percentile: float = 85.0) -> dict:
+    """One page width for the whole book: the typical text-block width plus margin_mm on each side.
+    Pages whose content is wider than the typical width get smaller left/right margins (down to 0), so a
+    few wide pages (a long line, a table, a page number at the side) do not make every page wider.
+    The typical width is the given percentile of the content widths of body pages (covers and pages with
+    match size off do not count). Top/bottom margins and alignment do not change.
+    Then run_stages(5, 5); the user's correction of the Onetti book follows this rule."""
+    import statistics
+    proj = Path(project).resolve()
+    _ensure_idle(proj)
+    p = Project(proj)
+    body = _body_pages(p)
+    if len(body) < 3:
+        raise RuntimeError("too few processed pages with content; run stages 1-4 first")
+    widths = sorted(c["content_mm"]["width"] for _, c in body)
+    typical = widths[min(len(widths) - 1, int(round(percentile / 100.0 * (len(widths) - 1))))]
+    changed = []
+    for pid, c in body:
+        w = c["content_mm"]["width"]
+        lr = margin_mm if w <= typical else max(0.0, round((typical + 2 * margin_mm - w) / 2, 1))
+        cur = p.layout(pid)
+        old = cur["margins_mm"]["left"] if cur.get("processed") else None
+        if old is None or abs(old - lr) > 0.05 or abs(cur["margins_mm"]["right"] - lr) > 0.05:
+            p.set_layout(pid, {"left": lr, "right": lr})
+            if lr != margin_mm:
+                changed.append({"page": p.page(pid).label, "content_width_mm": w, "left_right_mm": lr})
+    p.save()
+    return {"typical_width_mm": typical, "page_width_mm": round(typical + 2 * margin_mm, 1),
+            "median_width_mm": statistics.median(widths), "narrowed_margins": changed,
+            "next": "run_stages(5, 5), then pages_list(sort_by='content_width') to confirm one page size"}
+
+
+def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_ratio: float = 0.95) -> dict:
+    """Vertical alignment for every body page, and a list of pages a person should decide on.
+    - Front matter (pages before the first page with at least half the usual number of text lines:
+      title, copyright, dedication, epigraph): vcenter.
+    - Short pages (content height below short_ratio of the median: chapter ends, lists): top.
+    - Full text pages without the page-number band (height below missing_number_ratio of the median but
+      the usual number of lines): top, so that their text lines up with the other pages.
+    - Other body pages: bottom.
+    Also reports blank pages and half-title candidates (front-matter pages with 5 lines or fewer) as
+    removal candidates for the report; it does not remove anything. Covers keep their settings.
+    Then run_stages(5, 5)."""
+    import statistics
+    proj = Path(project).resolve()
+    _ensure_idle(proj)
+    p = Project(proj)
+    body = _body_pages(p)
+    if len(body) < 3:
+        raise RuntimeError("too few processed pages with content; run stages 1-4 first")
+    heights = [c["content_mm"]["height"] for _, c in body]
+    med_h = statistics.median(heights)
+    lines: dict[str, int] = {}
+
+    def text_lines(pid: str) -> int:
+        if pid not in lines:
+            lines[pid] = checks.check_page(p, pid).get("text_lines") or 0
+        return lines[pid]
+
+    # A sample gives the median number of lines, because the analysis of every page takes long.
+    sample = [pid for pid, _ in body[len(body) // 4: len(body) // 4 + 15]]
+    med_lines = statistics.median(text_lines(pid) for pid in sample) if sample else 0
+    front_end = 0
+    for i, (pid, _) in enumerate(body[: max(1, len(body) // 10)]):
+        if text_lines(pid) >= 0.5 * med_lines:
+            front_end = i
+            break
+    else:
+        front_end = 0
+    decided = {"vcenter": [], "top_short": [], "top_no_number_band": [], "bottom": 0}
+    half_titles = []
+    for i, (pid, c) in enumerate(body):
+        h = c["content_mm"]["height"]
+        lab = p.page(pid).label
+        if i < front_end:
+            align = "vcenter"
+            decided["vcenter"].append(lab)
+            if text_lines(pid) <= 5:
+                half_titles.append(lab)
+        elif h < short_ratio * med_h:
+            align = "top"
+            decided["top_short"].append(lab)
+        elif h < missing_number_ratio * med_h and text_lines(pid) >= 0.85 * med_lines:
+            align = "top"
+            decided["top_no_number_band"].append(lab)
+        else:
+            align = "bottom"
+            decided["bottom"] += 1
+        p.set_layout(pid, None, align, None, None)
+    p.save()
+    blank = [pg.label for pg in p.pages if p.content(pg.id).get("empty")]
+    return {"median_height_mm": med_h, "median_text_lines": med_lines, **decided,
+            "report_removal_candidates": {"blank_pages": blank, "half_title_candidates": half_titles,
+                                          "note": "list these in the final report; the user decides, nothing was removed"},
+            "next": "run_stages(5, 5), then preview the top/vcenter pages"}
+
+
 def pages_set_output(project: str, pages: str | list[str], color_mode: str | None = None, dpi: int | None = None,
                      despeckle: str | None = None, white_margins: bool | None = None,
                      equalize_illumination: bool | None = None) -> dict:
@@ -784,6 +895,6 @@ def workflow_guide() -> dict:
 
 
 TOOLS = [project_create, project_for_windows, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
-         pages_preview, image_preview, page_set_content, pages_snap_content, pages_set_layout, pages_set_output,
+         pages_preview, image_preview, page_set_content, pages_snap_content, pages_set_layout, pages_fit_width, pages_align_auto, pages_set_output,
          check_pages, export_summary, workflow_guide]
 IMAGE_TOOLS = {"page_preview", "pages_preview", "image_preview"}

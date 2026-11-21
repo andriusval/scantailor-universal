@@ -76,25 +76,32 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
      šešėlio), tada `pages_set_output(color_mode="color", dpi=300,
      white_margins=true, equalize_illumination=true)`.
 6. **Viršeliai ir priešlapiai:** `page_set_content(mode="cover")` (randa ir
-   tamsius viršelius ant juodo fono), `pages_set_layout(margins_mm=0,
+   tamsius viršelius ant juodo fono; kiekvieną kraštą pritraukia prie viršelio
+   krašto ir dar 1 mm į vidų, kad nesimatytų fono), `pages_set_layout(margins_mm=0,
    match_size=false)`, `pages_set_output(color_mode="color", dpi=300)`.
+   Peržiūroje padidinti kampus.
 7. **Paraštės:** `pages_set_layout("all", margin_left=10, margin_right=10,
    margin_top=5, margin_bottom=5, align_v=<suggested_align_v>,
    align_h="center")`, tada vėl viršelių layout (6 žingsnis).
-8. **Layout išskirtys:** puslapiai daug žemesni už medianą: skyrių pabaigos,
-   serijos logotipas, portretai, trumpi sąrašai → `align_v="top"`; turinys
-   puslapio viduryje → `center`; kolofonas ir skyrių pradžios (rėmelis siekia
-   numerį) lieka `bottom`.
-9. `run_stages(4, 6)`, `export_summary`. Patikrinti, ar visi teksto puslapiai
-   vienodo dydžio: jei ne, dydį lemia plačiausias content — rasti per
-   `pages_list(sort_by="content_width", descending=true)`, pataisyti, paleisti
-   iš naujo. Peržiūrėti 8–16 išvesties puslapių.
+8. **Vienas puslapio plotis:** `pages_fit_width(project)`. Puslapio plotis =
+   tipinis teksto bloko plotis + po 10 mm iš šonų. Platesniems puslapiams
+   šoninės paraštės sumažinamos (iki 0), kad jie neplatintų visos knygos.
+9. **Lygiavimas:** `pages_align_auto(project)`. Įžanginiai puslapiai
+   (titulinis, metrikos, dedikacija, epigrafas) → `vcenter`; trumpi puslapiai
+   (skyrių pabaigos, sąrašai) ir pilni teksto puslapiai be numerio juostos →
+   `top`; kiti → `bottom`. Peržiūrėti `top` ir `vcenter` puslapius, pavienius
+   pataisyti per `pages_set_layout`. Tada `run_stages(4, 6)`,
+   `export_summary`, patikrinti, ar visi teksto puslapiai vienodo dydžio
+   (`pages_list(sort_by="content_width", descending=true)`). Peržiūrėti 8–16
+   išvesties puslapių.
 10. `project_for_windows(project)`, jei apdorota per WSL — kad projektą
     atidarytų Windows GUI. Su šios šakos Windows buildu naudoti
     `relative=true`: tada projektas atsidaro ir WSL, ir Windows.
     Išvalyti agento žurnalus ir atsargines kopijas.
 11. Suvestinė: kas pakeista ir kodėl, iliustracijų sprendimai, kas liko
-    žmogui (pvz. antspaudai ar dėmės tekste).
+    žmogui (pvz. antspaudai ar dėmės tekste). Išvardyti `pages_align_auto`
+    šalinimo kandidatus (tušti priešlapiai, titulinį kartojantis antraštinis
+    lapas) — nešalinti, sprendžia žmogus.
 
 Vienetai: content box — ištiesinto puslapio pikseliais (tie patys, kaip
 `page_preview`); paraštės — mm; DPI — sveikieji skaičiai.
@@ -117,6 +124,8 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
 | `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5 |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
+| `pages_fit_width(project, margin_mm?, percentile?)` | Vienas puslapio plotis: mažesnės šoninės paraštės už tipinį teksto bloką platesniems puslapiams |
+| `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertikalus lygiavimas visiems teksto puslapiams ir šalinimo kandidatai ataskaitai |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination)` | `output` |
 | `check_pages(project, pages, kind=content\|pictures)` | Heuristikos su įrodymais |
 | `export_summary(project)` | Išvesties TIFF sąrašas ir kas trūksta |

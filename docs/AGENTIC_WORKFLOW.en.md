@@ -73,26 +73,35 @@ GUI.
      (photo + caption, no spine shadow), then
      `pages_set_output(color_mode="color", dpi=300, white_margins=true,
      equalize_illumination=true)`.
-6. **Covers and endpapers:** `page_set_content(mode="cover")` (also finds dark
-   covers on the black scanner lid), `pages_set_layout(margins_mm=0,
-   match_size=false)`, `pages_set_output(color_mode="color", dpi=300)`.
+6. **Covers and endpapers:** `page_set_content(mode="cover")`, then
+   `pages_set_layout(margins_mm=0, match_size=false)` and
+   `pages_set_output(color_mode="color", dpi=300)`. The cover mode also finds
+   dark covers on the black scanner lid. It moves each edge to the cover edge
+   and then 1 mm inside, so that no background shows. Zoom on the corners in
+   the preview.
 7. **Margins:** `pages_set_layout("all", margin_left=10, margin_right=10,
    margin_top=5, margin_bottom=5, align_v=<suggested_align_v>,
    align_h="center")`, then the covers again (step 6 layout).
-8. **Layout outliers:** preview pages much shorter than the median: chapter
-   endings, series logo, portraits, short lists → `align_v="top"`; contents
-   in the middle of the page → `center`; colophon and chapter openings (box
-   reaches the page number) stay `bottom`.
-9. `run_stages(4, 6)`, `export_summary`. Check that all body pages have the
-   same size: if not, the widest content box defines it — find it with
-   `pages_list(sort_by="content_width", descending=true)`, fix, re-run. Look
-   at 8–16 output pages (corrected ones, picture pages, covers).
+8. **One page width:** `pages_fit_width(project)`. The page width is the
+   typical text-block width plus 10 mm on each side. Pages with wider content
+   get smaller left and right margins, down to 0, so that they do not make
+   the book wider.
+9. **Alignment:** `pages_align_auto(project)`. Front matter (title,
+   copyright, dedication, epigraph) goes to `vcenter`. Short pages (chapter
+   ends, lists) and full text pages without the page-number band go to `top`.
+   Other pages go to `bottom`. Preview the `top` and `vcenter` pages, and
+   correct single pages with `pages_set_layout`. Then `run_stages(4, 6)`,
+   `export_summary`, and check that all body pages have the same size
+   (`pages_list(sort_by="content_width", descending=true)`). Look at 8–16
+   output pages (corrected ones, picture pages, covers).
 10. `project_for_windows(project)` when the project was processed under WSL,
     so that the Windows GUI opens it. With a Windows build from this branch,
     use `relative=true`: the project then opens under WSL and Windows.
     Remove the job logs and the backups of the agent.
 11. Summarise: pages changed and why, picture decisions, anything left for a
-    person (e.g. stamps or stains inside the text).
+    person (e.g. stamps or stains inside the text). List the removal
+    candidates from `pages_align_auto` (blank leaves, a half-title that repeats
+    the title page). Do not remove them: the person decides.
 
 Units: content boxes are in page pixels of the deskewed page (same as
 `page_preview`); margins in mm; DPI integers.
@@ -115,6 +124,8 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
 | `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5 |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
+| `pages_fit_width(project, margin_mm?, percentile?)` | One page width: smaller side margins for pages wider than the typical text block |
+| `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertical alignment for all body pages, plus removal candidates for the report |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination)` | `output` |
 | `check_pages(project, pages, kind=content\|pictures)` | Heuristics with evidence |
 | `export_summary(project)` | Output TIFF list and anything missing |

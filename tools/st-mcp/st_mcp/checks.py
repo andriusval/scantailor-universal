@@ -276,10 +276,49 @@ def detect_cover_rect(project: Project, page_id: str) -> dict | None:
         return None
     # refine columns inside the found rows (removes background noise columns)
     cols = longest_run(light[rows[0]:rows[1], :].mean(axis=0) > 0.35) or cols
-    pad = 2
-    x0, x1 = max(0, cols[0] - pad), min(g.shape[1], cols[1] + pad)
-    y0, y1 = max(0, rows[0] - pad), min(g.shape[0], rows[1] + pad)
-    return {"x": x0 / k, "y": y0 / k, "width": (x1 - x0) / k, "height": (y1 - y0) / k}
+    rough = {"x": cols[0] / k, "y": rows[0] / k, "width": (cols[1] - cols[0]) / k, "height": (rows[1] - rows[0]) / k}
+    return refine_cover_edges(project, pg.id, rough)
+
+
+def refine_cover_edges(project: Project, page_id: str, rect: dict, search: float = 0.03,
+                       inset_mm: float = 1.0) -> dict:
+    """Move each edge of a rough cover box to the strongest brightness step near it (page px)."""
+    pt = project.transform(page_id)
+    im = render_page(project, page_id, max_px=2400, overlay=False, pad=(0, 0, 0))
+    g = np.asarray(im.convert("L"), dtype=np.float32)
+    k = min(1.0, 2400 / max(pt.width, pt.height))
+    x0, y0 = rect["x"] * k, rect["y"] * k
+    x1, y1 = x0 + rect["width"] * k, y0 + rect["height"] * k
+    w = max(4, int(search * max(g.shape)))
+
+    def step(profile: np.ndarray, at: float, rising: bool) -> float:
+        # A smooth profile ignores print detail, so the step that remains is the cover edge.
+        sm = np.convolve(profile, np.ones(5) / 5, mode="same")
+        lo, hi = max(2, int(at) - w), min(len(sm) - 3, int(at) + w)
+        if hi <= lo:
+            return at
+        d = sm[lo + 2:hi + 2] - sm[lo - 2:hi - 2]
+        i = int(np.argmax(d if rising else -d))
+        return float(lo + i)
+
+    # The middle 60 % of the other axis keeps the corners and the end shadows out of the profile.
+    def band(a0: float, a1: float) -> slice:
+        m = 0.2 * (a1 - a0)
+        return slice(int(a0 + m), max(int(a0 + m) + 1, int(a1 - m)))
+
+    cols_profile = g[band(y0, y1), :].mean(axis=0)
+    rows_profile = g[:, band(x0, x1)].mean(axis=1)
+    nx0 = step(cols_profile, x0, True)
+    nx1 = step(cols_profile, x1, False)
+    ny0 = step(rows_profile, y0, True)
+    ny1 = step(rows_profile, y1, False)
+    if nx1 - nx0 < 0.5 * (x1 - x0) or ny1 - ny0 < 0.5 * (y1 - y0):
+        nx0, nx1, ny0, ny1 = x0, x1, y0, y1  # the steps do not look like a cover, so keep the rough box
+    # Move a little inside the edge, so that no background or worn edge shows in the output.
+    pg = project.page(page_id)
+    inset = inset_mm / 25.4 * min(pg.image.dpi_x, pg.image.dpi_y) * k
+    nx0, ny0, nx1, ny1 = nx0 + inset, ny0 + inset, nx1 - inset, ny1 - inset
+    return {"x": nx0 / k, "y": ny0 / k, "width": (nx1 - nx0) / k, "height": (ny1 - ny0) / k}
 
 
 def picture_score(project: Project, page_id: str) -> dict:
