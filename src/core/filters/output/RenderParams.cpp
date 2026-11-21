@@ -72,6 +72,9 @@ RenderParams::RenderParams(ColorParams const& cp)
         } else if (opt.fillingColor() == FILL_BLACK) {
             m_mask |= BLACK_FILLING;
         }
+        if (opt.convertToGrayscale()) {
+            m_mask |= CONVERT_TO_GRAYSCALE;
+        }
         break;
     }
 

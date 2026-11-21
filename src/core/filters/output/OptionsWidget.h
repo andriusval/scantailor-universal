@@ -93,6 +93,8 @@ private slots:
 
     void fillOffcutToggled(bool checked);
 
+    void grayscaleFirstToggled(bool checked);
+
     void fillingColorChanged(int idx);
 
     void despeckleOffSelected();

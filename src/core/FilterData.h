@@ -73,6 +73,9 @@ public:
 
     // Returns a copy with inverted images, so that light content on a dark background becomes dark content on a light background.
     FilterData inverted() const;
+
+    // Returns a copy where the original image is the grayscale image, so that a color tint does not reach the output.
+    FilterData grayscaled() const;
 private:
     QString m_origImageFilename;
     QImage m_origImage;

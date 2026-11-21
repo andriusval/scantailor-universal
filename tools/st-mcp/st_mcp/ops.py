@@ -924,24 +924,29 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
 def pages_set_output(project: str, pages: str | list[str], color_mode: str | None = None, dpi: int | None = None,
                      despeckle: str | None = None, white_margins: bool | None = None,
                      equalize_illumination: bool | None = None, filling_color: str | None = None,
-                     fill_offcut: bool | None = None) -> dict:
+                     fill_offcut: bool | None = None, grayscale_first: bool | None = None) -> dict:
     """Output mode per page. color_mode: bw | color (=color/grayscale) | mixed.
     Text and pages with black-and-white line illustrations: bw 600. Pages with grayscale (halftone/photo)
-    illustrations: color, white_margins=true, equalize_illumination=true. Covers: color 300.
-    white_margins / equalize_illumination are the GUI's Color/Grayscale checkboxes.
+    illustrations: color, white_margins=true, equalize_illumination=true, grayscale_first=true. Covers: color 300.
+    white_margins / equalize_illumination / grayscale_first are the GUI's Color/Grayscale checkboxes
+    ("Convert to grayscale first": the scan becomes grayscale before all other output steps, so a paper
+    tint does not change the margins, the illumination or the photos, and the output TIFF is 8-bit gray;
+    no effect in bw mode).
     filling_color (background|white|black) fills the area outside the page; fill_offcut also fills the
-    area beyond the split line (only without white margins). Both need a ScanTailor build from branch
-    agentic/windows-build; older builds ignore them."""
+    area beyond the split line (only without white margins). filling_color and fill_offcut need a
+    ScanTailor build from branch agentic/windows-build, and grayscale_first needs a build with branch
+    feat/grayscale-first; older builds ignore them and write RGB."""
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
     ids = _resolve_pages(p, pages)
     for i in ids:
-        p.set_output(i, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color, fill_offcut)
+        p.set_output(i, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color, fill_offcut,
+                     grayscale_first)
     p.save()
     return {"updated_pages": len(ids), "color_mode": color_mode, "dpi": dpi, "despeckle": despeckle,
             "white_margins": white_margins, "equalize_illumination": equalize_illumination,
-            "filling_color": filling_color, "fill_offcut": fill_offcut}
+            "filling_color": filling_color, "fill_offcut": fill_offcut, "grayscale_first": grayscale_first}
 
 
 def check_pages(project: str, pages: str | list[str] = "all", kind: str = "content") -> dict:
@@ -959,7 +964,8 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
             r["likely"] = "grayscale" if r["picture_fraction"] > 0.05 else "line_art"
         return {"checked": len(res), "flagged": flagged,
                 "rule": "preview each: grayscale illustrations (photos, halftones) -> color_mode=color, "
-                        "white_margins=true, equalize_illumination=true; black-and-white line art -> keep bw 600"}
+                        "white_margins=true, equalize_illumination=true, grayscale_first=true; "
+                        "black-and-white line art -> keep bw 600"}
     if kind != "content":
         raise ValueError("kind must be content|pictures")
     res = [checks.check_page(p, i) for i in ids]

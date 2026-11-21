@@ -1194,6 +1194,17 @@ ConsoleBatch::setupOutput(std::set<PageId> allPages)
             colorParams.setColorGrayscaleOptions(cgo);
         }
 
+        if (cli.hasGrayscaleFirst()) {
+            QString const value = cli.getGrayscaleFirst();
+            // A typo must not turn the option on without a message.
+            if (value != "true" && value != "1" && value != "false" && value != "0") {
+                throw std::runtime_error("--grayscale-first must be true, false, 1 or 0.");
+            }
+            output::ColorGrayscaleOptions cgo(colorParams.colorGrayscaleOptions());
+            cgo.setConvertToGrayscale(value == "true" || value == "1");
+            colorParams.setColorGrayscaleOptions(cgo);
+        }
+
         if (cli.hasThreshold()) {
             output::BlackWhiteOptions bwo;
             bwo.setThresholdAdjustment(cli.getThreshold());

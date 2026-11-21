@@ -91,3 +91,11 @@ FilterData::inverted() const
     data.m_blackOnWhite = !m_blackOnWhite;
     return data;
 }
+
+FilterData
+FilterData::grayscaled() const
+{
+    FilterData data(*this);
+    data.m_origImage = m_grayImage.toQImage();
+    return data;
+}

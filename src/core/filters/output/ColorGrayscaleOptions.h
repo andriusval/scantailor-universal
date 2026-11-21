@@ -36,7 +36,7 @@ public:
         : m_whiteMargins(whiteMargins), m_normalizeIllumination(normalizeIllumination),
           m_autoLayerEnabled(autoLayer), m_pictureZonesLayerEnabled(pictureZonesLayer),
           m_foregroundLayerEnabled(foregroundLayer),
-          m_fillOffcut(false), m_fillingColor(FILL_BACKGROUND) {}
+          m_fillOffcut(false), m_fillingColor(FILL_BACKGROUND), m_convertToGrayscale(false) {}
 
     ColorGrayscaleOptions(QDomElement const& el, bool mixed_mode);
 
@@ -112,6 +112,16 @@ public:
         m_fillingColor = color;
     }
 
+    bool convertToGrayscale() const
+    {
+        return m_convertToGrayscale;
+    }
+
+    void setConvertToGrayscale(bool val)
+    {
+        m_convertToGrayscale = val;
+    }
+
     static FillingColor parseFillingColor(QString const& str);
 
     static QString formatFillingColor(FillingColor color);
@@ -127,6 +137,7 @@ private:
     bool m_foregroundLayerEnabled;
     bool m_fillOffcut;
     FillingColor m_fillingColor;
+    bool m_convertToGrayscale;
 };
 
 } // namespace output

@@ -188,6 +188,16 @@
           </widget>
          </item>
          <item>
+          <widget class="QCheckBox" name="grayscaleFirstCB">
+           <property name="toolTip">
+            <string>Convert the original image to grayscale before all other output steps. The output file is grayscale. Use it for photos and halftones on tinted paper. It has no effect in the Black and White mode.</string>
+           </property>
+           <property name="text">
+            <string>Convert to grayscale first</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <widget class="QCheckBox" name="fillOffcutCB">
            <property name="text">
             <string>Fill offcut</string>

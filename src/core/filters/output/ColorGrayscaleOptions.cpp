@@ -34,6 +34,7 @@ ColorGrayscaleOptions::ColorGrayscaleOptions(QDomElement const& el, bool mixed_m
     m_foregroundLayerEnabled = el.attribute("foregroundLayer", "0") == "1";
     m_fillOffcut = el.attribute("fillOffcut", "0") == "1";
     m_fillingColor = parseFillingColor(el.attribute("fillingColor"));
+    m_convertToGrayscale = el.attribute("convertToGrayscale", "0") == "1";
 }
 
 QDomElement
@@ -47,6 +48,10 @@ ColorGrayscaleOptions::toXml(QDomDocument& doc, QString const& name) const
     el.setAttribute("foregroundLayer", m_foregroundLayerEnabled ? "1" : "0");
     el.setAttribute("fillOffcut", m_fillOffcut ? "1" : "0");
     el.setAttribute("fillingColor", formatFillingColor(m_fillingColor));
+    // Write the attribute only for a true value, so that projects without the option stay the same.
+    if (m_convertToGrayscale) {
+        el.setAttribute("convertToGrayscale", "1");
+    }
     return el;
 }
 
@@ -103,6 +108,10 @@ ColorGrayscaleOptions::operator==(ColorGrayscaleOptions const& other) const
     }
 
     if (m_fillingColor != other.m_fillingColor) {
+        return false;
+    }
+
+    if (m_convertToGrayscale != other.m_convertToGrayscale) {
         return false;
     }
 
