@@ -107,6 +107,10 @@ Values are JSON when they parse as JSON (`10`, `true`, `["a","b"]`), else string
   in CLI builds from this fork (branch `agentic/windows-build`, 2026-11-21 or
   later). It is the GUI's double-click adjustment of the content box (ported
   from ScanTailor Advanced), so agent and GUI snap edges the same way.
+- `pages_straighten_pictures` measures the angle with the CLI option
+  `--deskew-pictures` when the CLI has it. The CLI finds the angle from the
+  straight edges of the pictures. For other pages, and with older builds, the
+  Python function `checks.picture_skew` measures the angle.
 - `run_stages(pages=...)` processes only those pages with a CLI that has
   `--pages`; older builds process all pages. Stage 5 still uses the size of all
   pages. So after margin changes, or after a size warning, run stages 5-6 on

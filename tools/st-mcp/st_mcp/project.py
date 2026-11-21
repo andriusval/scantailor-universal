@@ -351,6 +351,13 @@ class Project:
         p.set("mode", "manual")
         p.set("angle", repr(float(angle)))
 
+    def clear_deskew(self, page_id: str) -> None:
+        # Without stored parameters, the next stage 3 run finds the angle again.
+        f = self.filter_el("deskew")
+        el = f.find(f"./page[@id='{page_id}']") if f is not None else None
+        if el is not None:
+            f.remove(el)
+
     def set_rotation(self, image_id: str, degrees: int) -> None:
         """Per-image orientation fix (Fix Orientation filter): 0, 90, 180, 270 clockwise."""
         if degrees % 90:

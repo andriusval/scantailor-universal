@@ -45,6 +45,7 @@ Settings::clear()
     QMutexLocker locker(&m_mutex);
     m_perPageParams.clear();
     m_perPageBlackOnWhite.clear();
+    m_perPageSkewEstimator.clear();
 }
 
 void
@@ -70,6 +71,8 @@ Settings::performRelinking(AbstractRelinker const& relinker)
         new_black_on_white.insert(std::map<PageId, bool>::value_type(new_page_id, kv.second));
     }
     m_perPageBlackOnWhite.swap(new_black_on_white);
+    // The estimator names belong to the last run only, so the new paths do not need them.
+    m_perPageSkewEstimator.clear();
 }
 
 void Settings::updateDeviation()
@@ -112,6 +115,7 @@ Settings::clearPageParams(PageId const& page_id)
 {
     QMutexLocker locker(&m_mutex);
     m_perPageParams.erase(page_id);
+    m_perPageSkewEstimator.erase(page_id);
 }
 
 std::unique_ptr<Params>
@@ -153,6 +157,21 @@ Settings::getBlackOnWhite(PageId const& page_id, bool* black_on_white) const
     }
     *black_on_white = it->second;
     return true;
+}
+
+void
+Settings::setSkewEstimator(PageId const& page_id, QString const& estimator)
+{
+    QMutexLocker const locker(&m_mutex);
+    m_perPageSkewEstimator[page_id] = estimator;
+}
+
+QString
+Settings::skewEstimator(PageId const& page_id) const
+{
+    QMutexLocker const locker(&m_mutex);
+    std::map<PageId, QString>::const_iterator const it(m_perPageSkewEstimator.find(page_id));
+    return it == m_perPageSkewEstimator.end() ? QString() : it->second;
 }
 
 } // namespace deskew

@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -1010,22 +1011,88 @@ def export_summary(project: str) -> dict:
             "total_mb": round(sum(f.stat().st_size for f in files.values()) / 1e6, 1)}
 
 
+# The CLI finds the angle only for pages without deskew parameters, so it runs on a copy without them.
+def _cli_picture_angles(p: Project, proj: Path, ids: list[str]) -> dict[str, float]:
+    # The JSON events give only the file name, so pages of different files with one name stay in Python.
+    paths: dict[str, set] = {}
+    for im in p.images.values():
+        paths.setdefault(im.path.name, set()).add(im.path)
+    ids = [i for i in ids if len(paths[p.page(i).image.path.name]) == 1]
+    if not ids:
+        return {}
+    # The copy stays beside the project, because the image paths in it are relative to its folder.
+    fd, name = tempfile.mkstemp(dir=proj.parent, prefix=proj.stem + ".deskew-pictures-", suffix=proj.suffix)
+    os.close(fd)
+    tmp = Path(name)
+    shutil.copy2(proj, tmp)
+    try:
+        t = Project(tmp)
+        for i in ids:
+            t.clear_deskew(i)
+        t.save()
+        cmd = [find_cli(), "--deskew-pictures", "--json-progress", "--start-filter=3", "--end-filter=3",
+               "--pages=" + ";".join(_page_ref(t, tmp, t.page(i)) for i in ids),
+               f"--output-project={tmp}", str(tmp), str(p.output_dir)]
+        r = subprocess.run(cmd, capture_output=True, env=cli_env(), text=True, encoding="utf-8", errors="replace",
+                           timeout=60 + 10 * len(ids))
+    finally:
+        for f in (tmp, tmp.with_suffix(tmp.suffix + ".bak")):
+            f.unlink(missing_ok=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"CLI --deskew-pictures failed: {r.stderr.strip()[-500:]}")
+    key = {(p.page(i).image.path.name, p.page(i).image.file_page, p.page(i).side): i for i in ids}
+    angles = {}
+    for line in r.stdout.splitlines():
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if ev.get("event") != "page_done" or ev.get("estimator") != "picture":
+            continue
+        i = key.get((ev.get("image"), ev.get("image_page", 0), ev.get("side")))
+        if i is not None:
+            angles[i] = float(ev["angle"])
+    return angles
+
+
 def pages_straighten_pictures(project: str, pages: str | list[str], min_change: float = 0.25) -> dict:
     """Picture pages (photos, plates): ScanTailor deskews by text lines, which photos do not have, so it
-    can tilt them by several degrees. Re-measures the skew from the printed rectangles' edges and sets
-    a manual deskew angle. Afterwards run_stages(3, 5), then page_set_content(mode=all_content)."""
+    can tilt them by several degrees. Re-measures the skew from the edges of the printed pictures (with
+    the CLI option --deskew-pictures when the CLI has it, else in Python) and sets a manual deskew angle.
+    Afterwards run_stages(3, 5), then page_set_content(mode=all_content)."""
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
-    changed = []
-    for i in _resolve_pages(p, pages):
-        res = checks.picture_skew(p, i)
-        if res is not None and abs(res) >= min_change:
-            old = p.deskew_angle(i)
-            p.set_deskew(i, old - res)
-            changed.append({"page": p.page(i).label, "angle_before": round(old, 3), "angle_after": round(old - res, 3)})
+    ids = _resolve_pages(p, pages)
+    cli_angles, cli_error = {}, None
+    if _cli_supports("deskew-pictures"):
+        # Python can measure every page, so a CLI problem must not stop the tool.
+        try:
+            _check_inputs_reachable(p, find_cli())
+            cli_angles = _cli_picture_angles(p, proj, ids)
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            cli_error = str(e)[-300:]
+    changed, in_python = [], 0
+    for i in ids:
+        old = p.deskew_angle(i)
+        if i in cli_angles:
+            new, method = cli_angles[i], "cli"
+        else:
+            res = checks.picture_skew(p, i)
+            if res is None:
+                continue
+            new, method = old - res, "python"
+            in_python += 1
+        if abs(new - old) >= min_change:
+            p.set_deskew(i, new)
+            changed.append({"page": p.page(i).label, "angle_before": round(old, 3), "angle_after": round(new, 3),
+                            "method": method})
     p.save()
-    return {"changed": changed, "next": "run_stages(3, 5), then page_set_content(mode=all_content) on these pages"}
+    res = {"changed": changed, "measured_by_cli": len(cli_angles), "measured_in_python": in_python,
+           "next": "run_stages(3, 5), then page_set_content(mode=all_content) on these pages"}
+    if cli_error:
+        res["cli_error"] = cli_error
+    return res
 
 
 # The copy always holds the last finished run, so that project_diff shows only the corrections of the person.

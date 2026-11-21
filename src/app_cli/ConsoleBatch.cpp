@@ -1289,6 +1289,11 @@ ConsoleBatch::pageResult(int idx, PageId const& page_id) const
             res["angle"] = params->deskewAngle();
             res["mode"] = modeToString(params->mode());
         }
+        // Pages that kept their angle from the project have no estimator.
+        QString const estimator(m_ptrStages->deskewFilter()->getSettings()->skewEstimator(page_id));
+        if (!estimator.isEmpty()) {
+            res["estimator"] = estimator;
+        }
     } else if (idx == m_ptrStages->selectContentFilterIdx()) {
         std::unique_ptr<select_content::Params> const params(
             m_ptrStages->selectContentFilter()->getSettings()->getPageParams(page_id));

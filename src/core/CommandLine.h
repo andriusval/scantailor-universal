@@ -79,6 +79,10 @@ public:
     {
         return contains("json-progress");
     }
+    bool isDeskewPictures() const
+    {
+        return contains("deskew-pictures");
+    }
     bool isError() const
     {
         return m_error;

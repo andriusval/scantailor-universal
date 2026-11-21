@@ -77,6 +77,8 @@ GUI.
      `pages_set_output(color_mode="color", dpi=300, white_margins=true,
      equalize_illumination=true)` and
      `pages_set_layout(<picture pages>, margin_left=0, margin_right=0)`.
+     With a CLI that has `--deskew-pictures`, the tool measures the angle
+     from the picture edges in C++.
 6. **Covers and endpapers:** `page_set_content(mode="cover")`, then
    `pages_set_layout(margins_mm=0, match_size=false)` and
    `pages_set_output(color_mode="color", dpi=300)`. The cover mode also finds

@@ -24,6 +24,7 @@
 #include "PageId.h"
 #include "Params.h"
 #include <QMutex>
+#include <QString>
 #include <memory>
 #include <map>
 #include <set>
@@ -60,6 +61,11 @@ public:
     // The return value is false for a page without a result, because such a page needs a new detection.
     bool getBlackOnWhite(PageId const& page_id, bool* black_on_white) const;
 
+    // Only the CLI report uses the estimator name, so the project file does not keep it.
+    void setSkewEstimator(PageId const& page_id, QString const& estimator);
+
+    QString skewEstimator(PageId const& page_id) const;
+
     double maxDeviation() const
     {
         return m_maxDeviation;
@@ -93,6 +99,7 @@ private:
     mutable QMutex m_mutex;
     PerPageParams m_perPageParams;
     std::map<PageId, bool> m_perPageBlackOnWhite;
+    std::map<PageId, QString> m_perPageSkewEstimator;
     double m_avg;
     double m_sigma;
     double m_maxDeviation;
