@@ -104,6 +104,40 @@ The agent adds its own decisions with `review_note`. `review_sheet` writes
 `review/thumbs/` with relative paths) and `review.json`. A decision below 0.6
 puts the page first, with the marker "CHECK IN GUI".
 
+## Book queue for overnight runs
+
+The workflow needs the judgment of an agent, so `run_queue.py` starts one
+headless Claude Code session (`claude -p`) for each book in a queue file.
+
+```sh
+cat > books.txt <<'TXT'
+# one book folder per line; Windows paths work too; text after | goes to the agent
+C:\nes\Serijos_HIGH\(Atradimų pasaulis)\Stefan Zweig. Magelano žygis (1989)
+/mnt/c/nes/Serijos_HIGH/Other book | covers are 001 and 9999
+TXT
+.venv/bin/python run_queue.py books.txt --dry-run     # show the commands and the prompt
+.venv/bin/python run_queue.py books.txt               # run; start again to resume
+```
+
+- The prompt holds the book folder, the rules and the step list of
+  `docs/AGENTIC_WORKFLOW.en.md`. It tells the agent to run to the end without
+  approval and to write its report to `out-agentas/review/report.md`.
+- Each session gets `--mcp-config books-mcp.json --strict-mcp-config`
+  (only the `scantailor` server of this folder), `--permission-mode dontAsk`,
+  `--allowedTools mcp__scantailor,Read,Write,Edit,Glob,Grep` and
+  `--output-format stream-json --verbose`. Options: `--model`,
+  `--max-budget-usd`, `--timeout-min` (default 240), `--max-books`,
+  `--allowed-tools`, `--permission-mode`, `--mcp-config`.
+- `books.state.json` keeps the status of each book (`pending`, `running`,
+  `done`, `failed`), the times, the exit code and the log path. A book is
+  `done` only when the session ends with exit code 0 and the report exists.
+- A new start skips `done` and `failed` books and runs a book that a stopped
+  runner left as `running`. `--retry-failed` runs the failed books again.
+- `books-logs/` holds one log per book. `books-summary.md` has one line per
+  book with links to its review sheet and log. `books.lock` stops a second
+  runner on the same queue.
+- `--command` replaces `claude`, so the tests use a fake agent.
+
 ## Notes and known limits (P1)
 
 - File order is **natural** (`009 < 0100 < 9999`); ScanTailor on its own sorts

@@ -127,6 +127,19 @@ GUI.
     `review_sheet` (`to_check`) and give the path of the review sheet. Write
     the summary to `out-agentas/review/report.md`.
 
+## Book queue (overnight runs)
+
+`tools/st-mcp/run_queue.py books.txt` runs this workflow on each book folder
+in `books.txt`, one headless Claude Code session (`claude -p`) per book. The
+prompt holds the rules and the step list above, and asks for the report in
+`out-agentas/review/report.md`. The file `books.state.json` keeps the status
+of each book, so a new start resumes after a crash and skips the finished
+books. The folder `books-logs/` has one log per book.
+
+At the end, `books-summary.md` has one line per book with a link to its
+review sheet. Use `--dry-run` to see the commands first. The details are in
+`tools/st-mcp/README.md`.
+
 ## Corrections log
 
 After the person corrects a book in the GUI, run

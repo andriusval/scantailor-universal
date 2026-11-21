@@ -128,6 +128,18 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
     Išvardyti tikrintinus puslapius iš `review_sheet` (`to_check`) ir nurodyti
     peržiūros lapo kelią. Suvestinę įrašyti į `out-agentas/review/report.md`.
 
+## Knygų eilė (naktiniai paleidimai)
+
+`tools/st-mcp/run_queue.py books.txt` paleidžia šį workflow kiekvienam
+knygos katalogui iš `books.txt`: po vieną headless Claude Code sesiją
+(`claude -p`) knygai. Užduotyje (prompt) — taisyklės ir aukščiau esantis
+žingsnių sąrašas, ataskaita prašoma į `out-agentas/review/report.md`. Failas
+`books.state.json` saugo kiekvienos knygos būseną, todėl po strigties naujas
+paleidimas tęsia ir praleidžia baigtas knygas. Kiekviena knyga turi savo
+žurnalą `books-logs/`. Pabaigoje `books-summary.md` — po eilutę knygai su
+nuoroda į jos peržiūros lapą. Komandas pirma pažiūrėti su `--dry-run`.
+Smulkiau — `tools/st-mcp/README.md`.
+
 ## Pataisymų žurnalas
 
 Kai žmogus knygą pataisė GUI, paleisti
