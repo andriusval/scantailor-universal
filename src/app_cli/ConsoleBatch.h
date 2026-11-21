@@ -62,6 +62,8 @@ public:
     void process();
     bool saveProject(QString const project_file);
     int renderPreviews(QString const& directory, int max_size);
+    // Returns the number of pages without masks, and each such page also counts as a warning.
+    int dumpMasks(QString const& directory);
     int pageCount() const;
     int pageErrorCount() const
     {
