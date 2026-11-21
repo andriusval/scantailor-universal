@@ -166,6 +166,8 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 - Pakartotinis paleidimas: output etapas neperrašo TIFF, kurio parametrai ir
   failas nepasikeitė (kaip GUI). 8 skenų bandyme etapai 4–6 truko 5 s vietoj 38 s.
   Tokio puslapio `page_done` eilutėje (6 etapas) yra `"skipped":true`.
+  Senesnio CLI projektas pirmą kartą perdaromas visas. Po output kodo pakeitimo
+  ištrinkite `out/` TIFF failus, nes CLI jų neperrašys.
 
 ## Įgyvendinimo planas
 
