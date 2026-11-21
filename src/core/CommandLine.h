@@ -178,6 +178,11 @@ public:
     {
         return contains("skew-deviation") && !m_options["skew-deviation"].isEmpty();
     }
+    /** --dpi / --dpi-x / --dpi-y given (forces one DPI for all images). */
+    bool hasDpi() const
+    {
+        return contains("dpi") || contains("dpi-x") || contains("dpi-y");
+    }
     bool hasContentSnap() const
     {
         return contains("content-snap") && !m_options["content-snap"].isEmpty();
