@@ -944,9 +944,11 @@ ConsoleBatch::pageResult(int idx, PageId const& page_id) const
                                  : QStringLiteral("off");
         std::unique_ptr<output::OutputParams> const output_params(
             m_ptrStages->outputFilter()->getSettings()->getOutputParams(page_id));
-        if (output_params && output_params->outputImageParams().grayscaleChroma() >= 0.0) {
+        if (output_params && output_params->outputImageParams().grayscaleMeasured()) {
             res["grayscale_detected"] = output_params->outputImageParams().grayscaleDetected();
-            res["chroma"] = qRound(output_params->outputImageParams().grayscaleChroma() * 10.0) / 10.0;
+            double const chroma = output_params->outputImageParams().grayscaleChroma();
+            // A null chroma means that the page had too few mid-tone pixels for a measurement.
+            res["chroma"] = chroma >= 0.0 ? QJsonValue(qRound(chroma * 10.0) / 10.0) : QJsonValue();
         }
     }
     return res;

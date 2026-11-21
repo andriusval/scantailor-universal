@@ -30,18 +30,18 @@ namespace output
 class GrayscaleDetector
 {
 public:
-    // A page with a chroma value below this limit is gray.
+    // Gray photos in the test books measured about 7 and color plates 20 or more, so this limit has a margin.
     static double chromaThreshold()
     {
         return 10.0;
     }
 
-    // Returns the 95th percentile of the chroma of the mid-tone pixels in the area, after a limited correction for the paper tint.
+    // A negative result means that the area has too few mid-tone pixels, because a pale or dark plate in color must not become gray.
     static double measureChroma(QImage const& image, QRectF const& area);
 
     static bool isGrayscale(double chroma)
     {
-        return chroma < chromaThreshold();
+        return chroma >= 0.0 && chroma < chromaThreshold();
     }
 };
 

@@ -49,7 +49,7 @@ GrayscaleDetector::measureChroma(QImage const& image, QRectF const& area)
 {
     QRect const rect(area.toAlignedRect().intersected(image.rect()));
     if (rect.isEmpty()) {
-        return 0.0;
+        return -1.0;
     }
 
     switch (image.format()) {
@@ -98,7 +98,7 @@ GrayscaleDetector::measureChroma(QImage const& image, QRectF const& area)
 
     std::size_t const count = cb_values.size();
     if (count < MIN_PIXELS) {
-        return 0.0;
+        return -1.0;
     }
 
     double cb_tint = cb_sum / count;

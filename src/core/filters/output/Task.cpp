@@ -226,6 +226,7 @@ Task::process(
     // The output generator gets only ON or OFF, because the automatic detection happens here.
     ColorParams generator_color_params(params.colorParams());
     ColorGrayscaleOptions generator_cgo(generator_color_params.colorGrayscaleOptions());
+    bool grayscale_measured = false;
     double grayscale_chroma = -1.0;
     bool grayscale_detected = false;
     if (params.colorParams().colorMode() != ColorParams::BLACK_AND_WHITE
@@ -234,6 +235,7 @@ Task::process(
         if (area.isEmpty()) {
             area = data.xform().transformBack().map(data.xform().resultingPreCropArea()).boundingRect();
         }
+        grayscale_measured = true;
         grayscale_chroma = GrayscaleDetector::measureChroma(data.origImage(), area);
         grayscale_detected = GrayscaleDetector::isGrayscale(grayscale_chroma);
         generator_cgo.setGrayscaleFirst(grayscale_detected ? GRAYSCALE_FIRST_ON : GRAYSCALE_FIRST_OFF);
@@ -292,7 +294,9 @@ Task::process(
                     GlobalStaticSettings::m_tiff_compr_method_bw :
                     GlobalStaticSettings::m_tiff_compr_method_color);
     new_output_image_params.setBlackOnWhite(params.isBlackOnWhite());
-    new_output_image_params.setGrayscaleDetection(grayscale_chroma, grayscale_detected);
+    if (grayscale_measured) {
+        new_output_image_params.setGrayscaleDetection(grayscale_chroma, grayscale_detected);
+    }
 
 //begin of modified by monday2000
 //Quadro_Zoner
@@ -368,6 +372,15 @@ Task::process(
         }
 
         if (!stored_output_params->outputImageParams().matches(new_output_image_params)) {
+            need_reprocess = true;
+            break;
+        }
+
+        // Only this task measures, so the cache-driven task does not compare the detection result.
+        if (stored_output_params->outputImageParams().grayscaleMeasured()
+                != new_output_image_params.grayscaleMeasured()
+                || stored_output_params->outputImageParams().grayscaleDetected()
+                != new_output_image_params.grayscaleDetected()) {
             need_reprocess = true;
             break;
         }

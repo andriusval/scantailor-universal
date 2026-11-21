@@ -99,7 +99,13 @@ public:
         m_blackOnWhite = black_on_white;
     }
 
-    // A negative value means that the page does not use the automatic grayscale detection.
+    // Only pages with the automatic grayscale detection have a result, so the GUI and the CLI can show it.
+    bool grayscaleMeasured() const
+    {
+        return m_grayscaleMeasured;
+    }
+
+    // A negative value means that the content area has too few mid-tone pixels for a measurement.
     double grayscaleChroma() const
     {
         return m_grayscaleChroma;
@@ -112,6 +118,7 @@ public:
 
     void setGrayscaleDetection(double chroma, bool detected)
     {
+        m_grayscaleMeasured = true;
         m_grayscaleChroma = chroma;
         m_grayscaleDetected = detected;
     }
@@ -184,6 +191,8 @@ private:
     QString m_TiffCompression;
 
     bool m_blackOnWhite;
+
+    bool m_grayscaleMeasured;
 
     double m_grayscaleChroma;
 

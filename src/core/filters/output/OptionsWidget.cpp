@@ -257,9 +257,13 @@ OptionsWidget::updateGrayscaleFirstAutoDisplay()
         return;
     }
     std::unique_ptr<OutputParams> const output_params(m_ptrSettings->getOutputParams(m_pageId));
-    double const chroma = output_params ? output_params->outputImageParams().grayscaleChroma() : -1.0;
-    if (chroma < 0.0) {
+    if (!output_params || !output_params->outputImageParams().grayscaleMeasured()) {
         grayscaleFirstAutoLabel->setText(tr("Auto: not measured yet"));
+        return;
+    }
+    double const chroma = output_params->outputImageParams().grayscaleChroma();
+    if (chroma < 0.0) {
+        grayscaleFirstAutoLabel->setText(tr("Auto: color (too few mid-tones to measure)"));
     } else if (output_params->outputImageParams().grayscaleDetected()) {
         grayscaleFirstAutoLabel->setText(tr("Auto: grayscale (chroma %1)").arg(chroma, 0, 'f', 1));
     } else {
