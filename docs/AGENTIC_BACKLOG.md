@@ -17,6 +17,8 @@ Siūloma eilė: 1 ir 4, tada 2, tada 5 ir 6, vėliau 7–9.
 3. **Neperdaryti jau naujos išvesties.** Patikrinti, ar CLI praleidžia
    puslapius, kurių parametrai nepasikeitė (`--disable-check-output` yra, bet
    ar tikrinimas veikia CLI — nežinoma). Jei ne — įjungti.
+   **Padaryta:** CLI įrašydavo tuščią TIFF suspaudimo pavadinimą, todėl output
+   etapas kaskart perdarydavo visus puslapius. Dabar nepakitę puslapiai praleidžiami.
 
 ## Patikimumas
 

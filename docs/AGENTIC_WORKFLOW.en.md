@@ -163,6 +163,11 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 - Speed: with `OMP_NUM_THREADS=1` (st-mcp default) the whole book (191 scans,
   380 pages, all stages) takes ~6 min; ScanTailor's default OpenMP threading was
   ~9× slower (54 min) and not deterministic.
+- A new run: the output stage does not write a TIFF again when its parameters
+  and its file did not change (as in the GUI). On 8 scans, stages 4–6 took 5 s, not 38 s.
+  The `page_done` line (stage 6) of such a page has `"skipped":true`.
+  The first run on a project from an older CLI writes all pages again.
+  After a change of the output code, delete the TIFFs in `out/`, because the CLI keeps them.
 
 ## Implementation plan
 

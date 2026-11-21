@@ -152,7 +152,8 @@ Task::Task(IntrusivePtr<Filter> const& filter,
         m_debug(debug),
         m_keep_orig_fore_subscan(keep_orig_fore_subscan),
 //Original_Foreground_Mixed
-        m_p_orig_fore_subscan(p_orig_fore_subscan)
+        m_p_orig_fore_subscan(p_orig_fore_subscan),
+        m_outputReused(false)
 {
     if (debug) {
         m_ptrDbg.reset(new DebugImages);
@@ -325,6 +326,8 @@ Task::process(
     Params p = m_ptrSettings->getParams(m_pageId);
     Params::Regenerate val = p.getForceReprocess();
     bool need_reprocess = val & Params::RegeneratePage;
+    // The stored output parameters do not hold the forced TIFF format, thus a current file can have the wrong format.
+    need_reprocess = need_reprocess || cli.hasTiffForceRGB() || cli.hasTiffForceGrayscale();
     if (need_reprocess) {
         val = (Params::Regenerate)(val & ~Params::RegeneratePage);
         p.setForceReprocess(val);
@@ -426,6 +429,8 @@ Task::process(
             need_reprocess = speckles_img.isNull();
         }
     }
+
+    m_outputReused = !need_reprocess;
 
     if (need_reprocess) {
         // Even in batch processing mode we should still write automask, because it

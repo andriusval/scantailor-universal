@@ -163,6 +163,11 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 - Greitis: su `OMP_NUM_THREADS=1` (st-mcp numatytasis) visa knyga (191 skenas,
   380 puslapių, visi etapai) — ~6 min; ScanTailor numatytas OpenMP
   daugiagijis režimas buvo ~9 kartus lėtesnis (54 min) ir nedeterministinis.
+- Pakartotinis paleidimas: output etapas neperrašo TIFF, kurio parametrai ir
+  failas nepasikeitė (kaip GUI). 8 skenų bandyme etapai 4–6 truko 5 s vietoj 38 s.
+  Tokio puslapio `page_done` eilutėje (6 etapas) yra `"skipped":true`.
+  Senesnio CLI projektas pirmą kartą perdaromas visas. Po output kodo pakeitimo
+  ištrinkite `out/` TIFF failus, nes CLI jų neperrašys.
 
 ## Įgyvendinimo planas
 
