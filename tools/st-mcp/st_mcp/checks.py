@@ -248,8 +248,9 @@ def detect_cover_rect(project: Project, page_id: str) -> dict | None:
     pt = project.transform(pg.id)
     k = min(1.0, ANALYSIS_PX / max(pt.width, pt.height))
     f = max(2, int(0.03 * min(g.shape)))
-    frame = np.concatenate([g[:f].ravel(), g[-f:].ravel(), g[:, :f].ravel(), g[:, -f:].ravel()])
-    bg = float(np.percentile(frame, 90))  # scanner background (black lid) seen around the cover
+    # The darkest side gives the background, because on a split scan the cover can reach one side of the half.
+    sides = [g[:f].ravel(), g[-f:].ravel(), g[:, :f].ravel(), g[:, -f:].ravel()]
+    bg = float(min(np.percentile(side, 90) for side in sides))
     fg = np.percentile(g, 90)
     if fg - bg < 15:
         return None  # no contrast between cover and background
