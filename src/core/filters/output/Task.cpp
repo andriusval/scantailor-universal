@@ -221,6 +221,16 @@ Task::process(
     }
 
     RenderParams render_params(params.colorParams());
+
+    // A gray original has nothing to convert, so it keeps its ICC profile as before.
+    ColorParams generator_color_params(params.colorParams());
+    if (render_params.convertToGrayscale() && data.origImage().allGray()) {
+        ColorGrayscaleOptions cgo(generator_color_params.colorGrayscaleOptions());
+        cgo.setConvertToGrayscale(false);
+        generator_color_params.setColorGrayscaleOptions(cgo);
+    }
+    bool const drop_icc_profile = RenderParams(generator_color_params).convertToGrayscale();
+
     QString const out_file_path(m_outFileNameGen.filePathFor(m_pageId));
     QFileInfo const out_file_info(out_file_path);
 
@@ -255,7 +265,7 @@ Task::process(
     }
 
     OutputGenerator const generator(
-        params.outputDpi(), params.colorParams(), params.despeckleLevel(),
+        params.outputDpi(), generator_color_params, params.despeckleLevel(),
         new_xform, content_rect_phys, params.isBlackOnWhite()
     );
 
@@ -488,7 +498,7 @@ Task::process(
             deleteMutuallyExclusiveOutputFiles();
 #ifdef HAVE_EXIV2
             // A color profile does not fit a grayscale output that the page made from a color original.
-            if (GlobalStaticSettings::m_output_copy_icc_metadata && !render_params.convertToGrayscale()) {
+            if (GlobalStaticSettings::m_output_copy_icc_metadata && !drop_icc_profile) {
                 ImageMetadataCopier::copyMetadata(m_pageId.imageId().filePath(), out_file_path);
             }
 #endif

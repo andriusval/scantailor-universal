@@ -276,10 +276,9 @@ public:
     {
         return contains("grayscale-first");
     }
-    // Only an explicit "false" turns the option off, so that the bare switch turns it on.
-    bool getGrayscaleFirst() const
+    QString getGrayscaleFirst() const
     {
-        return m_options["grayscale-first"].toLower() != "false";
+        return m_options["grayscale-first"].toLower();
     }
     bool hasThreshold() const
     {

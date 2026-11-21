@@ -440,7 +440,7 @@ CommandLine::printHelp()
     std::cout << "\t--filling-color=<background|white|black>\t-- color and mixed modes only; default: background" << std::endl;
     std::cout << "\t--grayscale-first[=<true|false>]\t-- color and mixed modes only: convert the original image to grayscale" << std::endl;
     std::cout << "\t\t\t\t\t\t   before all other output steps, so that the output file is grayscale; default: false." << std::endl;
-    std::cout << "\t\t\t\t\t\t   --white-margins and --normalize-illumination reset it, so give it again with them." << std::endl;
+    std::cout << "\t\t\t\t\t\t   --white-margins, --normalize-illumination and the layer options reset it, so give it again with them." << std::endl;
     std::cout << "\t\t\t\t\t\t   With --pages, only the selected pages change." << std::endl;
     std::cout << "\t--threshold=<n>\t\t\t\t-- n<0 thinner, n>0 thicker; default: 0" << std::endl;
     std::cout << "\t--despeckle=<off|cautious|normal|aggressive>\n\t\t\t\t\t\t-- default: normal" << std::endl;
