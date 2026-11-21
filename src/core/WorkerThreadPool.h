@@ -61,6 +61,7 @@ private:
 
     QThreadPool* m_pPool;
     int m_numPendingTasks;
+    int m_ompThreads;
 };
 
 #endif
