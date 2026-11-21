@@ -145,6 +145,30 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `pages_straighten_pictures(project, pages)` | Nuotraukų puslapių kampas pagal spaudos stačiakampius |
 | `project_for_windows(project, relative?)` | /mnt/c keliai → C:/ Windows GUI arba reliatyvūs nuo projekto (paskutinis žingsnis per WSL) |
 
+## CLI parinktys, kurias naudoja st-mcp
+
+`--dump-masks=<katalogas>` po paleidimo kiekvienam puslapiui įrašo 4 filtro (select content) analizės kaukes.
+Su `--pages` įrašo tik pasirinktiems puslapiams.
+Failų vardai tokie patys kaip `--render-preview` ir išvesties TIFF:
+
+- `<puslapis>_content.png`: rašalas, kurį mato content box pritraukimas (`--content-snap`);
+- `<puslapis>_text.png`: rašalas, kurį `ContentBoxFinder` laiko tekstu;
+- `<puslapis>_garbage.png`: tamsios sritys, kurios liečia puslapio kraštą (šešėliai, skenavimo kraštai);
+- `<puslapis>.json`: puslapio duomenys ir transformacijos.
+
+JSON faile yra skeno failas, sub-page, paveikslėlio dydis, DPI ir pasukimas.
+Taip pat yra deskew kampas, crop sritis, page box ir content box.
+Transformacijos: `original_to_page`, `original_to_mask` ir `page_to_mask`.
+
+Kaukės yra 1 bito PNG, 150 DPI, baltas pikselis = nustatytas.
+
+Transformacija yra `QTransform` sąrašas `m11 m12 m21 m22 dx dy`: `x' = m11*x + m21*y + dx`, `y' = m12*x + m22*y + dy`.
+Kaukės pikselis `(x, y)` dengia kaukės koordinates nuo `(x, y)` iki `(x+1, y+1)`.
+Skeno pikselį gausite su atvirkštine `original_to_mask` transformacija.
+Jei puslapio kaukių nepavyko įrašyti, `--json-progress` duoda įvykį `warning` (`dump_masks_failed`), o darbas tęsiasi.
+`--start-filter=5 --end-filter=4` nepaleidžia jokio filtro, todėl kaukės tada daromos iš išsaugotų 4 filtro rezultatų.
+`check_pages(kind=content)` naudoja content kaukę, kai CLI turi šią parinktį.
+
 ## Kas jau patikrinta (2026-11-20, Onetti „Trumpas gyvenimas“, 300 DPI JPG)
 
 - CLI veikia headless, `--start-filter/--end-filter` leidžia etapus atskirai.

@@ -179,6 +179,19 @@ public:
     {
         return m_options.value("render-preview");
     }
+    // As with --render-preview, an option without a directory is an error that main() reports.
+    bool dumpMasksGiven() const
+    {
+        return contains("dump-masks");
+    }
+    bool hasDumpMasks() const
+    {
+        return contains("dump-masks") && !m_options["dump-masks"].isEmpty();
+    }
+    QString getDumpMasksDirectory() const
+    {
+        return m_options.value("dump-masks");
+    }
     bool hasRenderPreviewSize() const
     {
         return contains("render-preview-size");
