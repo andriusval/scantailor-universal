@@ -70,6 +70,7 @@ st-mcp pages_set_layout project=book.ScanTailor 'pages=["001","9999"]' margins_m
 st-mcp pages_set_output project=book.ScanTailor 'pages=["001","9999"]' color_mode=color dpi=300
 st-mcp run_stages project=book.ScanTailor start=4 end=6
 st-mcp export_summary project=book.ScanTailor
+st-mcp review_sheet project=book.ScanTailor                  # out/review/index.html
 st-mcp corrections_record original=book/agentas.orig.ScanTailor corrected=book/agentas.ScanTailor
 st-mcp corrections_stats
 ```
@@ -91,6 +92,17 @@ the Zweig book in `C:\nes\Serijos_HIGH`) and skip when it is not there.
 against the corrected project) to `~/.local/share/st-mcp/corrections.jsonl`,
 one JSON line per changed page parameter. `ST_CORRECTIONS_LOG` sets another
 file. `corrections_stats` counts them by category and by book.
+
+## Review sheet
+
+Some tools make decisions: cover, content box modes, snaps, picture deskew,
+page width, alignment, output mode and `check_pages` flags. They write each
+decision with a confidence (0 to 1) and a reason to
+`<output_dir>/review/decisions.json`.
+The agent adds its own decisions with `review_note`. `review_sheet` writes
+`<output_dir>/review/index.html` (one file with inline CSS, images in
+`review/thumbs/` with relative paths) and `review.json`. A decision below 0.6
+puts the page first, with the marker "CHECK IN GUI".
 
 ## Notes and known limits (P1)
 

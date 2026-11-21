@@ -16,7 +16,7 @@ CATEGORIES = ["page_removed", "page_added", "split", "rotation", "deskew_picture
 
 # The workflow step that each category points to, so that the statistics show which rule to improve.
 CATEGORY_RULE = {
-    "page_removed": "step 11: removal candidates (blank leaves, half-titles); the person removed the page",
+    "page_removed": "step 12: removal candidates (blank leaves, half-titles); the person removed the page",
     "page_added": "step 1: project_create missed a scan",
     "split": "step 2: layout of the scans (images_set_geometry)",
     "rotation": "step 2: orientation of the scans",

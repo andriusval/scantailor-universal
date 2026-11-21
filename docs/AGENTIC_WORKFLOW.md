@@ -102,18 +102,31 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    `export_summary`, patikrinti, ar visi teksto puslapiai vienodo dydžio
    (`pages_list(sort_by="content_width", descending=true)`). Peržiūrėti 8–16
    išvesties puslapių.
-10. `project_for_windows(project)`, jei apdorota per WSL — kad projektą
+10. **Peržiūros lapas:** `review_sheet(project)` įrašo
+    `out-agentas/review/index.html`. Puslapyje — kiekvieno išvesties
+    puslapio miniatiūra ir content box peržiūra kiekvienam puslapiui su
+    agento sprendimu. Kiekvienas sprendimas turi patikimumą ir priežastį.
+    Puslapiai su mažu patikimumu ar vėliava eina pirmi, su žyma
+    „CHECK IN GUI“. Įrankiai savo sprendimus įrašo į
+    `out-agentas/review/decisions.json`. Savo sprendimus (orientacija,
+    viršeliai, B/W paliekami iliustracijų puslapiai) įrašyti per
+    `review_note(project, pages, decision, reason, confidence)`. Lapą daryti
+    prieš `project_for_windows`, nes CLI peržiūroms reikia kelių, kuriuos CLI
+    gali atidaryti.
+11. `project_for_windows(project)`, jei apdorota per WSL — kad projektą
     atidarytų Windows GUI. Su šios šakos Windows buildu naudoti
     `relative=true`: tada projektas atsidaro ir WSL, ir Windows.
     Jis taip pat išsaugo `agentas.orig.ScanTailor` — baigto projekto kopiją.
     Išvalyti agento žurnalus ir paleidimų atsargines kopijas, bet niekada ne
     `.orig`: `project_diff(orig, pataisytas)` vėliau palygina jį su žmogaus
     pataisymais, kad rastume naujų taisyklių.
-11. Suvestinė: kas pakeista ir kodėl, iliustracijų sprendimai, kas liko
+12. Suvestinė: kas pakeista ir kodėl, iliustracijų sprendimai, kas liko
     žmogui (pvz. antspaudai ar dėmės tekste). Išvardyti `pages_align_auto`
     šalinimo kandidatus (tušti priešlapiai, titulinį kartojantis antraštinis
     lapas, beveik tušti puslapiai) ir peržiūros sąrašą (aukšti puslapiai su
     mažai eilučių: pasuktos lentelės) — nešalinti, sprendžia žmogus.
+    Išvardyti tikrintinus puslapius iš `review_sheet` (`to_check`) ir nurodyti
+    peržiūros lapo kelią. Suvestinę įrašyti į `out-agentas/review/report.md`.
 
 ## Pataisymų žurnalas
 
@@ -169,6 +182,8 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?)` | `output` |
 | `check_pages(project, pages, kind=content\|pictures)` | Heuristikos su įrodymais |
 | `export_summary(project)` | Išvesties TIFF sąrašas ir kas trūksta |
+| `review_note(project, pages, decision, reason?, confidence?, topic?)` | Įrašo agento sprendimą peržiūros lapui |
+| `review_sheet(project, pages?, thumb_px?, engine?)` | Įrašo `out-agentas/review/index.html`: miniatiūros, sprendimai su patikimumu, abejotini puslapiai pirmi |
 | `pages_straighten_pictures(project, pages)` | Nuotraukų puslapių kampas pagal spaudos stačiakampius |
 | `project_for_windows(project, relative?)` | /mnt/c keliai → C:/ Windows GUI arba reliatyvūs nuo projekto (paskutinis žingsnis per WSL) |
 

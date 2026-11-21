@@ -19,9 +19,9 @@ from pathlib import Path
 
 from PIL import Image
 
-from . import checks, corrections
+from . import checks, corrections, review
 from .preview import contact_sheet, render_image, render_page
-from .project import Project
+from .project import COLOR_MODES, Project
 
 STAGES = {1: "fix_orientation", 2: "page_split", 3: "deskew", 4: "select_content",
           5: "page_layout", 6: "output"}
@@ -434,6 +434,10 @@ def pages_snap_content(project: str, pages: str | list[str], sides: str | list[s
     if any(";" in r for r in reqs):
         raise ValueError("an image file name contains ';', which --content-snap cannot pass")
     snapped_ids = [p.find_page(x["page"]).id for x in plan]
+    with review.Notes(p) as notes:
+        for x in plan:
+            notes.add(x["page"], "content", "edges snapped to the text: " + ", ".join(s["side"] for s in x["snaps"]),
+                      0.75, "junk at the box sides (check_pages)")
     res = run_stages(project, 4, 5, content_snap=";".join(reqs), wait_s=wait_s, pages=snapped_ids)
     res.update({"snapped": plan, "skipped": skipped,
                 "next": "when the job is done: pages_preview on these pages; check_pages(kind=content)"})
@@ -660,6 +664,7 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
     p = Project(proj)
     pg = p.find_page(page)
     before = p.content(pg.id)
+    note = None
     if mode == "auto":
         p.set_content(pg.id, None)
     elif mode == "empty":
@@ -719,6 +724,12 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
             raise ValueError(f"resulting box is empty: {rect}")
         p.set_content(pg.id, rect)
     p.save()
+    with review.Notes(p) as notes:
+        if mode == "auto":
+            notes.clear([pg.label], "content")
+        else:
+            conf, why = _content_confidence(mode, pg, before, rect if mode != "empty" else None, note)
+            notes.add(pg.label, "content", f"content box: {mode}", conf, why)
     res = {"page": pg.label, "before": before.get("content_rect_px"),
            "after": Project(proj).content(pg.id).get("content_rect_px"), "mode": mode,
            "next": "run_stages(4, 5) to propagate"}
@@ -733,6 +744,24 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
             msgs.append(f"trimmed but widened for a single overhanging line: {', '.join(widened)}")
         res["warning"] = "; ".join(msgs) + "; check the preview"
     return res
+
+
+# Modes that find a clear edge or band get a higher confidence than the modes that only guess.
+def _content_confidence(mode: str, pg, before: dict, rect: dict | None, kept) -> tuple[float, str]:
+    pr = before.get("page_rect_px") or {}
+    if mode == "cover" and rect and pr:
+        frac = rect["width"] * rect["height"] / max(1.0, pr["width"] * pr["height"])
+        if frac > 0.97:
+            return 0.5, "no clear cover edge: the box covers almost the whole scan"
+        return 0.8, "cover found on the darker scanner background"
+    if mode == "tighten":
+        return (0.5, f"sides kept or widened: {', '.join(dict.fromkeys(kept))}") if kept else \
+            (0.8, "box fitted to the text block")
+    return {"include_numbers": (0.8, "page number band found outside the box"),
+            "all_content": (0.7, "box around all printed parts of a picture page"),
+            "empty": (0.75, "blank leaf: only specks or bleed-through"),
+            "full": (0.8, "whole page, set from a preview"),
+            "manual": (0.8, "set by the agent from a preview")}.get(mode, (0.7, ""))
 
 
 def pages_set_layout(project: str, pages: str | list[str] = "all", margins_mm: float | None = None,
@@ -807,6 +836,15 @@ def pages_fit_width(project: str, margin_mm: float = 10.0, percentile: float = 8
         if lr != margin_mm:
             changed.append({"page": p.page(pid).label, "content_width_mm": w, "left_right_mm": lr})
     p.save()
+    with review.Notes(p) as notes:
+        notes.clear([p.page(pid).label for pid, _ in body], "page_width")
+        for c in changed:
+            if c["left_right_mm"] == 0:
+                notes.add(c["page"], "page_width", "side margins 0", 0.4,
+                          f"content {c['content_width_mm']} mm is wider than the page width {typical} mm + margins")
+            else:
+                notes.add(c["page"], "page_width", f"side margins {c['left_right_mm']} mm", 0.65,
+                          f"content {c['content_width_mm']} mm, wider than the typical {typical} mm")
     return {"typical_width_mm": typical, "skipped_no_page_layout": no_layout, "page_width_mm": round(typical + 2 * margin_mm, 1),
             "median_width_mm": statistics.median(widths), "narrowed_margins": changed,
             "next": "run_stages(5, 5), then pages_list(sort_by='content_width') to confirm one page size"}
@@ -909,6 +947,22 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
         p.set_layout(pid, None, align, None, None)
     p.save()
     blank = [pg.label for pg in p.pages if p.content(pg.id).get("empty")]
+    align_conf = {"vcenter": ("vcenter", 0.7, "front matter"), "top_small_header": ("top", 0.6, "small element at the top of front matter"),
+                  "bottom_section_start": ("bottom", 0.6, "section start: the text starts lower than usual"),
+                  "vcenter_small_block": ("vcenter", 0.4, "small block lower than usual: part title or specks?"),
+                  "top_short": ("top", 0.8, "short page"),
+                  "top_no_number_band": ("top", 0.6, "full text page without the page-number band")}
+    with review.Notes(p) as notes:
+        notes.clear([p.page(pid).label for pid, _ in body], "alignment")
+        notes.clear([p.page(pid).label for pid, _ in body] + blank, "removal")
+        for key, (al, conf, why) in align_conf.items():
+            for lab in decided[key]:
+                notes.add(lab, "alignment", f"align {al}", conf, why)
+        for lab in full_few_lines:
+            notes.add(lab, "alignment", "align bottom", 0.4, "full height with few text lines: a rotated table?")
+        for lab, why in ([(x, "blank page") for x in blank] + [(x, "half-title candidate") for x in half_titles]
+                         + [(x, "near-empty page: specks or a stamp?") for x in near_empty]):
+            notes.add(lab, "removal", "removal candidate (not removed)", 0.4, why)
     return {"median_height_mm": med_h, "median_text_lines": med_lines, **decided,
             "skipped_no_page_layout": no_layout,
             "review": {"full_height_few_lines": full_few_lines,
@@ -939,6 +993,15 @@ def pages_set_output(project: str, pages: str | list[str], color_mode: str | Non
     for i in ids:
         p.set_output(i, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color, fill_offcut)
     p.save()
+    # A B/W page is the default, so only the other output modes are decisions for the review.
+    if color_mode is not None and COLOR_MODES.get(color_mode, color_mode) != "bw":
+        with review.Notes(p) as notes:
+            for i in ids:
+                o = p.output(i)
+                notes.add(p.page(i).label, "output", f"{o.get('color_mode')} {o.get('dpi')} DPI"
+                          + (", white margins" if o.get("white_margins") else "")
+                          + (", equalize illumination" if o.get("equalize_illumination") else ""), 0.8,
+                          "picture page or cover")
     return {"updated_pages": len(ids), "color_mode": color_mode, "dpi": dpi, "despeckle": despeckle,
             "white_margins": white_margins, "equalize_illumination": equalize_illumination,
             "filling_color": filling_color, "fill_offcut": fill_offcut}
@@ -957,6 +1020,16 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
         flagged = [r for r in res if r["picture_fraction"] > 0.05 or r["line_art_fraction"] > 0.01]
         for r in flagged:
             r["likely"] = "grayscale" if r["picture_fraction"] > 0.05 else "line_art"
+        with review.Notes(p) as notes:
+            notes.clear([p.page(i).label for i in ids], "pictures")
+            for r in flagged:
+                if r["likely"] == "grayscale":
+                    conf = 0.8 if r["picture_fraction"] > 0.15 else 0.55
+                    why = f"grayscale area {r['picture_fraction']:.0%} of the page"
+                else:
+                    conf = 0.75 if r["line_art_fraction"] > 0.03 else 0.5
+                    why = f"line art {r['line_art_fraction']:.1%} of the page"
+                notes.add(p.page(r["page_id"]).label, "pictures", f"picture page: {r['likely']}", conf, why)
         return {"checked": len(res), "flagged": flagged,
                 "rule": "preview each: grayscale illustrations (photos, halftones) -> color_mode=color, "
                         "white_margins=true, equalize_illumination=true; black-and-white line art -> keep bw 600"}
@@ -964,6 +1037,12 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
         raise ValueError("kind must be content|pictures")
     res = [checks.check_page(p, i) for i in ids]
     flagged = [r for r in res if r.get("findings")]
+    with review.Notes(p) as notes:
+        notes.clear([p.page(i).label for i in ids], "check_content")
+        for r in flagged:
+            kinds = list(dict.fromkeys(f["kind"] for f in r["findings"]))
+            notes.add(p.page(r["page_id"]).label, "check_content", "flagged: " + ", ".join(kinds), 0.5,
+                      "; ".join(dict.fromkeys(f.get("hint", "") for f in r["findings"] if f.get("hint")))[:200])
     pos = [r.get("page_number_in_box") for r in res if r.get("page_number_in_box")]
     summary = {k: pos.count(k) for k in set(pos)}
     return {"checked": len(res), "flagged": flagged,
@@ -981,6 +1060,89 @@ def export_summary(project: str) -> dict:
             "total_mb": round(sum(f.stat().st_size for f in files.values()) / 1e6, 1)}
 
 
+def review_note(project: str, pages: str | list[str], decision: str, reason: str = "",
+                confidence: float = 0.7, topic: str = "agent") -> dict:
+    """Record a decision of your own for the review sheet (e.g. orientation, a cover choice, a picture
+    page kept B/W): confidence 0..1, a short reason. Below 0.6 the page gets "check in the GUI".
+    Tools note their own decisions already; a new note with the same topic replaces the old one.
+    Stored in <output_dir>/review/decisions.json."""
+    p = _proj(project)
+    labels = [p.page(i).label for i in _resolve_pages(p, pages)]
+    with review.Notes(p) as notes:
+        for lab in labels:
+            notes.add(lab, topic, decision, confidence, reason)
+    return {"pages": labels, "file": str(review.decisions_path(p))}
+
+
+def review_sheet(project: str, pages: str | list[str] = "all", thumb_px: int = 320,
+                 engine: str = "auto", max_previews: int = 150) -> dict:
+    """Write the review sheet <output_dir>/review/index.html (one self-contained page, relative image
+    paths, opens from Windows): a thumbnail of each output TIFF, and for pages with agent decisions also
+    the content box preview. Pages with low confidence or flags come first, with "CHECK IN GUI".
+    Run it after run_stages(4, 6), before project_for_windows (the CLI previews need paths it can open;
+    otherwise st-mcp draws them). engine: auto|cli|python for the content box previews.
+    Returns the pages to check: list them in the final report."""
+    p = _proj(project)
+    rdir = review.review_dir(p)
+    tdir = rdir / "thumbs"
+    tdir.mkdir(parents=True, exist_ok=True)
+    data = review.load(p)
+    ids = _resolve_pages(p, pages)
+    entries = []
+    for i in ids:
+        pg = p.page(i)
+        notes = data["pages"].get(pg.label, {})
+        decs = sorted(({"source": k, **v} for k, v in notes.items()), key=lambda d: d["confidence"])
+        entries.append({"id": i, "index": pg.index, "label": pg.label, "output_name": p.output_name(i),
+                        "decisions": decs, "check": any(d["check"] for d in decs),
+                        "min_confidence": min((d["confidence"] for d in decs), default=1.0)})
+    n_out = 0
+    for e in entries:
+        tif = p.output_dir / (e["output_name"] + ".tif")
+        dst = tdir / (e["output_name"] + ".out.jpg")
+        if tif.exists() and review._output_thumb(tif, dst, thumb_px):
+            e["out_thumb"] = f"thumbs/{dst.name}"
+            n_out += 1
+    want = [e for e in entries if e["decisions"]][:max_previews]
+    used = "none"
+    if want:
+        imgs: dict = {}
+        if engine != "python":
+            # With engine=auto, a CLI error only means that st-mcp draws the previews itself.
+            try:
+                if _use_cli_preview(engine):
+                    imgs = _cli_previews(p, [e["id"] for e in want], thumb_px * 2)
+                    used = "cli"
+            except (RuntimeError, FileNotFoundError):
+                if engine == "cli":
+                    raise
+        for e in want:
+            im = imgs.get(e["id"])
+            if im is None:
+                try:
+                    im = render_page(p, e["id"], max_px=thumb_px * 2)
+                    used = "python" if used == "none" else used.replace("+python", "") + "+python"
+                except (OSError, KeyError, RuntimeError):
+                    continue
+            dst = tdir / (e["output_name"] + ".box.jpg")
+            review._save_preview(im, dst, thumb_px)
+            e["box_thumb"] = f"thumbs/{dst.name}"
+    entries.sort(key=lambda e: (not e["check"], not e["decisions"], e["min_confidence"], e["index"]))
+    index = rdir / "index.html"
+    review.write_html(index, p.path.stem, entries, review.win_path(p.path))
+    to_check = [{"page": e["label"], "why": [f"{d['source']}: {d['decision']} ({d['reason']})"
+                                             for d in e["decisions"] if d["check"]]}
+                for e in entries if e["check"]]
+    (rdir / "review.json").write_text(json.dumps({"project": str(p.path), "to_check": to_check,
+                                                  "pages": [{k: e[k] for k in ("label", "check", "min_confidence",
+                                                                                "decisions")} for e in entries]},
+                                                 ensure_ascii=False, indent=1), encoding="utf-8")
+    return {"html": str(index), "windows_path": review.win_path(index), "pages": len(entries),
+            "with_decisions": sum(1 for e in entries if e["decisions"]), "to_check": to_check[:60],
+            "to_check_count": len(to_check), "output_thumbnails": n_out, "preview_engine": used,
+            "next": "list the pages to check in the final report, with the path of the review sheet"}
+
+
 def pages_straighten_pictures(project: str, pages: str | list[str], min_change: float = 0.25) -> dict:
     """Picture pages (photos, plates): ScanTailor deskews by text lines, which photos do not have, so it
     can tilt them by several degrees. Re-measures the skew from the printed rectangles' edges and sets
@@ -996,6 +1158,12 @@ def pages_straighten_pictures(project: str, pages: str | list[str], min_change: 
             p.set_deskew(i, old - res)
             changed.append({"page": p.page(i).label, "angle_before": round(old, 3), "angle_after": round(old - res, 3)})
     p.save()
+    with review.Notes(p) as notes:
+        for c in changed:
+            big = abs(c["angle_after"] - c["angle_before"]) > 2.0
+            notes.add(c["page"], "deskew", f"picture deskew {c['angle_before']} -> {c['angle_after']} deg",
+                      0.5 if big else 0.75,
+                      "large change: check that the picture is straight" if big else "from the picture edges")
     return {"changed": changed, "next": "run_stages(3, 5), then page_set_content(mode=all_content) on these pages"}
 
 
@@ -1147,5 +1315,5 @@ def workflow_guide() -> dict:
 
 TOOLS = [project_create, project_for_windows, project_diff, corrections_record, corrections_stats, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
          pages_preview, image_preview, page_set_content, pages_snap_content, pages_set_layout, pages_fit_width, pages_align_auto, pages_set_output,
-         check_pages, export_summary, workflow_guide]
+         check_pages, export_summary, review_note, review_sheet, workflow_guide]
 IMAGE_TOOLS = {"page_preview", "pages_preview", "image_preview"}
