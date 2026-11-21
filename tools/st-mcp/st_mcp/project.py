@@ -245,6 +245,7 @@ class Project:
             "despeckle": p.get("despeckleLevel"),
             "white_margins": _cg(cp, "whiteMargins"),
             "equalize_illumination": _cg(cp, "normalizeIllumination"),
+            "output_rotation": int(p.get("outputRotation", "0")),
         }
 
     # ------------------------------------------------------------------ write
@@ -303,7 +304,7 @@ class Project:
     def set_output(self, page_id: str, color_mode: str | None = None, dpi: int | None = None,
                    despeckle: str | None = None, white_margins: bool | None = None,
                    equalize_illumination: bool | None = None, filling_color: str | None = None,
-                   fill_offcut: bool | None = None) -> None:
+                   fill_offcut: bool | None = None, output_rotation: int | None = None) -> None:
         p = self._page_params("output", page_id)
         if p is None:
             raise RuntimeError(f"page {page_id}: output params missing (run stages 1-5 first)")
@@ -315,6 +316,14 @@ class Project:
             d = p.find("dpi")
             d.set("horizontal", str(int(dpi)))
             d.set("vertical", str(int(dpi)))
+        if output_rotation is not None:
+            if output_rotation not in (0, 90, 180, 270):
+                raise ValueError("output_rotation must be 0, 90, 180 or 270")
+            # ScanTailor writes the attribute only for a rotation, so that other projects stay the same.
+            if output_rotation:
+                p.set("outputRotation", str(output_rotation))
+            else:
+                p.attrib.pop("outputRotation", None)
         if despeckle is not None:
             if despeckle not in ("off", "cautious", "normal", "aggressive"):
                 raise ValueError("despeckle must be off|cautious|normal|aggressive")

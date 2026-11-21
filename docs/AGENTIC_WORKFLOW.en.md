@@ -77,6 +77,14 @@ GUI.
      `pages_set_output(color_mode="color", dpi=300, white_margins=true,
      equalize_illumination=true)` and
      `pages_set_layout(<picture pages>, margin_left=0, margin_right=0)`.
+   - a table or picture printed sideways (`check_pages` finding
+     `text_runs_vertically`) → keep the book orientation in stages 1–5.
+     Then deskew, the content box, the margins and the page size stay the
+     same as on the other pages. Preview the page and set
+     `pages_set_output(<pages>, output_rotation=270)` when the text lines run
+     from top to bottom, or `output_rotation=90` when they run from bottom to
+     top. Only the output TIFF turns (CLI `--output-rotate`, clockwise), and
+     with 90 or 270 it is landscape. Then run stage 6 on these pages.
 6. **Covers and endpapers:** `page_set_content(mode="cover")`, then
    `pages_set_layout(margins_mm=0, match_size=false)` and
    `pages_set_output(color_mode="color", dpi=300)`. The cover mode also finds
@@ -139,8 +147,8 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `project_diff(original, corrected)` | Per-page differences between the agent's project and a corrected one |
 | `pages_fit_width(project, margin_mm?, percentile?)` | One page width: smaller side margins for pages wider than the typical text block |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertical alignment for all body pages, plus removal candidates for the report |
-| `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?)` | `output` |
-| `check_pages(project, pages, kind=content\|pictures)` | Heuristics with evidence |
+| `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?, output_rotation?)` | `output`; `output_rotation` (0/90/180/270, clockwise) turns only the output TIFF (CLI `--output-rotate`) |
+| `check_pages(project, pages, kind=content\|pictures)` | Heuristics with evidence; `text_runs_vertically` marks sideways tables |
 | `export_summary(project)` | Output TIFF list and anything missing |
 | `pages_straighten_pictures(project, pages)` | Re-measure skew of photo pages from the printed rectangles |
 | `project_for_windows(project, relative?)` | Write /mnt/c paths as C:/ for the Windows GUI, or as paths relative to the project (last step under WSL) |
@@ -154,7 +162,10 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
   - margins: `page-layout/page/params/hardMarginsMM` (mm);
   - alignment: `page-layout/.../alignment@vert,@hor`;
   - *Match size with other pages* off = `alignment@null="1"`;
-  - colour mode / DPI: `output/page/params/color-params@colorMode`, `dpi`.
+  - colour mode / DPI: `output/page/params/color-params@colorMode`, `dpi`;
+  - output rotation: `output/page/params@outputRotation` (clockwise degrees;
+    a missing attribute is 0). CLI: `--output-rotate=<0|90|180|270>`, together
+    with `--pages` for single pages.
 - Default settings do not fit this book: scans are rotated 90° (needs
   `orientation=right, layout=2`). Without a preview the agent would not notice.
 - The CLI reads DPI from the JPGs; `--dpi` only matters when it is missing.

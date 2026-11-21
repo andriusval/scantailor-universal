@@ -79,6 +79,15 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
      šešėlio), tada `pages_set_output(color_mode="color", dpi=300,
      white_margins=true, equalize_illumination=true)` ir
      `pages_set_layout(<nuotraukų puslapiai>, margin_left=0, margin_right=0)`.
+   - šonu išspausdinta lentelė ar iliustracija (`check_pages` radinys
+     `text_runs_vertically`) → 1–5 etapuose palikti knygos orientaciją, kad
+     tiesinimas, content box, paraštės ir puslapio dydis liktų tokie pat kaip
+     kitų puslapių. Peržiūrėti puslapį ir nustatyti
+     `pages_set_output(<puslapiai>, output_rotation=270)`, kai teksto eilutės
+     eina iš viršaus į apačią, arba `output_rotation=90`, kai iš apačios į
+     viršų. Pasukamas tik išvesties TIFF (CLI `--output-rotate`, pagal
+     laikrodžio rodyklę); su 90 ar 270 jis gulsčias. Tada šiems puslapiams
+     paleisti 6 etapą.
 6. **Viršeliai ir priešlapiai:** `page_set_content(mode="cover")` (randa ir
    tamsius viršelius ant juodo fono; kiekvieną kraštą pritraukia prie viršelio
    krašto ir dar 1 mm į vidų, kad nesimatytų fono), `pages_set_layout(margins_mm=0,
@@ -139,8 +148,8 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `project_diff(original, corrected)` | Skirtumai tarp agento projekto ir žmogaus pataisyto, puslapiais |
 | `pages_fit_width(project, margin_mm?, percentile?)` | Vienas puslapio plotis: mažesnės šoninės paraštės už tipinį teksto bloką platesniems puslapiams |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertikalus lygiavimas visiems teksto puslapiams ir šalinimo kandidatai ataskaitai |
-| `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?)` | `output` |
-| `check_pages(project, pages, kind=content\|pictures)` | Heuristikos su įrodymais |
+| `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?, output_rotation?)` | `output`; `output_rotation` (0/90/180/270, pagal laikrodžio rodyklę) pasuka tik išvesties TIFF (CLI `--output-rotate`) |
+| `check_pages(project, pages, kind=content\|pictures)` | Heuristikos su įrodymais; `text_runs_vertically` žymi šonu išspausdintas lenteles |
 | `export_summary(project)` | Išvesties TIFF sąrašas ir kas trūksta |
 | `pages_straighten_pictures(project, pages)` | Nuotraukų puslapių kampas pagal spaudos stačiakampius |
 | `project_for_windows(project, relative?)` | /mnt/c keliai → C:/ Windows GUI arba reliatyvūs nuo projekto (paskutinis žingsnis per WSL) |
@@ -154,7 +163,10 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
   - paraštės: `page-layout/page/params/hardMarginsMM` (mm);
   - lygiavimas: `page-layout/.../alignment@vert,@hor`;
   - *Match size with other pages* išjungta = `alignment@null="1"`;
-  - spalvų režimas / DPI: `output/page/params/color-params@colorMode`, `dpi`.
+  - spalvų režimas / DPI: `output/page/params/color-params@colorMode`, `dpi`;
+  - išvesties pasukimas: `output/page/params@outputRotation` (laipsniai pagal
+    laikrodžio rodyklę; nėra atributo = 0). CLI: `--output-rotate=<0|90|180|270>`,
+    pavieniams puslapiams kartu su `--pages`.
 - Numatyti nustatymai šiai knygai netinka: skenai pasukti 90° (reikia
   `orientation=right, layout=2`). Be peržiūros agentas to nepastebėtų.
 - CLI DPI nuskaito iš JPG; `--dpi` reikalingas tik kai jo nėra.

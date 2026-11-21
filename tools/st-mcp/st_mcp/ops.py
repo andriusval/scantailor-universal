@@ -924,24 +924,29 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
 def pages_set_output(project: str, pages: str | list[str], color_mode: str | None = None, dpi: int | None = None,
                      despeckle: str | None = None, white_margins: bool | None = None,
                      equalize_illumination: bool | None = None, filling_color: str | None = None,
-                     fill_offcut: bool | None = None) -> dict:
+                     fill_offcut: bool | None = None, output_rotation: int | None = None) -> dict:
     """Output mode per page. color_mode: bw | color (=color/grayscale) | mixed.
     Text and pages with black-and-white line illustrations: bw 600. Pages with grayscale (halftone/photo)
     illustrations: color, white_margins=true, equalize_illumination=true. Covers: color 300.
     white_margins / equalize_illumination are the GUI's Color/Grayscale checkboxes.
     filling_color (background|white|black) fills the area outside the page; fill_offcut also fills the
     area beyond the split line (only without white margins). Both need a ScanTailor build from branch
-    agentic/windows-build; older builds ignore them."""
+    agentic/windows-build; older builds ignore them.
+    output_rotation (0|90|180|270, clockwise) turns only the final output TIFF, for a table or picture
+    printed sideways: text lines that run top-to-bottom need 270, bottom-to-top need 90. Stages 1-5 keep
+    the book orientation; with 90/270 the TIFF is landscape. Run stage 6 on these pages afterwards.
+    Needs a ScanTailor build with the CLI option --output-rotate."""
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
     ids = _resolve_pages(p, pages)
     for i in ids:
-        p.set_output(i, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color, fill_offcut)
+        p.set_output(i, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color, fill_offcut,
+                     output_rotation)
     p.save()
     return {"updated_pages": len(ids), "color_mode": color_mode, "dpi": dpi, "despeckle": despeckle,
             "white_margins": white_margins, "equalize_illumination": equalize_illumination,
-            "filling_color": filling_color, "fill_offcut": fill_offcut}
+            "filling_color": filling_color, "fill_offcut": fill_offcut, "output_rotation": output_rotation}
 
 
 def check_pages(project: str, pages: str | list[str] = "all", kind: str = "content") -> dict:
