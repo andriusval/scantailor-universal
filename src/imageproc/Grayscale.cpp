@@ -129,9 +129,13 @@ static QImage rgbToGrayscale(QImage const& src)
         throw std::bad_alloc();
     }
 
+    // QImage::scanLine() on a non-const image calls detach(), which is not thread-safe.
+    uint8_t* const dst_data = dst.bits();
+    int const dst_bpl = dst.bytesPerLine();
+
     #pragma omp parallel for
     for (int y = 0; y < height; ++y) {
-        uint8_t* dst_line = dst.scanLine(y);
+        uint8_t* dst_line = dst_data + y * dst_bpl;
         const QRgb* src_line = reinterpret_cast<const QRgb*>(src.scanLine(y));
         for (int x = 0; x < width; ++x) {
             dst_line[x] = static_cast<uint8_t>(qGray(*src_line++));
@@ -156,10 +160,11 @@ static QImage anyToGrayscale(QImage const& src)
     }
 
     int const dst_bpl = dst.bytesPerLine();
+    uint8_t* const dst_data = dst.bits();
 
     #pragma omp parallel for
     for (int y = 0; y < height; ++y) {
-        uint8_t* dst_line = dst.bits() + y * dst_bpl;
+        uint8_t* dst_line = dst_data + y * dst_bpl;
         for (int x = 0; x < width; ++x) {
             dst_line[x] = static_cast<uint8_t>(qGray(src.pixel(x, y)));
         }
