@@ -154,10 +154,10 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
     viršeliai, B/W paliekami iliustracijų puslapiai) įrašyti per
     `review_note(project, pages, decision, reason, confidence)`. Lapą daryti
     prieš `project_for_windows`, nes CLI peržiūroms reikia kelių, kuriuos CLI
-    gali atidaryti. Įspėjimai „a rotated table?“ (`pages_align_auto`) ir
-    `text_runs_vertically` (`check_pages`) nuimami, kai orientacijos
-    detektorius output faile randa stačią tekstą (`upright_confirmed`).
-    Puslapis, kuriame teksto detektoriui per mažai, lieka sąraše.
+    gali atidaryti. Įspėjimas „a rotated table?“ (`pages_align_auto`)
+    nuimamas, kai orientacijos detektorius output faile randa stačią tekstą
+    (`upright_confirmed`). Puslapis, kuriame teksto detektoriui per mažai,
+    arba su `check_pages` radiniu `text_runs_vertically`, lieka sąraše.
 11. `project_for_windows(project)`, jei apdorota per WSL — kad projektą
     atidarytų Windows GUI. Su šios šakos Windows buildu naudoti
     `relative=true`: tada projektas atsidaro ir WSL, ir Windows.
