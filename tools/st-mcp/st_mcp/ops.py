@@ -981,22 +981,73 @@ def export_summary(project: str) -> dict:
             "total_mb": round(sum(f.stat().st_size for f in files.values()) / 1e6, 1)}
 
 
+# The CLI finds the angle only for pages without deskew parameters, so it runs on a copy without them.
+def _cli_picture_angles(p: Project, proj: Path, ids: list[str]) -> dict[str, float]:
+    names = [im.path.name for im in p.images.values()]
+    ids = [i for i in ids if names.count(p.page(i).image.path.name) == 1]
+    if not ids:
+        return {}
+    tmp = proj.with_name(proj.stem + ".deskew-pictures" + proj.suffix)
+    shutil.copy2(proj, tmp)
+    try:
+        t = Project(tmp)
+        for i in ids:
+            t.clear_deskew(i)
+        t.save()
+        cmd = [find_cli(), "--deskew-pictures", "--json-progress", "--start-filter=3", "--end-filter=3",
+               "--pages=" + ";".join(_page_ref(t, tmp, t.page(i)) for i in ids),
+               f"--output-project={tmp}", str(tmp), str(p.output_dir)]
+        r = subprocess.run(cmd, capture_output=True, env=cli_env(), text=True, encoding="utf-8", errors="replace")
+    finally:
+        for f in (tmp, tmp.with_suffix(tmp.suffix + ".bak")):
+            f.unlink(missing_ok=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"CLI --deskew-pictures failed: {r.stderr.strip()[-500:]}")
+    key = {(p.page(i).image.path.name, p.page(i).image.file_page, p.page(i).side): i for i in ids}
+    angles = {}
+    for line in r.stdout.splitlines():
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if ev.get("event") != "page_done" or ev.get("estimator") != "picture":
+            continue
+        i = key.get((ev.get("image"), ev.get("image_page", 0), ev.get("side")))
+        if i is not None:
+            angles[i] = float(ev["angle"])
+    return angles
+
+
 def pages_straighten_pictures(project: str, pages: str | list[str], min_change: float = 0.25) -> dict:
     """Picture pages (photos, plates): ScanTailor deskews by text lines, which photos do not have, so it
-    can tilt them by several degrees. Re-measures the skew from the printed rectangles' edges and sets
-    a manual deskew angle. Afterwards run_stages(3, 5), then page_set_content(mode=all_content)."""
+    can tilt them by several degrees. Re-measures the skew from the edges of the printed pictures (with
+    the CLI option --deskew-pictures when the CLI has it, else in Python) and sets a manual deskew angle.
+    Afterwards run_stages(3, 5), then page_set_content(mode=all_content)."""
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
+    ids = _resolve_pages(p, pages)
+    cli_angles = {}
+    if _cli_supports("deskew-pictures"):
+        _check_inputs_reachable(p, find_cli())
+        cli_angles = _cli_picture_angles(p, proj, ids)
     changed = []
-    for i in _resolve_pages(p, pages):
-        res = checks.picture_skew(p, i)
-        if res is not None and abs(res) >= min_change:
-            old = p.deskew_angle(i)
-            p.set_deskew(i, old - res)
-            changed.append({"page": p.page(i).label, "angle_before": round(old, 3), "angle_after": round(old - res, 3)})
+    for i in ids:
+        old = p.deskew_angle(i)
+        if i in cli_angles:
+            new, method = cli_angles[i], "cli"
+        else:
+            res = checks.picture_skew(p, i)
+            if res is None:
+                continue
+            new, method = old - res, "python"
+        if abs(new - old) >= min_change:
+            p.set_deskew(i, new)
+            changed.append({"page": p.page(i).label, "angle_before": round(old, 3), "angle_after": round(new, 3),
+                            "method": method})
     p.save()
-    return {"changed": changed, "next": "run_stages(3, 5), then page_set_content(mode=all_content) on these pages"}
+    return {"changed": changed, "measured_by_cli": len(cli_angles), "measured_in_python": len(ids) - len(cli_angles),
+            "next": "run_stages(3, 5), then page_set_content(mode=all_content) on these pages"}
 
 
 # The copy always holds the last finished run, so that project_diff shows only the corrections of the person.

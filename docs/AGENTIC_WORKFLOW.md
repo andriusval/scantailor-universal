@@ -79,6 +79,8 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
      šešėlio), tada `pages_set_output(color_mode="color", dpi=300,
      white_margins=true, equalize_illumination=true)` ir
      `pages_set_layout(<nuotraukų puslapiai>, margin_left=0, margin_right=0)`.
+     Jei CLI turi `--deskew-pictures`, įrankis kampą matuoja pagal nuotraukos
+     kraštus C++ kode.
 6. **Viršeliai ir priešlapiai:** `page_set_content(mode="cover")` (randa ir
    tamsius viršelius ant juodo fono; kiekvieną kraštą pritraukia prie viršelio
    krašto ir dar 1 mm į vidų, kad nesimatytų fono), `pages_set_layout(margins_mm=0,
