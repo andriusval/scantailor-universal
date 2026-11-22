@@ -1116,7 +1116,8 @@ def pages_set_output(project: str, pages: str | list[str], color_mode: str | Non
     is 8-bit gray; "auto" does it only when the picture has no color (check_pages(kind="grayscale")
     shows the measurement; job_status gives the stage 6 result in grayscale_auto). No effect in bw mode.
     filling_color (background|white|black) fills the area outside the page; fill_offcut also fills the
-    area beyond the split line (only without white margins). filling_color and fill_offcut need a
+    area beyond the split line (only without white margins). Both work only in color mode; mixed mode
+    ignores them. filling_color and fill_offcut need a
     ScanTailor build from branch agentic/windows-build, and grayscale_first (true|false|auto) needs a
     build with --grayscale-first; older builds ignore them and write RGB.
     output_rotation (0|90|180|270, clockwise) turns only the final output TIFF, for a table or picture
