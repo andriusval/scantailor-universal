@@ -100,6 +100,9 @@ detectOrientation(QString const& list_file)
         if (exif >= 0) {
             ev["exif_rotation"] = exif;
         }
+        if (result.shapeAxis() >= 0) {
+            ev["shape_axis"] = result.shapeAxis();
+        }
         ConsoleBatch::printJsonLine(ev);
     }
     return 0;
