@@ -79,16 +79,29 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    - tuščias lapas, kuriame aptiktos tik dulkės ar persišviečiantis tekstas →
      `mode="empty"`;
    - `ink_left/right_of_box` „lines may be cut off“ → peržiūrėti; jei tikra —
-     praplėsti.
+     praplėsti;
+   - tada `pages_fit_text_column(project)`. Teksto stulpelis yra teksto
+     puslapių pločio mediana. Platesniems rėmams kairysis ir dešinysis
+     kraštai perkeliami į stulpelio kraštus: pieštuko žymės, antspaudai ir
+     inventoriaus numeriai paraštėje lieka už rėmo, o brūkšneliai eilučių
+     galuose lieka viduje. Peržiūrėti puslapius su dideliu nukirpimu
+     (pastaba peržiūrai) ir `taller_pages`: aukštesniame rėme dažniausiai
+     yra antspaudas ar žymė virš teksto ar po juo. Juos taisyti
+     `mode="manual"`.
 5. **Puslapiai su iliustracijomis:** `check_pages(kind="pictures")`; peržiūrėti
-   kiekvieną pažymėtą (padidinus iliustraciją):
+   kiekvieną pažymėtą (padidinus iliustraciją). `all_content` rėmas neapima
+   plonų juostų prie lapo kraštų, nugarėlės šešėlio ir popieriaus po parašu.
+   - `deskew_disagree` išvardija puslapius, kuriuose teksto eilutės ir
+     paveikslas (ar lapo kraštai) duoda kampus, besiskiriančius daugiau kaip
+     0,5°. Kiekvieną peržiūrėti ir nustatyti kampą, kuriuo puslapis atrodo
+     tiesus. 4 knygų pataisymuose žmogus kiekvieną kartą rinkosi paveikslo
+     ar lapo krašto kampą;
    - juodai baltos linijos (graviūros, piešiniai, žemėlapiai) → Output
      **B/W 600**;
    - nuotraukos, rastras ir spalvoti įklijai →
      `pages_straighten_pictures` (ScanTailor tiesina pagal teksto eilutes ir
      nuotraukas gali pakreipti), `run_stages(3, 5)`,
-     `page_set_content(mode="all_content")` (nuotrauka + parašas, be nugarėlės
-     šešėlio), tada `pages_set_output(color_mode="color", dpi=300,
+     `page_set_content(mode="all_content")` (nuotrauka + parašas), tada `pages_set_output(color_mode="color", dpi=300,
      white_margins=true, equalize_illumination=true, grayscale_first=<žr. žemiau>)` ir
      `pages_set_layout(<nuotraukų puslapiai>, margin_left=0, margin_right=0)`.
      Jei CLI turi `--deskew-pictures`, įrankis kampą matuoja pagal nuotraukos
@@ -133,12 +146,15 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    margin_top=5, margin_bottom=5, align_v=<suggested_align_v>,
    align_h="center")`, tada vėl viršelių layout (6 žingsnis).
 8. **Vienas puslapio plotis:** `pages_fit_width(project)`. Puslapio plotis =
-   tipinis teksto bloko plotis + po 10 mm iš šonų. Platesniems puslapiams
-   šoninės paraštės sumažinamos (iki 0), kad jie neplatintų visos knygos.
+   teksto bloko pločio mediana + po 10 mm iš šonų. Platesniems puslapiams
+   šoninės paraštės 0: „match size“ ir horizontalus centravimas juos vis
+   tiek išdėsto bendrame puslapyje. Paleisti po paskutinio rėmo pakeitimo.
 9. **Lygiavimas:** `pages_align_auto(project)`. Įžanginiai puslapiai
    (titulinis, metrikos, dedikacija, epigrafas) → `vcenter`, bet mažas
    logotipas viršuje lieka `top`; skyrių ir sąrašų pradžios (tekstas
-   prasideda žemiau nei įprastai) → `bottom`; trumpi puslapiai (skyrių
+   prasideda žemiau nei įprastai) → `bottom`; iliustracijų puslapiai →
+   `vcenter` (spalvotos ar pilkos nuotraukų įklijos ir B/W raižiniai,
+   žemesni už teksto bloką); trumpi puslapiai (skyrių
    pabaigos, sąrašai) ir pilni teksto puslapiai be numerio juostos → `top`;
    kiti → `bottom`. Jei peržiūrose matosi lentelės ar diagramos, pridėti
    `review_full_pages=true`: jis išvardija aukštus puslapius su mažai
@@ -237,7 +253,8 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `project_diff(original, corrected, record?)` | Skirtumai tarp agento projekto ir žmogaus pataisyto, puslapiais; `record=true` juos dar įrašo į pataisymų žurnalą |
 | `corrections_record(original, corrected, book?, log?)` | Prideda žmogaus pataisymus į pataisymų žurnalą (JSONL): vienas įrašas kiekvienam pakeistam puslapio parametrui, be pasikartojimų |
 | `corrections_stats(log?, book?, top?)` | Pataisymai pagal kategoriją ir knygą, dažniausios kategorijos su workflow taisykle |
-| `pages_fit_width(project, margin_mm?, percentile?)` | Vienas puslapio plotis: mažesnės šoninės paraštės už tipinį teksto bloką platesniems puslapiams |
+| `pages_fit_text_column(project, tolerance_mm?, height_ratio?)` | Susiaurina rėmus, platesnius už knygos teksto stulpelį; išvardija puslapius su aukštesniu rėmu |
+| `pages_fit_width(project, margin_mm?, percentile?)` | Vienas puslapio plotis: šoninės paraštės 0 puslapiams, platesniems už teksto bloko medianą |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertikalus lygiavimas visiems teksto puslapiams ir šalinimo kandidatai ataskaitai |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?, grayscale_first?, output_rotation?)` | `output`; `grayscale_first` (true, false arba "auto") įrašo `color-or-grayscale@convertToGrayscale="1"` arba `"auto"` (CLI `--grayscale-first`); `output_rotation` (0/90/180/270, pagal laikrodžio rodyklę) pasuka tik išvesties TIFF (CLI `--output-rotate`) |
 | `check_pages(project, pages, kind=content\|pictures\|grayscale\|orientation)` | Heuristikos su įrodymais; `grayscale` duoda kiekvieno puslapio chroma, klasifikaciją ir atstumą iki slenksčio; `text_runs_vertically` žymi šonu išspausdintas lenteles; `orientation` paleidžia detektorių (CLI `--detect-orientation`) skenams ir išvesties failams ir išvardija tuos, kuriuos reikia peržiūrėti |

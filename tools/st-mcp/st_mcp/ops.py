@@ -845,13 +845,15 @@ def _body_pages(p: Project, skipped: list | None = None) -> list[tuple[str, dict
     return out
 
 
-def pages_fit_width(project: str, margin_mm: float = 10.0, percentile: float = 85.0) -> dict:
+def pages_fit_width(project: str, margin_mm: float = 10.0, percentile: float = 50.0) -> dict:
     """One page width for the whole book: the typical text-block width plus margin_mm on each side.
-    Pages whose content is wider than the typical width get smaller left/right margins (down to 0), so a
-    few wide pages (a long line, a table, a page number at the side) do not make every page wider.
-    The typical width is the given percentile of the content widths of body pages (covers and pages with
-    match size off do not count). Top/bottom margins and alignment do not change.
-    Then run_stages(5, 5); the user's correction of the Onetti book follows this rule."""
+    Pages whose content is wider than the typical width get left/right margins 0. With match size and
+    horizontal centering they are still centered on the common page, and a later small change of their
+    content box (a page number, a snap) does not make every page wider.
+    The typical width is the given percentile (default: the median) of the content widths of the text
+    pages (B/W body pages; covers, picture pages and pages with match size off do not count).
+    Top/bottom margins and alignment do not change. Run it after the last content box change, then
+    run_stages(5, 5). The person's corrections of 4 books follow this rule."""
     import statistics
     proj = Path(project).resolve()
     _ensure_idle(proj)
@@ -860,12 +862,16 @@ def pages_fit_width(project: str, margin_mm: float = 10.0, percentile: float = 8
     body = _body_pages(p, no_layout)
     if len(body) < 3:
         raise RuntimeError("too few pages with content and page layout; run stages 1-5 first")
-    widths = sorted(c["content_mm"]["width"] for _, c in body)
+    text = [(pid, c) for pid, c in body if p.output(pid).get("color_mode") in (None, "bw")]
+    # Picture pages have their own widths, so they set the typical width only in a book of pictures.
+    ref = text if len(text) >= 3 else body
+    widths = sorted(c["content_mm"]["width"] for _, c in ref)
     typical = widths[min(len(widths) - 1, int(round(percentile / 100.0 * (len(widths) - 1))))]
-    changed, changed_ids = [], []
+    page_w = round(typical + 2 * margin_mm, 1)
+    changed, changed_ids, too_wide = [], [], []
     for pid, c in body:
         w = c["content_mm"]["width"]
-        lr = margin_mm if w <= typical else max(0.0, round((typical + 2 * margin_mm - w) / 2, 1))
+        lr = margin_mm if w <= typical else 0.0
         cur = p.layout(pid)["margins_mm"]
         # Smaller margins set on purpose (picture pages: 0) stay, because they never widen the page.
         lr = min(lr, cur["left"], cur["right"])
@@ -874,23 +880,82 @@ def pages_fit_width(project: str, margin_mm: float = 10.0, percentile: float = 8
         if lr != margin_mm:
             changed.append({"page": p.page(pid).label, "content_width_mm": w, "left_right_mm": lr})
             changed_ids.append(pid)
+        if w > page_w:
+            too_wide.append(p.page(pid).label)
     p.save()
     with review.Notes(p) as notes:
         notes.clear([pid for pid, _ in body], "page_width")
         for c, pid in zip(changed, changed_ids):
-            if c["left_right_mm"] == 0:
+            if c["content_width_mm"] > page_w:
                 notes.add(pid, "page_width", "side margins 0", 0.4,
-                          f"content {c['content_width_mm']} mm is wider than the page width {typical} mm + margins")
-            else:
-                notes.add(pid, "page_width", f"side margins {c['left_right_mm']} mm", 0.65,
+                          f"content {c['content_width_mm']} mm is wider than the page width {page_w} mm")
+            elif c["content_width_mm"] > typical:
+                notes.add(pid, "page_width", "side margins 0", 0.8,
                           f"content {c['content_width_mm']} mm, wider than the typical {typical} mm")
-    return {"typical_width_mm": typical, "skipped_no_page_layout": no_layout, "page_width_mm": round(typical + 2 * margin_mm, 1),
-            "median_width_mm": statistics.median(widths), "narrowed_margins": changed,
-            "next": "run_stages(5, 5), then pages_list(sort_by='content_width') to confirm one page size"}
+    return {"typical_width_mm": typical, "skipped_no_page_layout": no_layout, "page_width_mm": page_w,
+            "median_width_mm": statistics.median(widths), "zero_side_margins": len(changed),
+            "wider_than_page": too_wide, "narrowed_margins": changed[:40],
+            "next": "run_stages(5, 5); if a content box changes later, run pages_fit_width again"}
+
+
+def pages_fit_text_column(project: str, tolerance_mm: float = 0.5, height_ratio: float = 0.015) -> dict:
+    """Narrow the content boxes that are wider than the book's text column, keeping top and bottom.
+    The column width is the median content width of the B/W body pages. On each page wider than it by
+    more than tolerance_mm, the left and right edges move to the text column (justified edge), as in
+    page_set_content(mode=tighten): pencil marks, stamps, inventory numbers and specks in the side
+    margin drop out, while ink that continues a text line (hyphens, punctuation) stays in.
+    Pages taller than the median by more than height_ratio are only listed (taller_pages, review notes):
+    a stamp or a mark above or below the text is likely there, so preview them and fix the box with
+    page_set_content(mode=manual). Run it after stage 5 (it needs the content sizes), then
+    run_stages(4, 5) and pages_fit_width. The person's corrections of 4 books follow this rule."""
+    import statistics
+    proj = Path(project).resolve()
+    _ensure_idle(proj)
+    p = Project(proj)
+    body = [(pid, c) for pid, c in _body_pages(p) if p.output(pid).get("color_mode") in (None, "bw")]
+    if len(body) < 3:
+        raise RuntimeError("too few text pages with content and page layout; run stages 1-5 first")
+    med_w = statistics.median(c["content_mm"]["width"] for _, c in body)
+    med_h = statistics.median(c["content_mm"]["height"] for _, c in body)
+    narrowed, kept, taller = [], [], []
+    with review.Notes(p) as notes:
+        for pid, c in body:
+            lab = p.page(pid).label
+            mm, rect = c["content_mm"], c["content_rect_px"]
+            if mm["height"] > med_h * (1 + height_ratio):
+                taller.append({"page": lab, "height_mm": mm["height"]})
+                notes.add(pid, "content_height", "box taller than the text block", 0.5,
+                          f"{mm['height']} mm against the median {med_h} mm: a stamp or a mark above or below the text?")
+            if mm["width"] <= med_w + tolerance_mm:
+                continue
+            px_per_mm = rect["width"] / mm["width"]
+            t = checks.tighten_rect(p, pid, column_px=med_w * px_per_mm)
+            if t is None:
+                continue
+            x0, x1 = max(rect["x"], t["x"]), min(rect["x"] + rect["width"], t["x"] + t["width"])
+            sides = [s for s in t.get("kept_sides", []) if ":" not in s]
+            # Less than 1 px per side is noise, so such a page keeps its box.
+            if x0 - rect["x"] < 1 and rect["x"] + rect["width"] - x1 < 1:
+                if sides:
+                    kept.append({"page": lab, "width_mm": mm["width"], "kept_sides": sides})
+                continue
+            p.set_content(pid, {"x": x0, "y": rect["y"], "width": x1 - x0, "height": rect["height"]})
+            new_w = round((x1 - x0) / px_per_mm, 1)
+            narrowed.append({"page": lab, "width_mm_before": mm["width"], "width_mm_after": new_w,
+                             "cut_px_left": round(x0 - rect["x"]), "cut_px_right": round(rect["x"] + rect["width"] - x1)})
+            # A cut of more than 3 mm on one side can remove a side note, so the preview must confirm it.
+            big = new_w < med_w - 2 or max(x0 - rect["x"], rect["x"] + rect["width"] - x1) > 3 * px_per_mm
+            notes.add(pid, "content", "content box: text column", 0.55 if big else 0.8,
+                      f"{mm['width']} -> {new_w} mm, text column {med_w} mm" + ("; large cut: preview" if big else ""))
+        p.save()
+    return {"text_column_mm": med_w, "median_height_mm": med_h, "narrowed": narrowed, "kept_sides": kept,
+            "taller_pages": taller,
+            "next": "run_stages(4, 5), preview the large cuts and the taller pages, then pages_fit_width"}
 
 
 def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_ratio: float = 0.95,
-                     section_start_offset: float = 0.10, review_full_pages: bool = False) -> dict:
+                     section_start_offset: float = 0.10, review_full_pages: bool = False,
+                     picture_ratio: float = 0.25) -> dict:
     """Vertical alignment for every body page, and lists of pages a person should check.
     - Front matter (pages before the first page with at least half the usual number of text lines:
       title, copyright, dedication, epigraph): vcenter. A small element at the top of such a page
@@ -901,6 +966,8 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
     - Short pages (content height below short_ratio of the median: chapter ends, lists): top.
     - Full text pages without the page-number band (height below missing_number_ratio of the median
       but the usual number of lines): top, so that their text lines up with the other pages.
+    - Picture pages: vcenter. These are pages with a color/grayscale output mode (photo plates), and
+      B/W pages lower than the full text block whose line art covers picture_ratio of the content or more.
     - Other body pages: bottom.
     Lists for the report (nothing is removed or changed for them): blank pages, half-title candidates,
     near-empty pages (no text line, tiny box: mark them empty if they hold only specks or a stamp),
@@ -943,8 +1010,8 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
         if text_lines(pid) >= 0.5 * med_lines:
             front_end = i
             break
-    decided = {"vcenter": [], "top_small_header": [], "bottom_section_start": [], "vcenter_small_block": [],
-               "top_short": [], "top_no_number_band": [], "bottom": 0}
+    decided = {"vcenter": [], "top_small_header": [], "vcenter_picture": [], "bottom_section_start": [],
+               "vcenter_small_block": [], "top_short": [], "top_no_number_band": [], "bottom": 0}
     half_titles, near_empty, full_few_lines = [], [], []
     ids: dict[str, list[str]] = {k: [] for k in list(decided) + ["half_titles", "near_empty", "full_few_lines"]}
     for i, (pid, c) in enumerate(body):
@@ -957,6 +1024,9 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
             near_empty.append(lab)
             ids["near_empty"].append(pid)
         is_text = p.output(pid).get("color_mode") in (None, "bw")
+        # Only B/W pages lower than the full block need the picture measurement, because it takes time.
+        is_picture = not is_text or (h < 0.97 * med_h
+                                     and checks.picture_score(p, pid)["line_art_fraction"] >= picture_ratio)
         if i < front_end:
             if h < 0.25 * med_h and offset < section_start_offset:
                 align = "top"
@@ -969,6 +1039,10 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
             if text_lines(pid) <= 5:
                 half_titles.append(lab)
                 ids["half_titles"].append(pid)
+        elif is_picture:
+            align = "vcenter"
+            decided["vcenter_picture"].append(lab)
+            ids["vcenter_picture"].append(pid)
         elif h < missing_number_ratio * med_h and offset > section_start_offset:
             if text_lines(pid) >= 3:
                 align = "bottom"
@@ -999,6 +1073,7 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
     blank_ids = [pg.id for pg in p.pages if p.content(pg.id).get("empty")]
     align_conf = {"vcenter": ("vcenter", 0.7, "front matter"),
                   "top_small_header": ("top", 0.6, "small element at the top of front matter"),
+                  "vcenter_picture": ("vcenter", 0.8, "picture page"),
                   "bottom_section_start": ("bottom", 0.6, "section start: the text starts lower than usual"),
                   "vcenter_small_block": ("vcenter", 0.4, "small block lower than usual: part title or specks?"),
                   "top_short": ("top", 0.8, "short page"),
@@ -1098,8 +1173,17 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
         flagged = [r for r in res if r["picture_fraction"] > 0.05 or r["line_art_fraction"] > 0.01]
         for r in flagged:
             r["likely"] = "grayscale" if r["picture_fraction"] > 0.05 else "line_art"
+        # A page with a large angle can follow a stamp or the page edge, so it gets the angle check too.
+        doubt_ids = {r["page_id"] for r in flagged} | {i for i in ids if abs(p.deskew_angle(i)) >= 3.0}
+        angles = [_deskew_agreement(p, i) for i in ids if i in doubt_ids]
+        disagree = [a for a in angles if a.get("disagree")]
         with review.Notes(p) as notes:
             notes.clear(ids, "pictures")
+            notes.clear(list(doubt_ids), "deskew_check")
+            for a in disagree:
+                notes.add(a["page_id"], "deskew_check", "text and picture angles differ", 0.4,
+                          f"now {a['angle']} deg; text lines {a['angle_text']} deg, picture or page edges "
+                          f"{a['angle_picture']} deg: preview and choose")
             for r in flagged:
                 if r["likely"] == "grayscale":
                     conf = 0.8 if r["picture_fraction"] > 0.15 else 0.55
@@ -1108,7 +1192,10 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
                     conf = 0.75 if r["line_art_fraction"] > 0.03 else 0.5
                     why = f"line art {r['line_art_fraction']:.1%} of the page"
                 notes.add(r["page_id"], "pictures", f"picture page: {r['likely']}", conf, why)
-        return {"checked": len(res), "flagged": flagged,
+        return {"checked": len(res), "flagged": flagged, "deskew_disagree": disagree,
+                "deskew_rule": "deskew_disagree: the text lines and the picture (or page edges) give angles "
+                               "more than 0.5 deg apart; preview the page and set the angle that a person "
+                               "would see as straight with pages_straighten_pictures or images_set_geometry",
                 "rule": "preview each: photos, halftones and color plates -> color_mode=color, "
                         "white_margins=true, equalize_illumination=true, then check_pages(kind=grayscale): "
                         "gray pictures -> grayscale_first=auto, color plates -> grayscale_first=false; "
@@ -1146,6 +1233,18 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
             **({"st_mcp_ink_pages": fallback} if masks and fallback else {}),
             "page_number_position_votes": summary,
             "suggested_align_v": max(summary, key=summary.get) if summary else None}
+
+
+# Both residuals use the deskewed page, so the angle each one suggests is the current angle minus the residual.
+def _deskew_agreement(p: Project, page_id: str, limit: float = 0.5) -> dict:
+    angle = p.deskew_angle(page_id)
+    pic = checks.picture_skew(p, page_id)
+    txt, n_lines = checks.text_skew(p, page_id)
+    out = {"page_id": page_id, "label": p.page(page_id).label, "angle": round(angle, 2), "text_lines": n_lines,
+           "angle_picture": None if pic is None else round(angle - pic, 2),
+           "angle_text": None if txt is None else round(angle - txt, 2)}
+    out["disagree"] = (pic is not None and txt is not None and abs(pic - txt) > limit)
+    return out
 
 
 ORIENT_NAME = {0: "none", 90: "right", 180: "upsidedown", 270: "left"}
@@ -1693,6 +1792,6 @@ def workflow_guide() -> dict:
 
 
 TOOLS = [project_create, project_for_windows, project_diff, corrections_record, corrections_stats, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
-         pages_preview, image_preview, page_set_content, pages_snap_content, pages_set_layout, pages_fit_width, pages_align_auto, pages_set_output,
+         pages_preview, image_preview, page_set_content, pages_snap_content, pages_set_layout, pages_fit_text_column, pages_fit_width, pages_align_auto, pages_set_output,
          check_pages, export_summary, review_note, review_sheet, workflow_guide]
 IMAGE_TOOLS = {"page_preview", "pages_preview", "image_preview"}

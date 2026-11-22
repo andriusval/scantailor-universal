@@ -6,6 +6,7 @@ look at the preview and decide; nothing here edits the project.
 from __future__ import annotations
 
 import statistics
+from collections import deque
 
 import numpy as np
 from PIL import Image
@@ -455,6 +456,10 @@ def text_block(project: Project, page_id: str) -> dict | None:
     top, bottom = keep[0][0], keep[-1][1]
 
     body = [ln for ln in keep if ln[1] - ln[0] + 1 >= 0.6 * line_h and ncols(*ln) > 0.5 * (bx1 - bx0)]
+    # Lines from the plain mask stay apart, so marks in the margin cannot join them into one tall band.
+    plain = [ln for ln in raw if 0.6 * line_h <= ln[1] - ln[0] + 1 <= 2 * line_h and _span(ink, ln, bx0, bx1) > 0.5 * (bx1 - bx0)]
+    if len(plain) > len(body):
+        body = plain
     justified = False
     if len(body) >= 6:
         cov = np.zeros(bx1 - bx0)
@@ -480,6 +485,11 @@ def text_block(project: Project, page_id: str) -> dict | None:
             "left": left, "top": top, "right": right, "bottom": bottom + 1}
 
 
+def _span(ink: np.ndarray, ln: tuple[int, int], x0: int, x1: int) -> int:
+    cols = np.where(ink[ln[0]:ln[1] + 1, x0:x1].any(axis=0))[0]
+    return int(cols[-1] - cols[0] + 1) if len(cols) else 0
+
+
 def box_excess(project: Project, page_id: str) -> dict | None:
     """Empty space between each side of the content box and the text block, in page px."""
     tb = text_block(project, page_id)
@@ -491,11 +501,13 @@ def box_excess(project: Project, page_id: str) -> dict | None:
             "justified": tb["justified"], "threshold_px": round(0.6 * float(tb["line_h"]) / k)}
 
 
-def tighten_rect(project: Project, page_id: str) -> dict | None:
+def tighten_rect(project: Project, page_id: str, column_px: float | None = None) -> dict | None:
     """Fit the content box to the text block on all four sides: drops specks and junk at the edges
     (including faint junk next to the text) but keeps page numbers, running heads and real lines.
     Safety: a side is left as it was if the strip it would cut has ink in 3+ text lines (that is text,
-    not junk). Returns the new rect (page px) plus `kept_sides` when that happened."""
+    not junk). column_px (the book's text column width, page px) lifts this safety when the text block
+    has that width: then the ink beyond it is a margin mark. Ink that continues a line stays in.
+    Returns the new rect (page px) plus `kept_sides` when a side was kept."""
     tb = text_block(project, page_id)
     if tb is None:
         return None
@@ -510,8 +522,9 @@ def tighten_rect(project: Project, page_id: str) -> dict | None:
     for j in _side_junk(ink, bx0, bx1, by0, by1, tb["line_h"]):
         ink[by0:by1, j["x0"]:j["x1"] + 1] = False
     kept = []
+    fits_column = column_px is not None and (x1 - x0) / k <= 1.015 * column_px
     for side, (c0, c1) in (("left", (bx0, x0)), ("right", (x1, bx1))):
-        if c1 > c0 and sum(1 for a, b in lines if ink[a:b + 1, c0:c1].any()) >= 3:
+        if not fits_column and c1 > c0 and sum(1 for a, b in lines if ink[a:b + 1, c0:c1].any()) >= 3:
             kept.append(side)
             x0, x1 = (bx0, x1) if side == "left" else (x0, bx1)
             continue
@@ -526,6 +539,10 @@ def tighten_rect(project: Project, page_id: str) -> dict | None:
             if not len(inner):
                 continue
             gap = (inner.min() - cols.max()) if side == "left" else (cols.min() - inner.max())
+            reach = (x0 - cols.min()) if side == "left" else (cols.max() + 1 - x1)
+            # A hyphen or a punctuation mark sticks out less than a line height, a written mark more.
+            if fits_column and reach > 1.2 * lh:
+                continue
             if gap <= 0.8 * lh:
                 if side == "left":
                     x0 = max(bx0, min(x0, int(cols.min()) - pad))
@@ -600,9 +617,96 @@ def all_content_rect(project: Project, page_id: str) -> dict | None:
     ys, xs = np.where(m)
     if not len(ys):
         return None
-    x0, x1 = xs.min() * B, (xs.max() + 1) * B
-    y0, y1 = ys.min() * B, (ys.max() + 1) * B
+    pics = _pictures_and_captions(m)
+    if pics is not None:
+        y0, y1, x0, x1 = (v * B for v in pics)
+    else:
+        x0, x1 = xs.min() * B, (xs.max() + 1) * B
+        y0, y1 = ys.min() * B, (ys.max() + 1) * B
     return {"x": x0 / k, "y": y0 / k, "width": (x1 - x0) / k, "height": (y1 - y0) / k}
+
+
+def _components(m: np.ndarray) -> tuple[np.ndarray, list[int]]:
+    """8-connected components of a block mask: label array and the block count of each label."""
+    H, W = m.shape
+    lab = np.zeros((H, W), dtype=np.int32)
+    sizes: list[int] = []
+    for y0, x0 in zip(*np.where(m)):
+        if lab[y0, x0]:
+            continue
+        n = len(sizes) + 1
+        lab[y0, x0] = n
+        q, cnt = deque([(y0, x0)]), 0
+        while q:
+            y, x = q.popleft()
+            cnt += 1
+            for yy in (y - 1, y, y + 1):
+                for xx in (x - 1, x, x + 1):
+                    if 0 <= yy < H and 0 <= xx < W and m[yy, xx] and not lab[yy, xx]:
+                        lab[yy, xx] = n
+                        q.append((yy, xx))
+        sizes.append(cnt)
+    return lab, sizes
+
+
+def _trim_sparse(mask: np.ndarray, frac: float = 0.3) -> tuple[int, int, int, int]:
+    """Bounding box of a component without the sparse rows and columns at its ends (page edges attached to a photo)."""
+    ys, xs = np.where(mask)
+    y0, y1, x0, x1 = int(ys.min()), int(ys.max()), int(xs.min()), int(xs.max())
+    for _ in range(3):
+        sub = mask[y0:y1 + 1, x0:x1 + 1]
+        rows, cols = np.where(sub.mean(axis=1) >= frac)[0], np.where(sub.mean(axis=0) >= frac)[0]
+        if not len(rows) or not len(cols):
+            break
+        y0, y1, x0, x1 = y0 + int(rows[0]), y0 + int(rows[-1]), x0 + int(cols[0]), x0 + int(cols[-1])
+    return y0, y1, x0, x1
+
+
+def _pictures_and_captions(m: np.ndarray) -> tuple[int, int, int, int] | None:
+    """Blocks y0, y1, x0, x1 (end exclusive) around the photos and their captions; None without a photo-sized area.
+
+    A photo is a large component. Small components join when they are near the photos, or when they look
+    like a caption line in the photo columns. Thin strips at the page edges never join."""
+    H, W = m.shape
+    lab, sizes = _components(m)
+    big = []
+    for i, n in enumerate(sizes):
+        if n >= 0.003 * H * W:
+            ys, xs = np.where(lab == i + 1)
+            # A long strip has enough blocks too, but a photo is at least 3 blocks in both directions.
+            if min(ys.max() - ys.min(), xs.max() - xs.min()) >= 2:
+                big.append(i + 1)
+    if not big:
+        return None
+    boxes = [_trim_sparse(lab == i) for i in big]
+    y0, y1 = min(b[0] for b in boxes), max(b[1] for b in boxes)
+    x0, x1 = min(b[2] for b in boxes), max(b[3] for b in boxes)
+    edge = max(2, int(0.03 * H))
+    small = []
+    for i, n in enumerate(sizes):
+        if i + 1 in big:
+            continue
+        ys, xs = np.where(lab == i + 1)
+        a, b, l, r = int(ys.min()), int(ys.max()), int(xs.min()), int(xs.max())
+        h, w = b - a + 1, r - l + 1
+        # Vertical thin strips are page edges or folds, and bands at the top or bottom are the page edge.
+        if (h > w and w <= 2) or a < edge or b >= H - edge:
+            continue
+        small.append((a, b, l, r, h <= 4 and w >= 3))
+    added = True
+    while added:
+        added = False
+        for c in list(small):
+            a, b, l, r, caption_like = c
+            if l < x0 - 0.05 * W or r > x1 + 0.05 * W:
+                continue
+            dist = a - y1 if a > y1 else (y0 - b if b < y0 else 0)
+            # A caption can sit far below the photo on a plate, so a text-like line may be far away.
+            if dist <= 0.2 * H or (caption_like and dist <= 0.75 * H):
+                y0, y1, x0, x1 = min(y0, a), max(y1, b), min(x0, l), max(x1, r)
+                small.remove(c)
+                added = True
+    return y0, y1 + 1, x0, x1 + 1
 
 
 def picture_skew(project: Project, page_id: str) -> float | None:
@@ -620,6 +724,42 @@ def picture_skew(project: Project, page_id: str) -> float | None:
         if score > best:
             best, best_a = score, float(a)
     return best_a
+
+
+def text_skew(project: Project, page_id: str) -> tuple[float | None, int]:
+    """Residual skew (degrees, as picture_skew) of the text lines outside the pictures, and their count.
+
+    Picture areas (halftones, dense line art) are masked out first, so the hatching of an engraving
+    does not count as text. None when fewer than 2 text lines remain."""
+    pg = project.page(page_id)
+    im = render_page(project, pg.id, max_px=800, overlay=False, pad=(255, 255, 255))
+    g = np.asarray(im.convert("L"), dtype=np.float32)
+    paper = np.percentile(g, 95)
+    ink = g < paper * 0.6
+    B = 16
+    h, w = (g.shape[0] // B) * B, (g.shape[1] // B) * B
+    blocks = g[:h, :w].reshape(h // B, B, w // B, B).swapaxes(1, 2).reshape(h // B, w // B, -1)
+    mid = ((blocks > paper * 0.25) & (blocks < paper * 0.80)).mean(axis=2)
+    pic = ((mid > 0.5) & (blocks.mean(axis=2) < paper * 0.85)) | ((blocks < paper * 0.55).mean(axis=2) > 0.45)
+    lab, sizes = _components(pic)
+    for i, n in enumerate(sizes):
+        if n >= 4:
+            ys, xs = np.where(lab == i + 1)
+            ink[max(0, (ys.min() - 1) * B):(ys.max() + 2) * B, max(0, (xs.min() - 1) * B):(xs.max() + 2) * B] = False
+    e = int(0.03 * max(g.shape))  # page edges: shadows and scan borders
+    ink[:e, :] = ink[-e:, :] = False
+    ink[:, :e] = ink[:, -e:] = False
+    lines = [r for r in _group(list(np.where(ink.mean(axis=1) > 0.003)[0])) if r[1] - r[0] + 1 >= 3]
+    if len(lines) < 2 or ink.sum() < 200:
+        return None, len(lines)
+    mask = Image.fromarray((ink * 255).astype(np.uint8))
+    best, best_a = -1.0, 0.0
+    for a in np.arange(-4, 4.001, 0.1):
+        r = np.asarray(mask.rotate(a, resample=Image.Resampling.NEAREST, fillcolor=0), dtype=np.float32)
+        score = float((np.diff(r.sum(axis=1)) ** 2).sum())
+        if score > best:
+            best, best_a = score, float(a)
+    return round(best_a, 2), len(lines)
 
 
 def junk_sides(project: Project, page_id: str, finding: dict | None = None) -> list[str]:
