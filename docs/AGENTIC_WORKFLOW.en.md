@@ -75,15 +75,28 @@ GUI.
    - ink above/below with hint "looks like a page number missed" →
      `mode="include_numbers"`;
    - only specks/bleed-through on a blank leaf → `mode="empty"`;
-   - `ink_left/right_of_box` "lines may be cut off" → preview; extend if real.
+   - `ink_left/right_of_box` "lines may be cut off" → preview; extend if real;
+   - then `pages_fit_text_column(project)`. The text column is the median
+     width of the text pages. Boxes that are wider than the column get the
+     left and right edges of the column. Pencil marks, stamps and inventory
+     numbers in the side margin drop out, and hyphens at the line ends stay
+     in. Preview the pages with a large cut (review note). Also preview the
+     `taller_pages`, because their box often holds a stamp or a mark above
+     or below the text. Correct these with `mode="manual"`.
 5. **Picture pages:** `check_pages(kind="pictures")`; preview every flagged
-   page (zoom into the illustration):
+   page (zoom into the illustration). The box of `all_content` does not
+   include thin strips at the page edges, the spine shadow or the paper
+   below the caption.
+   - `deskew_disagree` lists the pages where the text lines and the picture
+     (or the page edges) give angles more than 0.5° apart. Preview each
+     page and set the angle that looks straight. In the corrections of 4
+     books, the person chose the picture or page-edge angle each time;
    - black-and-white line art (engravings, drawings, maps) → keep output
      **B/W 600**;
    - photos, halftones and color plates → `pages_straighten_pictures`,
      because ScanTailor deskews by text lines and can tilt photos. Then
      `run_stages(3, 5)`, `page_set_content(mode="all_content")`
-     (photo + caption, no spine shadow), then
+     (photo + caption), then
      `pages_set_output(color_mode="color", dpi=300, white_margins=true,
      equalize_illumination=true, grayscale_first=<see below>)` and
      `pages_set_layout(<picture pages>, margin_left=0, margin_right=0)`.
@@ -127,14 +140,16 @@ GUI.
    margin_top=5, margin_bottom=5, align_v=<suggested_align_v>,
    align_h="center")`, then the covers again (step 6 layout).
 8. **One page width:** `pages_fit_width(project)`. The page width is the
-   typical text-block width plus 10 mm on each side. Pages with wider content
-   get smaller left and right margins, down to 0, so that they do not make
-   the book wider.
+   median text-block width plus 10 mm on each side. Pages with wider content
+   receive left and right margins 0. Match size and the centered horizontal
+   alignment keep them on the common page. Run it after the last content box change.
 9. **Alignment:** `pages_align_auto(project)`. Front matter (title,
    copyright, dedication, epigraph) goes to `vcenter`, but a small logo at
    the top stays `top`. Section starts (the text starts lower than usual) go
-   to `bottom`. Short pages (chapter ends, lists) and full text pages without
-   the page-number band go to `top`. Other pages go to `bottom`. When the
+   to `bottom`. Picture pages go to `vcenter`: color or grayscale photo
+   plates, and B/W engravings that are lower than the text block. Short
+   pages (chapter ends, lists) and full text pages without the page-number
+   band go to `top`. Other pages go to `bottom`. When the
    previews show tables or diagrams, add `review_full_pages=true`: it lists
    full-height pages with few text lines, such as rotated tables. Preview the `top` and `vcenter` pages, and
    correct single pages with `pages_set_layout`. Then `run_stages(4, 6)`,
@@ -233,7 +248,8 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `project_diff(original, corrected, record?)` | Per-page differences between the agent's project and a corrected one; `record=true` also writes them to the corrections log |
 | `corrections_record(original, corrected, book?, log?)` | Appends the person's corrections to the corrections log (JSONL), one record per changed page parameter, without repeats |
 | `corrections_stats(log?, book?, top?)` | Corrections per category and per book, and the most frequent categories with their workflow rule |
-| `pages_fit_width(project, margin_mm?, percentile?)` | One page width: smaller side margins for pages wider than the typical text block |
+| `pages_fit_text_column(project, tolerance_mm?, height_ratio?)` | Narrows content boxes that are wider than the text column of the book; lists the pages with a taller box |
+| `pages_fit_width(project, margin_mm?, percentile?)` | One page width: side margins 0 for pages wider than the median text block |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertical alignment for all body pages, plus removal candidates for the report |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?, grayscale_first?, output_rotation?)` | `output`; `grayscale_first` (true, false or "auto") writes `color-or-grayscale@convertToGrayscale="1"` or `"auto"` (CLI `--grayscale-first`); `output_rotation` (0/90/180/270, clockwise) turns only the output TIFF (CLI `--output-rotate`) |
 | `check_pages(project, pages, kind=content\|pictures\|grayscale\|orientation)` | Heuristics with evidence; `grayscale` gives the chroma per page, the classification and the margin to the threshold; `text_runs_vertically` marks sideways tables; `orientation` runs the detector (CLI `--detect-orientation`) on the scans and the output files and lists the ones that need a look |
