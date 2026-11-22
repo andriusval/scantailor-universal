@@ -139,8 +139,7 @@ Params::setColorParams(ColorParams const& params, ColorParamsApplyFilter const& 
             // it's time to apply defaults
             //TRUF m_pictureShape = (PictureShape) QSettings().value("picture_zones_layer/default", output::FREE_SHAPE).toUInt();
         }
-        m_colorParams.setColorMode(params.colorMode());
-        m_colorParams.setColorGrayscaleOptions(params.colorGrayscaleOptions());
+        m_colorParams.copyModeAndOptions(params);
     }
     break;
 

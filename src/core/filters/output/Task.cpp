@@ -215,10 +215,10 @@ Task::process(
         switch (data.origImage().format()) {
         case QImage::Format_Mono:
         case QImage::Format_MonoLSB:
-            colorParams.setColorMode(ColorParams::BLACK_AND_WHITE);
+            colorParams.setColorModeWithDefaults(ColorParams::BLACK_AND_WHITE);
             break;
         default:
-            colorParams.setColorMode(ColorParams::COLOR_GRAYSCALE);
+            colorParams.setColorModeWithDefaults(ColorParams::COLOR_GRAYSCALE);
             break;
         }
         params.setColorParams(colorParams);
