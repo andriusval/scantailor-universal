@@ -194,13 +194,6 @@
           </layout>
          </item>
          <item>
-          <widget class="QLabel" name="grayscaleFirstAutoLabel">
-           <property name="text">
-            <string notr="true"/>
-           </property>
-          </widget>
-         </item>
-         <item>
           <widget class="QCheckBox" name="fillOffcutCB">
            <property name="text">
             <string>Fill offcut</string>

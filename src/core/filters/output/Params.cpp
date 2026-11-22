@@ -52,16 +52,8 @@ Params::Params(QDomElement const& el)
 //        m_TiffCompression(el.attribute("tiff-compression"))
 
 {
-    QDomElement const cp(el.namedItem("color-params").toElement());
-    m_colorParams.setColorMode(parseColorMode(cp.attribute("colorMode")));
-    m_colorParams.setColorGrayscaleOptions(
-        ColorGrayscaleOptions(
-            cp.namedItem("color-or-grayscale").toElement(), m_colorParams.colorMode() == ColorParams::MIXED
-        )
-    );
-    m_colorParams.setBlackWhiteOptions(
-        BlackWhiteOptions(cp.namedItem("bw").toElement())
-    );
+    // ColorParams reads the options of the other color mode too, so that a mode change keeps them.
+    m_colorParams = ColorParams(el.namedItem("color-params").toElement());
 }
 
 QDomElement
@@ -87,20 +79,7 @@ Params::toXml(QDomDocument& doc, QString const& name) const
 //    el.setAttribute("tiff-compression", m_TiffCompression);
     el.appendChild(marshaller.dpi(m_dpi, "dpi"));
 
-    QDomElement cp(doc.createElement("color-params"));
-    cp.setAttribute(
-        "colorMode",
-        formatColorMode(m_colorParams.colorMode())
-    );
-
-    cp.appendChild(
-        m_colorParams.colorGrayscaleOptions().toXml(
-            doc, "color-or-grayscale"
-        )
-    );
-    cp.appendChild(m_colorParams.blackWhiteOptions().toXml(doc, "bw"));
-
-    el.appendChild(cp);
+    el.appendChild(m_colorParams.toXml(doc, "color-params"));
 
     return el;
 }

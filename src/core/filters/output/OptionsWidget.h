@@ -201,8 +201,6 @@ private:
 
     void updateColorsDisplay();
 
-    void updateGrayscaleFirstAutoDisplay();
-
     void updateLayersDisplay();
 
     void updateDewarpingDisplay();
