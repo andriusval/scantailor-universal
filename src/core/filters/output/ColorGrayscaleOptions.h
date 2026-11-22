@@ -39,7 +39,7 @@ public:
         : m_whiteMargins(whiteMargins), m_normalizeIllumination(normalizeIllumination),
           m_autoLayerEnabled(autoLayer), m_pictureZonesLayerEnabled(pictureZonesLayer),
           m_foregroundLayerEnabled(foregroundLayer),
-          m_fillOffcut(false), m_fillingColor(FILL_BACKGROUND), m_grayscaleFirst(GRAYSCALE_FIRST_OFF) {}
+          m_fillOffcut(false), m_fillMargins(false), m_fillingColor(FILL_BACKGROUND), m_grayscaleFirst(GRAYSCALE_FIRST_OFF) {}
 
     ColorGrayscaleOptions(QDomElement const& el, bool mixed_mode);
 
@@ -105,6 +105,16 @@ public:
         m_fillOffcut = val;
     }
 
+    bool fillMargins() const
+    {
+        return m_fillMargins;
+    }
+
+    void setFillMargins(bool val)
+    {
+        m_fillMargins = val;
+    }
+
     FillingColor fillingColor() const
     {
         return m_fillingColor;
@@ -143,6 +153,7 @@ private:
     bool m_pictureZonesLayerEnabled;
     bool m_foregroundLayerEnabled;
     bool m_fillOffcut;
+    bool m_fillMargins;
     FillingColor m_fillingColor;
     GrayscaleFirst m_grayscaleFirst;
 };

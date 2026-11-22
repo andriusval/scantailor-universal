@@ -291,6 +291,10 @@ public:
     {
         return contains("fill-offcut");
     }
+    bool hasFillMargins() const
+    {
+        return contains("fill-margins");
+    }
     bool hasFillingColor() const
     {
         return contains("filling-color") && !m_options["filling-color"].isEmpty();
