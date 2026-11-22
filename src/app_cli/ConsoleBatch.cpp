@@ -1500,11 +1500,16 @@ ConsoleBatch::setupAutoOrientation(std::set<PageId> const& pages)
     std::vector<ImageId> const ids(voters.begin(), voters.end());
     std::vector<OrientationResult> results;
     for (ImageId const& image_id : ids) {
-        QImage const image(ImageLoader::load(image_id));
-        if (image.isNull()) {
-            results.push_back(OrientationResult(0, 0.0, false, QStringLiteral("cannot load the image")));
-        } else {
-            results.push_back(OrientationDetector::detect(image, OrientationDetector::exifRotation(image_id.filePath())));
+        // One bad file must not stop the run, so it only gets no decision.
+        try {
+            QImage const image(ImageLoader::load(image_id));
+            if (image.isNull()) {
+                results.push_back(OrientationResult(0, 0.0, false, QStringLiteral("cannot load the image")));
+            } else {
+                results.push_back(OrientationDetector::detect(image, OrientationDetector::exifRotation(image_id.filePath())));
+            }
+        } catch (std::exception const& e) {
+            results.push_back(OrientationResult(0, 0.0, false, QString::fromLocal8Bit(e.what())));
         }
     }
     OrientationDetector::applyBookRotation(results);
@@ -1517,6 +1522,10 @@ ConsoleBatch::setupAutoOrientation(std::set<PageId> const& pages)
         }
         m_orientationResults[ids[i]] = result;
         if (!result.isDecided()) {
+            continue;
+        }
+        // A book rule result without evidence of its own must not replace a rotation that the project already has.
+        if (result.confidence() == 0.0 && settings->getRotationFor(ids[i]).toDegrees() != 0) {
             continue;
         }
         settings->applyRotation(ids[i], rotationFromDegrees(result.angle()));
@@ -1733,7 +1742,7 @@ ConsoleBatch::setupOutput(std::set<PageId> allPages)
 
         output::ColorParams colorParams = params.colorParams();
         if (cli.hasColorMode()) {
-            colorParams.setColorMode(cli.getColorMode());
+            colorParams.setColorModeWithDefaults(cli.getColorMode());
         }
 
         if (cli.hasWhiteMargins() || cli.hasNormalizeIllumination() ||
