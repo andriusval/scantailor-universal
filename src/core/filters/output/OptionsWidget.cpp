@@ -265,32 +265,6 @@ OptionsWidget::postUpdateUI()
 {
     // The output task can change this value with the automatic detection.
     blackOnWhiteCB->setChecked(m_ptrSettings->getParams(m_pageId).isBlackOnWhite());
-    updateGrayscaleFirstAutoDisplay();
-}
-
-void
-OptionsWidget::updateGrayscaleFirstAutoDisplay()
-{
-    // The output task writes the detection result into the output parameters after it processes the page.
-    bool const is_auto = m_currentMode != ColorParams::BLACK_AND_WHITE
-                         && m_colorParams.colorGrayscaleOptions().grayscaleFirst() == GRAYSCALE_FIRST_AUTO;
-    grayscaleFirstAutoLabel->setVisible(is_auto);
-    if (!is_auto) {
-        return;
-    }
-    std::unique_ptr<OutputParams> const output_params(m_ptrSettings->getOutputParams(m_pageId));
-    if (!output_params || !output_params->outputImageParams().grayscaleMeasured()) {
-        grayscaleFirstAutoLabel->setText(tr("Auto: not measured yet"));
-        return;
-    }
-    double const chroma = output_params->outputImageParams().grayscaleChroma();
-    if (chroma < 0.0) {
-        grayscaleFirstAutoLabel->setText(tr("Auto: color (too few mid-tones to measure)"));
-    } else if (output_params->outputImageParams().grayscaleDetected()) {
-        grayscaleFirstAutoLabel->setText(tr("Auto: grayscale (chroma %1)").arg(chroma, 0, 'f', 1));
-    } else {
-        grayscaleFirstAutoLabel->setText(tr("Auto: color (chroma %1)").arg(chroma, 0, 'f', 1));
-    }
 }
 
 void
@@ -326,18 +300,10 @@ void
 OptionsWidget::changeColorMode(ColorParams::ColorMode const mode)
 {
     setModeValue(mode);
+    // The color parameters keep the last options of each mode, so the layer choices come back with the mode.
     m_colorParams.setColorMode((ColorParams::ColorMode)mode);
 
-    ColorGrayscaleOptions opt = m_colorParams.colorGrayscaleOptions();
-    if (opt.foregroundLayerEnabled()) {
-        opt.setForegroundLayerEnabled(false);
-        m_colorParams.setColorGrayscaleOptions(opt);
-    }
-
     m_ptrSettings->setColorParams(m_pageId, m_colorParams, ColorParamsApplyFilter::CopyMode);
-    autoLayerCB->setChecked(true);
-    pictureZonesLayerCB->setChecked(false);
-    foregroundLayerCB->setChecked(false);
     updateColorsDisplay();
     updateLayersDisplay();
     emit reloadRequested();
@@ -426,7 +392,6 @@ OptionsWidget::grayscaleFirstChanged(int const idx)
     opt.setGrayscaleFirst(static_cast<GrayscaleFirst>(grayscaleFirstSelector->itemData(idx).toInt()));
     m_colorParams.setColorGrayscaleOptions(opt);
     m_ptrSettings->setColorParams(m_pageId, m_colorParams, ColorParamsApplyFilter::CopyMode);
-    updateGrayscaleFirstAutoDisplay();
     emit reloadRequested();
 }
 
@@ -749,8 +714,7 @@ OptionsWidget::updateColorsDisplay()
         equalizeIlluminationCB->setChecked(opt.normalizeIllumination());
         equalizeIlluminationCB->setEnabled(opt.whiteMargins());
         grayscaleFirstSelector->setCurrentIndex(grayscaleFirstSelector->findData(opt.grayscaleFirst()));
-        updateGrayscaleFirstAutoDisplay();
-        fillOffcutCB->setChecked(opt.fillOffcut());
+            fillOffcutCB->setChecked(opt.fillOffcut());
         // White margins already fill the offcut, so the option has no effect there.
         fillOffcutCB->setEnabled(!opt.whiteMargins());
         fillMarginsCB->setChecked(opt.fillMargins());
