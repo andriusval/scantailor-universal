@@ -1302,6 +1302,10 @@ addDetectionResult(QJsonObject& res, char const* key, imageproc::OrientationResu
     res[QLatin1String(key)] = result.isDecided() ? QJsonValue(result.angle()) : QJsonValue();
     res["confidence"] = std::round(result.confidence() * 1000.0) / 1000.0;
     res["reason"] = result.reason();
+    // The shape of a scan without text lets an agent see why the book rotation was used or not.
+    if (result.shapeAxis() >= 0) {
+        res["shape_axis"] = result.shapeAxis();
+    }
 }
 
 QJsonObject

@@ -135,12 +135,62 @@ BOOST_AUTO_TEST_CASE(test_book_rotation_keeps_sideways_tables)
     BOOST_CHECK_EQUAL(results[6].angle(), 90);
     BOOST_CHECK(results[6].confidence() < 1.0);
     BOOST_CHECK_EQUAL(results[7].angle(), 270);
-    BOOST_CHECK(!results[8].isDecided());
+    // A scan without a decision, such as a cover, takes the rotation of the book.
+    BOOST_CHECK(results[8].isDecided());
+    BOOST_CHECK_EQUAL(results[8].angle(), 90);
+    BOOST_CHECK(results[8].confidence() < OrientationDetector::confidenceThreshold());
 
     std::vector<OrientationResult> few(4, OrientationResult(90, 1.0, true, "text"));
     few.push_back(OrientationResult(0, 1.0, true, "text"));
+    few.push_back(OrientationResult(0, 0.0, false, "no text"));
     OrientationDetector::applyBookRotation(few);
     BOOST_CHECK_EQUAL(few[4].angle(), 0);
+    BOOST_CHECK(!few[5].isDecided());
+}
+
+BOOST_AUTO_TEST_CASE(test_shape_axis_of_covers_and_spreads)
+{
+    // A spread that lies on its side: two equal light pages, one above the other, with a dark fold between them.
+    QImage spread(1000, 1100, QImage::Format_Grayscale8);
+    spread.fill(10);
+    for (int y = 100; y < 1000; ++y) {
+        uchar* line = spread.scanLine(y);
+        for (int x = 200; x < 880; ++x) {
+            line[x] = (y >= 546 && y <= 553) ? 120 : 220;
+        }
+    }
+    BOOST_CHECK_EQUAL(OrientationDetector::shapeAxis(spread), 90);
+
+    // A single cover that stands upright has no fold.
+    QImage cover(1000, 1100, QImage::Format_Grayscale8);
+    cover.fill(10);
+    for (int y = 100; y < 1000; ++y) {
+        uchar* line = cover.scanLine(y);
+        for (int x = 250; x < 850; ++x) {
+            line[x] = 200;
+        }
+    }
+    BOOST_CHECK_EQUAL(OrientationDetector::shapeAxis(cover), 0);
+
+    QImage empty(800, 800, QImage::Format_Grayscale8);
+    empty.fill(10);
+    BOOST_CHECK_EQUAL(OrientationDetector::shapeAxis(empty), -1);
+}
+
+BOOST_AUTO_TEST_CASE(test_book_rotation_uses_size_and_shape)
+{
+    QSize const page_size(2231, 2924);
+    OrientationResult plate(0, 0.0, false, "no text");
+    plate.setShape(page_size, -1);
+    BOOST_CHECK_EQUAL(OrientationDetector::applyBookRotation(plate, 90, page_size).angle(), 90);
+
+    OrientationResult spread(0, 0.0, false, "no text");
+    spread.setShape(QSize(3576, 3458), 90);
+    BOOST_CHECK_EQUAL(OrientationDetector::applyBookRotation(spread, 90, page_size).angle(), 90);
+
+    OrientationResult cover(0, 0.0, false, "no text");
+    cover.setShape(QSize(3576, 3458), 0);
+    BOOST_CHECK(!OrientationDetector::applyBookRotation(cover, 90, page_size).isDecided());
 }
 
 BOOST_AUTO_TEST_SUITE_END();

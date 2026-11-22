@@ -28,6 +28,9 @@
 #include <QImageReader>
 #include <QSize>
 #include <QString>
+#include <utility>
+#include <map>
+#include <cstdlib>
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -445,7 +448,13 @@ OrientationDetector::detect(QImage const& image)
 OrientationResult
 OrientationDetector::detect(QImage const& image, int const exif_hint)
 {
-    return combine(detect(image), exif_hint);
+    OrientationResult result(combine(detect(image), exif_hint));
+    // Only a scan without a decision needs the shape, so the other scans skip this work.
+    result.setShape(image.size(), result.isDecided() ? -1 : shapeAxis(image));
+    if (!result.isDecided()) {
+        result.setDetails(result.details() + QStringLiteral(" shape=%1").arg(result.shapeAxis()));
+    }
+    return result;
 }
 
 OrientationResult
@@ -474,11 +483,13 @@ OrientationDetector::applyBookRotation(std::vector<OrientationResult>& results)
 {
     int votes[4] = { 0, 0, 0, 0 };
     int decisions = 0;
+    std::map<std::pair<int, int>, int> sizes;
     for (size_t i = 0; i < results.size(); ++i) {
         OrientationResult const& r = results[i];
         if (r.isDecided() && r.confidence() >= confidenceThreshold()) {
             ++votes[r.angle() / 90];
             ++decisions;
+            ++sizes[std::make_pair(r.imageSize().width(), r.imageSize().height())];
         }
     }
     int book = 0;
@@ -491,18 +502,209 @@ OrientationDetector::applyBookRotation(std::vector<OrientationResult>& results)
     if (votes[book] < 5 || votes[book] * 10 < decisions * 6) {
         return;
     }
-    int const book_angle = book * 90;
-    for (size_t i = 0; i < results.size(); ++i) {
-        OrientationResult const& r = results[i];
-        if (r.isDecided() && (r.angle() - book_angle + 360) % 180 != 0) {
-            OrientationResult changed(
-                book_angle, 0.5 * r.confidence(), true,
-                QStringLiteral("text runs across the book, book rotation used")
-            );
-            changed.setDetails(r.details());
-            results[i] = changed;
+    QSize book_size;
+    int best = 0;
+    for (auto const& kv : sizes) {
+        if (kv.second > best) {
+            best = kv.second;
+            book_size = QSize(kv.first.first, kv.first.second);
         }
     }
+    for (size_t i = 0; i < results.size(); ++i) {
+        results[i] = applyBookRotation(results[i], book * 90, book_size);
+    }
+}
+
+namespace
+{
+
+// A change of the scanner settings in one book changes the page scan size a little, while a cover scan differs a lot.
+bool similarSize(QSize const& a, QSize const& b)
+{
+    if (a.isEmpty() || b.isEmpty()) {
+        return a == b;
+    }
+    return std::abs(a.width() - b.width()) * 20 <= b.width() && std::abs(a.height() - b.height()) * 20 <= b.height();
+}
+
+} // namespace
+
+OrientationResult
+OrientationDetector::applyBookRotation(
+    OrientationResult const& r, int const book_angle, QSize const& book_size)
+{
+    if (book_angle < 0) {
+        return r;
+    }
+    OrientationResult changed;
+    if (r.isDecided()) {
+        if ((r.angle() - book_angle + 360) % 180 == 0) {
+            return r;
+        }
+        changed = OrientationResult(
+            book_angle, 0.5 * r.confidence(), true,
+            QStringLiteral("text runs across the book, book rotation used")
+        );
+    } else if (similarSize(r.imageSize(), book_size)) {
+        // A plate or a page without text has the size of the other page scans, so it lies in the book like them.
+        changed = OrientationResult(book_angle, 0.0, true, QStringLiteral("no decision, book rotation used"));
+    } else if (r.shapeAxis() >= 0 && r.shapeAxis() == book_angle % 180) {
+        changed = OrientationResult(
+            book_angle, 0.0, true, QStringLiteral("no text, the shape agrees with the book rotation")
+        );
+    } else {
+        return r;
+    }
+    changed.setDetails(r.details());
+    changed.setShape(r.imageSize(), r.shapeAxis());
+    return changed;
+}
+
+int
+OrientationDetector::shapeAxis(QImage const& image)
+{
+    if (image.isNull()) {
+        return -1;
+    }
+    QImage const small(
+        image.scaled(500, 500, Qt::KeepAspectRatio, Qt::SmoothTransformation)
+        .convertToFormat(QImage::Format_Grayscale8)
+    );
+    int const w = small.width();
+    int const h = small.height();
+    if (w < 20 || h < 20) {
+        return -1;
+    }
+    auto px = [&small](int x, int y) {
+        return int(small.constScanLine(y)[x]);
+    };
+
+    // The scanner background is the median of the border pixels.
+    std::vector<int> border;
+    for (int x = 0; x < w; ++x) {
+        for (int k = 0; k < 4; ++k) {
+            border.push_back(px(x, k));
+            border.push_back(px(x, h - 1 - k));
+        }
+    }
+    for (int y = 0; y < h; ++y) {
+        for (int k = 0; k < 4; ++k) {
+            border.push_back(px(k, y));
+            border.push_back(px(w - 1 - k, y));
+        }
+    }
+    std::nth_element(border.begin(), border.begin() + border.size() / 2, border.end());
+    int const bg = border[border.size() / 2];
+
+    std::vector<int> row_count(h, 0);
+    std::vector<int> col_count(w, 0);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            if (std::abs(px(x, y) - bg) > 40) {
+                ++row_count[y];
+                ++col_count[x];
+            }
+        }
+    }
+    int y0 = -1, y1 = -1, x0 = -1, x1 = -1;
+    for (int y = 0; y < h; ++y) {
+        if (row_count[y] * 4 > w) {
+            if (y0 < 0) {
+                y0 = y;
+            }
+            y1 = y;
+        }
+    }
+    for (int x = 0; x < w; ++x) {
+        if (col_count[x] * 4 > h) {
+            if (x0 < 0) {
+                x0 = x;
+            }
+            x1 = x;
+        }
+    }
+    if (y0 < 0 || x0 < 0 || y1 - y0 < 10 || x1 - x0 < 10) {
+        return -1;
+    }
+    int const bh = y1 - y0 + 1;
+    int const bw = x1 - x0 + 1;
+    if (bh * bw * 100 < 15 * w * h) {
+        return -1;
+    }
+    bool const tall = bh >= bw;
+    int const len = tall ? bh : bw;
+    int const across = tall ? bw : bh;
+    auto at = [&](int along, int a) {
+        return tall ? px(x0 + a, y0 + along) : px(x0 + along, y0 + a);
+    };
+
+    // A fold is a sharp line at one place in the profiles of four strips along the long side of the object.
+    int const from = len * 38 / 100;
+    int const to = len * 62 / 100;
+    // Up to three strong lines in each strip, because a tilted fold or a picture edge can move the strongest one.
+    std::vector<std::vector<int> > candidates(4);
+    for (int seg = 0; seg < 4; ++seg) {
+        int const a0 = across * (10 + 20 * seg) / 100;
+        int const a1 = std::max(a0 + 1, across * (30 + 20 * seg) / 100);
+        std::vector<double> profile(len, 0.0);
+        for (int i = 0; i < len; ++i) {
+            double sum = 0.0;
+            for (int a = a0; a < a1; ++a) {
+                sum += at(i, a);
+            }
+            profile[i] = sum / (a1 - a0);
+        }
+        std::vector<double> abs_diff(len, 0.0);
+        std::vector<double> window;
+        for (int i = 0; i < len; ++i) {
+            window.assign(profile.begin() + std::max(0, i - 12), profile.begin() + std::min(len, i + 13));
+            std::nth_element(window.begin(), window.begin() + window.size() / 2, window.end());
+            abs_diff[i] = std::fabs(profile[i] - window[window.size() / 2]);
+        }
+        std::vector<double> sorted(abs_diff);
+        std::nth_element(sorted.begin(), sorted.begin() + sorted.size() / 2, sorted.end());
+        double const noise = sorted[sorted.size() / 2] + 1e-3;
+        std::vector<std::pair<double, int> > maxima;
+        for (int i = std::max(1, from); i < std::min(len - 1, to); ++i) {
+            if (abs_diff[i] >= abs_diff[i - 1] && abs_diff[i] > abs_diff[i + 1] && abs_diff[i] >= 6.0 * noise) {
+                maxima.push_back(std::make_pair(abs_diff[i], i));
+            }
+        }
+        std::sort(maxima.rbegin(), maxima.rend());
+        for (size_t k = 0; k < maxima.size() && k < 3; ++k) {
+            candidates[seg].push_back(maxima[k].second);
+        }
+    }
+
+    double const tolerance = std::max(3.0, 0.04 * len);
+    double const ratio = double(len) / across;
+    int best_support = 0;
+    int best_position = -1;
+    for (int seg = 0; seg < 4; ++seg) {
+        for (int c : candidates[seg]) {
+            int support = 0;
+            for (int other = 0; other < 4; ++other) {
+                for (int p : candidates[other]) {
+                    if (std::abs(p - c) <= tolerance) {
+                        ++support;
+                        break;
+                    }
+                }
+            }
+            // The two pages of a spread are equal, so the fold is near the middle, while a picture edge on a cover is often elsewhere.
+            if (c >= len * 45 / 100 && c <= len * 55 / 100 && support > best_support) {
+                best_support = support;
+                best_position = c;
+            }
+        }
+    }
+    bool const fold = (best_support == 4 && ratio < 1.5) || (best_support == 3 && ratio < 1.4);
+
+    // A spread needs its fold upright, and a single page needs its long side upright.
+    if (fold) {
+        return tall ? 90 : 0;
+    }
+    return tall ? 0 : 90;
 }
 
 int

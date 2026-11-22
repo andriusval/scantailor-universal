@@ -43,7 +43,7 @@ public:
 
     void preUpdateUI(PageId const& page_id, OrthogonalRotation rotation);
 
-    void postUpdateUI();
+    void postUpdateUI(OrthogonalRotation rotation);
 signals:
     void rotated(OrthogonalRotation rotation);
 private slots:
@@ -56,8 +56,6 @@ private slots:
     void showApplyToDialog();
 
     void autoRotation();
-
-    void showAutoApplyDialog();
 
 private:
     void setRotation(OrthogonalRotation rotation);
@@ -76,7 +74,6 @@ private:
     PageSelectionAccessor m_pageSelectionAccessor;
     PageId m_pageId;
     OrthogonalRotation m_rotation;
-    PageId m_autoResultPage;
 };
 
 } // namespace fix_orientation

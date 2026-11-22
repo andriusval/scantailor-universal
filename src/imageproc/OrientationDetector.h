@@ -18,6 +18,7 @@
 #ifndef IMAGEPROC_ORIENTATION_DETECTOR_H_
 #define IMAGEPROC_ORIENTATION_DETECTOR_H_
 
+#include <QSize>
 #include <QString>
 #include <vector>
 
@@ -66,12 +67,32 @@ public:
     {
         m_details = details;
     }
+
+    // The scan size tells a cover scan from the scans of the book pages, which have one size.
+    QSize const& imageSize() const
+    {
+        return m_imageSize;
+    }
+
+    // For a scan without a decision: 0 for 0 or 180, 90 for 90 or 270, and -1 if the shape is unknown.
+    int shapeAxis() const
+    {
+        return m_shapeAxis;
+    }
+
+    void setShape(QSize const& image_size, int shape_axis)
+    {
+        m_imageSize = image_size;
+        m_shapeAxis = shape_axis;
+    }
 private:
     int m_angle;
     double m_confidence;
     bool m_decided;
     QString m_reason;
     QString m_details;
+    QSize m_imageSize;
+    int m_shapeAxis = -1;
 };
 
 class OrientationDetector
@@ -90,6 +111,12 @@ public:
 
     // A sideways table in a book scan must not turn its scan across the rotation of most other scans.
     static void applyBookRotation(std::vector<OrientationResult>& results);
+
+    // The book rotation for one scan, so that the Fix Orientation stage can use the rule one scan at a time.
+    static OrientationResult applyBookRotation(OrientationResult const& result, int book_angle, QSize const& book_size);
+
+    // A fold across the middle shows an open spread, and its absence a single page; returns 0, 90 or -1 as shapeAxis().
+    static int shapeAxis(QImage const& image);
 
     static double confidenceThreshold();
 };
