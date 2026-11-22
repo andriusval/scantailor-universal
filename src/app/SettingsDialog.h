@@ -147,7 +147,6 @@ private slots:
 
     void on_cbTryDeskewAfterDewarp_toggled(bool checked);
 
-    void on_cbDeskewPictureEdges_toggled(bool checked);
 
     void on_cbOrderHints_toggled(bool checked);
 

@@ -244,6 +244,7 @@ SettingsDialog::populateTreeWidget(QTreeWidget* treeWidget)
                                            <<        tr("Apply cut")
                                            << tr("Deskew")
                                            <<        tr("Mark deviant pages")
+                                           <<        tr("Picture pages by picture edges")
                                            << tr("Select Content")
                                            <<        tr("Page detection")
                                            <<        tr("Mark deviant pages")
@@ -644,9 +645,6 @@ void SettingsDialog::on_stackedWidget_currentChanged(int /*arg1*/)
     } else if (currentPage == ui.pageDeskew) {
         QString s("QToolButton {background: %1};");
         ui.btnColorDeskew->setStyleSheet(s.arg(m_settings.value(_key_deskew_controls_color, _key_deskew_controls_color_def).toString()));
-        // Without a user change, the settings file must not store the value, so that a new default reaches the user.
-        QSignalBlocker const blocker(ui.cbDeskewPictureEdges);
-        ui.cbDeskewPictureEdges->setChecked(m_settings.value(_key_deskew_picture_edges, _key_deskew_picture_edges_def).toBool());
     } else if (currentPage == ui.pageSelectContent) {
         QString s("QToolButton {background: %1};");
         ui.btnColorSelectedContent->setStyleSheet(s.arg(m_settings.value(_key_content_sel_content_color, _key_content_sel_content_color_def).toString()));
@@ -1157,11 +1155,6 @@ void SettingsDialog::on_cbTryVertHalfCorrection_toggled(bool checked)
 void SettingsDialog::on_cbTryDeskewAfterDewarp_toggled(bool checked)
 {
     m_settings.setValue(_key_dewarp_auto_deskew_after_dewarp, checked);
-}
-
-void SettingsDialog::on_cbDeskewPictureEdges_toggled(bool checked)
-{
-    m_settings.setValue(_key_deskew_picture_edges, checked);
 }
 
 void SettingsDialog::on_cbOrderHints_toggled(bool checked)
