@@ -109,6 +109,7 @@ CommandLine::parseCli(QStringList const& argv)
     opts << "white-margins";
     opts << "normalize-illumination";
     opts << "fill-offcut";
+    opts << "fill-margins";
     opts << "filling-color";
     opts << "grayscale-first";
     opts << "threshold";
@@ -452,6 +453,7 @@ CommandLine::printHelp()
     std::cout << "\t--white-margins\t\t\t\t-- default: false" << std::endl;
     std::cout << "\t--normalize-illumination\t\t-- default: false" << std::endl;
     std::cout << "\t--fill-offcut\t\t\t\t-- color and mixed modes only; default: false" << std::endl;
+    std::cout << "\t--fill-margins\t\t\t\t-- color and mixed modes only, no effect with white margins; default: false" << std::endl;
     std::cout << "\t--filling-color=<background|white|black>\t-- color and mixed modes only; default: background" << std::endl;
     std::cout << "\t--grayscale-first[=<true|false|auto>]\t-- color and mixed modes only: convert the original image to grayscale" << std::endl;
     std::cout << "\t\t\t\t\t\t   before all other output steps, so that the output file is grayscale; default: false." << std::endl;

@@ -77,6 +77,11 @@ public:
         return (m_mask & FILL_OFFCUT) != 0;
     }
 
+    bool fillMargins() const
+    {
+        return (m_mask & FILL_MARGINS) != 0;
+    }
+
     bool fillWhite() const
     {
         return (m_mask & WHITE_FILLING) != 0;
@@ -109,7 +114,8 @@ private:
         FILL_OFFCUT = 128,
         WHITE_FILLING = 256,
         BLACK_FILLING = 512,
-        CONVERT_TO_GRAYSCALE = 1024
+        CONVERT_TO_GRAYSCALE = 1024,
+        FILL_MARGINS = 2048
     };
 
     int m_mask;
