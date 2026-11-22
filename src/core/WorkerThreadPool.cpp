@@ -19,7 +19,6 @@
 
 #include "WorkerThreadPool.h"
 
-#include "ThreadPriority.h"
 #include "OutOfMemoryHandler.h"
 #include "settings/ini_keys.h"
 #include <QCoreApplication>
@@ -31,12 +30,9 @@
 #include <QtGlobal>
 #include <algorithm>
 #include <new>
+
 #ifdef _OPENMP
 #include <omp.h>
-#endif
-
-#if defined(Q_OS_LINUX)
-#include <sys/resource.h>
 #endif
 
 class WorkerThreadPool::TaskResultEvent : public QEvent
@@ -77,8 +73,10 @@ public:
     {
         FilterResultPtr result;
         if (!m_ptrTask->isCancelled()) {
-            applyPriority();
-            applyOpenMpThreads();
+#ifdef _OPENMP
+            // The pool already keeps all cores busy with whole pages, and OpenMP inside each page only adds overhead.
+            omp_set_num_threads(1);
+#endif
             try {
                 result = (*m_ptrTask)();
             } catch (std::bad_alloc const&) {
@@ -90,29 +88,6 @@ public:
         QCoreApplication::postEvent(&m_rOwner, new TaskResultEvent(m_ptrTask, result));
     }
 private:
-    void applyOpenMpThreads()
-    {
-#ifdef _OPENMP
-        // With more than one batch thread, the pages already run in parallel, and OpenMP threads in a page only compete with them.
-        omp_set_num_threads(m_rOwner.m_pPool->maxThreadCount() > 1 ? 1 : m_rOwner.m_ompThreads);
-#endif
-    }
-
-    void applyPriority()
-    {
-        ThreadPriority const prio(
-            ThreadPriority::load(
-                _key_batch_processing_priority, ThreadPriority::Normal
-            )
-        );
-#if defined(Q_OS_LINUX)
-        // On Linux, setpriority() changes only the current thread, and WorkerThread uses the same method.
-        setpriority(PRIO_PROCESS, 0, prio.toPosixNiceLevel());
-#else
-        QThread::currentThread()->setPriority(prio.toQThreadPriority());
-#endif
-    }
-
     WorkerThreadPool& m_rOwner;
     BackgroundTaskPtr m_ptrTask;
 };
@@ -120,15 +95,8 @@ private:
 WorkerThreadPool::WorkerThreadPool(QObject* parent)
     :   QObject(parent),
         m_pPool(new QThreadPool(this)),
-        m_numPendingTasks(0),
-        m_ompThreads(1)
+        m_numPendingTasks(0)
 {
-#ifdef _OPENMP
-    // A pool thread that takes a queued task keeps its last OpenMP value, so one batch thread must restore the default value.
-    m_ompThreads = omp_get_max_threads();
-#endif
-    // A new thread starts with the normal priority, but on Linux an old thread cannot get a higher priority again.
-    m_pPool->setExpiryTimeout(0);
     updateNumberOfThreads();
 }
 
@@ -181,7 +149,7 @@ WorkerThreadPool::threadCountSetting()
 {
     QSettings settings;
     int const num_threads = settings.value(
-        _key_batch_processing_threads, _key_batch_processing_threads_def
+        _key_batch_processing_threads, maxThreadCount()
     ).toInt();
     return std::max(1, std::min(num_threads, maxThreadCount()));
 }
