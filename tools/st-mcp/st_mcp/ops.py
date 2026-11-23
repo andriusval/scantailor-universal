@@ -984,15 +984,18 @@ def pages_fit_text_column(project: str, tolerance_mm: float = 0.5, height_ratio:
 
 def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_ratio: float = 0.95,
                      section_start_offset: float = 0.10, review_full_pages: bool = False,
-                     picture_ratio: float = 0.25) -> dict:
+                     picture_ratio: float = 0.25, line_tolerance_mm: float = 4.0) -> dict:
     """Vertical alignment for every body page, and lists of pages a person should check.
     - Front matter (pages before the first page with at least half the usual number of text lines:
       title, copyright, dedication, epigraph): vcenter. A small element at the top of such a page
       (series logo, less than 25 % of the usual height): top.
     - Section starts (the text block starts lower than usual by more than section_start_offset of
       the page height, with 3 or more text lines: preface, list or contents start): bottom, even when
-      the page is short. A small block lower than usual (part title, specks): vcenter, and review.
-    - Short pages (content height below short_ratio of the median: chapter ends, lists): top.
+      the page is short, or voriginal when its end is not on the usual bottom line. A small block lower
+      than usual (part title, specks): voriginal, and review.
+    - Short pages (content height below short_ratio of the median: chapter ends, lists): top when the
+      text starts on the usual top line of the full pages (within line_tolerance_mm), bottom when it ends
+      on their usual bottom line, else voriginal: a half-title or a lowered start keeps its printed place.
     - Full text pages without the page-number band (height below missing_number_ratio of the median
       but the usual number of lines): top, so that their text lines up with the other pages.
     - Picture pages: vcenter. These are pages with a color/grayscale output mode (photo plates), and
@@ -1031,6 +1034,29 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
                 if p.page(pid).side == side and abs(c["content_mm"]["height"] - med_h) < 0.05 * med_h]
         usual_top[side] = statistics.median(tops) if tops else None
 
+    def gaps_mm(c: dict) -> tuple[float, float]:
+        cr, pr = c["content_rect_px"], c.get("page_rect_px") or c["content_rect_px"]
+        k = c["content_mm"]["height"] / max(1.0, cr["height"])
+        return (cr["y"] - pr["y"]) * k, (pr["y"] + pr["height"] - cr["y"] - cr["height"]) * k
+
+    # The usual top and bottom lines in mm show where a short page must sit to line up with the full pages.
+    usual_gaps = {}
+    for side in ("left", "right", "single"):
+        g = [gaps_mm(c) for pid, c in body
+             if p.page(pid).side == side and c["content_mm"]["height"] > 0.95 * med_h]
+        usual_gaps[side] = (statistics.median(a for a, _ in g), statistics.median(b for _, b in g)) if g else None
+
+    def on_line(pid: str, c: dict) -> str | None:
+        u = usual_gaps.get(p.page(pid).side)
+        if u is None:
+            return None
+        top, bottom = gaps_mm(c)
+        if abs(top - u[0]) <= line_tolerance_mm:
+            return "top"
+        if abs(bottom - u[1]) <= line_tolerance_mm:
+            return "bottom"
+        return None
+
     # A sample gives the median number of lines, because the analysis of every page takes long.
     sample = [pid for pid, _ in body[len(body) // 4: len(body) // 4 + 15]]
     med_lines = statistics.median(text_lines(pid) for pid in sample) if sample else 0
@@ -1040,7 +1066,8 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
             front_end = i
             break
     decided = {"vcenter": [], "top_small_header": [], "vcenter_picture": [], "bottom_section_start": [],
-               "vcenter_small_block": [], "top_short": [], "top_no_number_band": [], "bottom": 0}
+               "voriginal_small_block": [], "top_short": [], "bottom_short": [], "voriginal_hanging": [],
+               "top_no_number_band": [], "bottom": 0}
     half_titles, near_empty, full_few_lines = [], [], []
     ids: dict[str, list[str]] = {k: [] for k in list(decided) + ["half_titles", "near_empty", "full_few_lines"]}
     for i, (pid, c) in enumerate(body):
@@ -1073,18 +1100,23 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
             decided["vcenter_picture"].append(lab)
             ids["vcenter_picture"].append(pid)
         elif h < missing_number_ratio * med_h and offset > section_start_offset:
-            if text_lines(pid) >= 3:
+            if text_lines(pid) >= 3 and on_line(pid, c) == "bottom":
                 align = "bottom"
-                decided["bottom_section_start"].append(lab)
-                ids["bottom_section_start"].append(pid)
+                key = "bottom_section_start"
+            elif text_lines(pid) >= 3:
+                align = "voriginal"
+                key = "voriginal_hanging"
             else:
-                align = "vcenter"
-                decided["vcenter_small_block"].append(lab)
-                ids["vcenter_small_block"].append(pid)
+                align = "voriginal"
+                key = "voriginal_small_block"
+            decided[key].append(lab)
+            ids[key].append(pid)
         elif h < short_ratio * med_h:
-            align = "top"
-            decided["top_short"].append(lab)
-            ids["top_short"].append(pid)
+            line = on_line(pid, c)
+            align = line or "voriginal"
+            key = {"top": "top_short", "bottom": "bottom_short"}.get(line, "voriginal_hanging")
+            decided[key].append(lab)
+            ids[key].append(pid)
         elif h < missing_number_ratio * med_h and text_lines(pid) >= 0.85 * med_lines:
             align = "top"
             decided["top_no_number_band"].append(lab)
@@ -1104,8 +1136,10 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
                   "top_small_header": ("top", 0.6, "small element at the top of front matter"),
                   "vcenter_picture": ("vcenter", 0.8, "picture page"),
                   "bottom_section_start": ("bottom", 0.6, "section start: the text starts lower than usual"),
-                  "vcenter_small_block": ("vcenter", 0.4, "small block lower than usual: part title or specks?"),
-                  "top_short": ("top", 0.8, "short page"),
+                  "voriginal_small_block": ("voriginal", 0.4, "small block lower than usual: part title or specks?"),
+                  "top_short": ("top", 0.8, "short page that starts on the usual top line"),
+                  "bottom_short": ("bottom", 0.7, "short page that ends on the usual bottom line"),
+                  "voriginal_hanging": ("voriginal", 0.6, "short page off the usual lines: keeps its printed place"),
                   "top_no_number_band": ("top", 0.6, "full text page without the page-number band")}
     with review.Notes(p) as notes:
         notes.clear([pid for pid, _ in body], "alignment")
@@ -1121,7 +1155,7 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
     return {"median_height_mm": med_h, "median_text_lines": med_lines, **decided,
             "skipped_no_page_layout": no_layout,
             "review": {"full_height_few_lines": full_few_lines,
-                       "small_blocks": decided["vcenter_small_block"],
+                       "small_blocks": decided["voriginal_small_block"],
                        "note": "rotated tables: preview them, vcenter is usual; section starts and small "
                                "blocks: preview them too, some books keep them at the top"},
             "report_removal_candidates": {"blank_pages": blank, "half_title_candidates": half_titles,
@@ -1206,8 +1240,15 @@ def _check_size(p: Project, ids: list[str]) -> dict:
                 reasons.append(f"height +{dh} mm")
             if not reasons:
                 continue
-            over.append({"page": p.page(pid).label, "page_no": p.page(pid).index + 1, "width_mm": mm["width"],
-                         "height_mm": mm["height"], "over": ", ".join(reasons)})
+            item = {"page": p.page(pid).label, "page_no": p.page(pid).index + 1, "width_mm": mm["width"],
+                    "height_mm": mm["height"], "over": ", ".join(reasons)}
+            if dw > SIZE_WIDTH_MM:
+                from . import zones
+                # A suggested point needs no preview when the only thing beyond the text is a small ink group.
+                stray = zones.stray_edges(zones.page_gray(p, pid), c["content_rect_px"])
+                if stray:
+                    item["stray_ink"] = stray
+            over.append(item)
             notes.add(pid, "size", "box larger than the book median", 0.4,
                       f"{', '.join(reasons)} against {med_w} x {med_h} mm: narrow to the text, fill zone for a stamp")
     return {"median_mm": [med_w, med_h], "checked": len(want), "over_median": over,
@@ -1217,24 +1258,93 @@ def _check_size(p: Project, ids: list[str]) -> dict:
                     "A page that is really larger (title picture, table, contents) stays, with a review_note."}
 
 
+def _check_output(p: Project, ids: list[str]) -> dict:
+    from collections import Counter
+    from . import zones
+    # Pages that match the book size must have one TIFF size per DPI, so another size shows a stale layout.
+    out = p.output_dir
+    missing, unreadable, sizes = [], [], {}
+    for pid in ids:
+        pg = p.page(pid)
+        if p.content(pid).get("empty") and not (out / f"{pg.label}.tif").exists():
+            continue
+        f = out / f"{pg.label}.tif"
+        if not f.exists():
+            missing.append(pg.label)
+            continue
+        try:
+            with Image.open(f) as im:
+                im.load()
+                sizes[pid] = (im.size, round(float((im.info.get("dpi") or (0, 0))[0])))
+        except Exception as e:  # noqa: BLE001
+            unreadable.append({"page": pg.label, "error": str(e)[:120]})
+    groups: dict[int, Counter] = {}
+    for pid, (size, dpi) in sizes.items():
+        if p.layout(pid).get("match_size"):
+            groups.setdefault(dpi, Counter())[size] += 1
+    odd = []
+    for pid, (size, dpi) in sizes.items():
+        c = groups.get(dpi)
+        if c and p.layout(pid).get("match_size") and size != c.most_common(1)[0][0]:
+            odd.append({"page": p.page(pid).label, "size": list(size), "book_size": list(c.most_common(1)[0][0]),
+                        "dpi": dpi})
+    lost = []
+    for pid in ids:
+        c = p.content(pid).get("content_rect_px")
+        if not c or c["width"] <= 0:
+            continue
+        for z in zones.zone_rects(p, pid):
+            if z[2] < c["x"] or z[0] > c["x"] + c["width"] or z[3] < c["y"] or z[1] > c["y"] + c["height"]:
+                lost.append({"page": p.page(pid).label, "zone_px": [round(v) for v in z]})
+    ok = not (missing or unreadable or odd)
+    return {"output_dir": str(out), "checked": len(ids), "ok": ok, "missing_tiff": missing,
+            "unreadable_tiff": unreadable, "odd_size": odd, "zones_outside_box": lost,
+            "rule": "odd_size: the page was written with an old page layout; run stages 5-6 for the whole book "
+                    "with a CLI that saves the project. missing/unreadable: run stage 6 for these pages. "
+                    "zones_outside_box: the zone has no effect; the mark is outside the box, or the zone is wrong."}
+
+
 def page_add_fill_zone(project: str, page: str, x: float, y: float, width: float, height: float,
-                       color: str = "#ffffff") -> dict:
+                       color: str = "#ffffff", fit: bool = False, dry_run: bool = False) -> dict:
     """Paint a rectangle of one page in a flat color in the output (Output filter fill zone), for a
     library stamp, a sticker or a handwritten note that stays inside the content box.
     x/y/width/height are page px, the same coordinates as page_preview and page_set_content.
+    fit=true: x/y/width/height is a rough box around the mark; the zone shrinks to the ink in it, grows
+    while ink touches its edges (a faint stamp edge, up to 150 px) and gets a 12 px pad. Check the result.
+    The result lists crossings: ink on both sides of a zone edge in the same rows or columns. A crossing
+    means that the zone cuts printed text, or that the mark is not fully covered. Do not keep a zone with a
+    crossing on printed text: make it smaller, or split it, and preview again.
+    dry_run=true: compute the zone and the crossings, and do not write the project.
     The zone is stored in original image px, so every later output run applies it and the GUI shows it
     (Output, Fill zones). A second call with the same rectangle adds nothing. Run run_stages(6, 6) after."""
+    from . import zones
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
     pg = p.find_page(page)
-    inv = p.transform(pg.id).xform.inverted()
-    corners = [(x, y), (x + width, y), (x + width, y + height), (x, y + height)]
-    added = p.add_fill_zone(pg.id, [inv.map(c) for c in corners], color)
-    if added:
-        p.save()
-    return {"page": pg.label, "added": bool(added), "zones": len(p.fill_zones(pg.id)),
-            "next": "run_stages(6, 6) for this page, then page_preview to check the output"}
+    rect = (x, y, x + width, y + height)
+    gray = zones.page_gray(p, pg.id)
+    if fit:
+        fitted = zones.fit_to_ink(gray, rect)
+        if fitted is None:
+            raise RuntimeError(f"{pg.label}: no ink in the rough box {rect}")
+        rect = fitted
+    crossings = zones.edge_crossings(gray, rect, p.content(pg.id).get("content_rect_px"))
+    added = False
+    if not dry_run:
+        inv = p.transform(pg.id).xform.inverted()
+        x0, y0, x1, y1 = rect
+        corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        added = p.add_fill_zone(pg.id, [inv.map(c) for c in corners], color)
+        if added:
+            p.save()
+            # A reload proves that the zone is in the file, because we found a lost zone only after the output.
+            if len(Project(proj).fill_zones(pg.id)) != len(p.fill_zones(pg.id)):
+                raise RuntimeError(f"{pg.label}: the zone is not in the saved project")
+    return {"page": pg.label, "zone_px": [round(v) for v in rect], "added": bool(added), "dry_run": dry_run,
+            "zones": len(p.fill_zones(pg.id)), "crossings": crossings,
+            "next": ("fix the zone: it cuts ink at " + ", ".join(c["edge"] for c in crossings)) if crossings
+            else "run_stages(6, 6) for this page, then page_preview to check the output"}
 
 
 def _wait_job(res: dict) -> dict:
@@ -1332,6 +1442,11 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
     of that side (pages_snap_content with points), so that the edge snaps to the text. Then cover what
     stays inside the box (a stamp beside the page number) with page_add_fill_zone.
     A wide page that is really wider (title picture, table, contents) stays: write review_note with why.
+    stray_ink on a page: a small ink group apart from the text at that side (speck, pencil mark, scanner
+    dust). Preview it; when it is not printed, pass its point to pages_snap_content.
+    kind=output: the gate after stage 6. Each page must have a readable TIFF, and the pages that match the
+    book size must have one TIFF size per DPI (another size means an old page layout: run stages 5-6 for
+    the whole book). Also lists fill zones outside the content box, because they have no effect.
     kind=orientation: ScanTailor's text-based orientation detector (CLI --detect-orientation) on each scan
     (stage 1 rotation, EXIF tag only as a hint) and on each existing output TIFF (stage 6 output_rotation).
     Lists only the scans/pages that need a look: no decision, low confidence, EXIF tag against the text,
@@ -1340,6 +1455,8 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
     ids = _resolve_pages(p, pages)
     if kind == "size":
         return _check_size(p, ids)
+    if kind == "output":
+        return _check_output(p, ids)
     if kind == "pictures":
         res = [checks.picture_score(p, i) for i in ids]
         flagged = [r for r in res if r["picture_fraction"] > 0.05 or r["line_art_fraction"] > 0.01]

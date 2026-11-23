@@ -27,18 +27,18 @@ The ScanTailor CLI gives the same result on each system, so the steps run on eac
    - `--snap <points.json>` snaps the edges at these points, as a double-click in the GUI.
      It uses the CLI option `--content-snap`, as st-mcp `pages_snap_content(points=...)` does.
    - The changed books go into `st-review/fit-books.txt`. A page that is really larger (title picture, table, contents) stays.
-5. The agent covers the library marks on printed pages 3, 4 and 17 and on the back cover with fill zones.
+5. The agent covers the library marks on the flyleaf, printed pages 3, 4 and 17, the colophon and the back cover with fill zones.
    See `stamp-agent.en.md`, part 2, and the scripts `stamp_sheet.py` and `add_zones.py`.
    The zones are in original image px, so every output run applies them and the GUI shows them (Output, Fill zones).
-6. Output (filters 5-6), only when the person tells you to: st-mcp `run_stages(5, 6)`, `series_fix.run_cli`, or `st-prepare-books.ps1 -Root <series> -OutputOnly`.
+6. Output (filters 5-6), only when the person tells you to: `output_script.py` merges the lists into one bash and one PowerShell script.
    - A book in `fit-books.txt` needs a full output run, because a changed box changes the page size of the whole book.
-   - Other books need filter 6 only for the pages in `zones-pages.txt` (`add_zones.py --output`).
+   - Other books need filters 5-6 only for the listed pages. Each run passes `--output-project`, so the project keeps the new page layout.
    - Clean only with fill zones in the project. Do not change the output TIFF files: a later output run writes them again and the marks come back.
-7. After the output: look at the output files of the changed pages. A mark that is still there gets a new zone (step 5) and a new output run for that page.
+7. After the output: `output_check.py` (one page size per book, readable TIFFs, no lost zone), then `out_sheet.py` for the output pages. A mark that is still there gets a new zone (step 5) and a new output run for that page.
 
 A book without a cover scan: put a cover image (for example from a book shop) in the book folder.
 Then st-mcp `project_add_front_cover(project, image)` adds it as the first page and runs stages 1-5 for it.
 Set the page offset of the book to 0 in `st-review/page-offset.json`.
 
 The general tools are in st-mcp: `check_pages(kind="size")`, `pages_fit_text_column`, `pages_snap_content(points=...)`,
-`page_preview(grid, roi, zones)`, `page_add_fill_zone` and `project_add_front_cover`. The scripts here run them for all books of a series.
+`check_pages(kind="output")`, `page_preview(grid, roi, zones)`, `page_add_fill_zone(fit, dry_run)` and `project_add_front_cover`. The scripts here run them for all books of a series.

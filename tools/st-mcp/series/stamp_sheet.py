@@ -15,7 +15,7 @@ from st_mcp.preview import grid_view  # noqa: E402
 from st_mcp.project import Project  # noqa: E402
 
 PROJECT = "projektas.ScanTailor"
-DEFAULT_PAGES = "3,4,17,back"
+DEFAULT_PAGES = "flyleaf,3,4,17,colophon,back"
 
 
 def offsets(series: Path) -> dict:
@@ -32,6 +32,14 @@ def targets(p: Project, pages: str, offset: int, around: int) -> list[tuple[int,
             base, what = 0, "front cover"
         elif tok == "back":
             base, what = len(p.pages) - 1, "back cover"
+        elif tok == "flyleaf":
+            # Libraries glue the loan slip onto the flyleaf, the page after the front cover.
+            base, what = 1, "flyleaf"
+        elif tok == "colophon":
+            # The colophon page before the back cover gets a handwritten price or a barcode sticker.
+            base, what = len(p.pages) - 2, "colophon"
+            while base > 1 and p.content(p.pages[base].id).get("empty"):
+                base -= 1
         else:
             base, what = int(tok) - 1 + offset, f"printed page {tok}?"
         for i in range(base - around, base + around + 1):

@@ -11,6 +11,7 @@ from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from st_mcp import zones as zonelib  # noqa: E402
 from st_mcp.preview import grid_view  # noqa: E402
 from st_mcp.project import Project  # noqa: E402
 
@@ -36,12 +37,12 @@ def main(argv=None) -> int:
     ap.add_argument("series")
     ap.add_argument("zones", help="JSON list of {book, label, zones: [[x0, y0, x1, y1], ...], color?} in page px")
     ap.add_argument("--apply", action="store_true", help="write the zones into the projects")
-    ap.add_argument("--output", action="store_true", help="after --apply, run filter 6 for these pages only")
+    ap.add_argument("--output", action="store_true", help="after --apply, run filters 5-6 for these pages only")
     args = ap.parse_args(argv)
     series = Path(args.series).resolve()
     rev = series / "st-review"
     items = json.loads(Path(args.zones).read_text(encoding="utf-8"))
-    tiles, pages = [], OrderedDict()
+    tiles, pages, cuts = [], OrderedDict(), []
     for it in items:
         book = series / it["book"]
         proj = book / PROJECT
@@ -51,6 +52,11 @@ def main(argv=None) -> int:
             raise ValueError(f"{it['book']} {it['label']}: the zone list is empty")
         tr = p.transform(pg.id)
         zones = [(max(0, a), max(0, b), min(tr.width, c), min(tr.height, d)) for a, b, c, d in it["zones"]]
+        gray = zonelib.page_gray(p, pg.id)
+        box = p.content(pg.id).get("content_rect_px")
+        crossing = [c for z in zones for c in zonelib.edge_crossings(gray, z, box)]
+        if crossing:
+            cuts.append(f"{it['book']} {it['label']}: {crossing}")
         if args.apply:
             if not (book / BACKUP).exists():
                 (book / BACKUP).write_bytes(proj.read_bytes())
@@ -62,7 +68,8 @@ def main(argv=None) -> int:
             p = Project(proj)
             pg = p.find_page(it["label"])
             pages.setdefault(it["book"], []).append(pg)
-        tiles.append(check_tile(p, pg.id, zones, f"{len(tiles) + 1} {it['book'][:45]} {it['label']}"))
+        mark = " CROSSING" if crossing else ""
+        tiles.append(check_tile(p, pg.id, zones, f"{len(tiles) + 1} {it['book'][:45]} {it['label']}{mark}"))
     sheets = rev / ("zones-applied" if args.apply else "zones-check")
     sheets.mkdir(parents=True, exist_ok=True)
     # Red is a zone and green the content box; only the part of a zone in the box changes the output.
@@ -79,9 +86,13 @@ def main(argv=None) -> int:
         if args.output:
             with open(rev / "zones-output.log", "a", encoding="utf-8") as log:
                 for b, pgs in pages.items():
-                    run_cli(series / b / PROJECT, 6, 6, [page_ref(pg) for pg in pgs], log)
+                    # Stage 5 makes the page size current again, because a page run of stage 6 alone keeps an old size.
+                    run_cli(series / b / PROJECT, 5, 6, [page_ref(pg) for pg in pgs], log)
                     print("output", b, [pg.label for pg in pgs], flush=True)
-    print(f"{len(tiles)} pages; check sheets in {sheets}")
+    for line in cuts:
+        # A crossing is ink on both sides of a zone edge: printed text that the zone cuts, or a mark not fully covered.
+        print("crossing:", line)
+    print(f"{len(tiles)} pages, {len(cuts)} with a crossing; check sheets in {sheets}")
     return 0
 
 

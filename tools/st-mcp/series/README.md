@@ -27,18 +27,18 @@ ScanTailor CLI visose sistemose duoda tą patį rezultatą, todėl žingsniai ve
    - `--snap <points.json>` prilipdo kraštus šiuose taškuose, kaip GUI dvigubas spragtelėjimas.
      Naudojama CLI parinktis `--content-snap`, kaip ir st-mcp `pages_snap_content(points=...)`.
    - Pakeistos knygos įrašomos į `st-review/fit-books.txt`. Tikrai didesnis puslapis (titulinio paveikslas, lentelė, turinys) lieka.
-5. Agentas uždengia bibliotekos ženklus spausdintuose 3, 4 ir 17 puslapiuose ir galiniame viršelyje fill zonomis.
+5. Agentas uždengia bibliotekos ženklus priešlapyje, spausdintuose 3, 4 ir 17 puslapiuose, leidybos duomenų puslapyje ir galiniame viršelyje fill zonomis.
    Žr. `stamp-agent.md` 2 dalį ir skriptus `stamp_sheet.py` bei `add_zones.py`.
    Zonos saugomos originalaus vaizdo px, todėl kiekvienas output jas pritaiko, o GUI jas rodo (Output, Fill zones).
-6. Output (5–6 filtrai), tik kai žmogus liepia: st-mcp `run_stages(5, 6)`, `series_fix.run_cli` arba `st-prepare-books.ps1 -Root <series> -OutputOnly`.
+6. Output (5–6 filtrai), tik kai žmogus liepia: `output_script.py` sujungia sąrašus į vieną bash ir vieną PowerShell skriptą.
    - Knygai iš `fit-books.txt` reikia pilno output, nes pakeistas rėmas keičia visos knygos puslapio dydį.
-   - Kitoms knygoms užtenka 6 filtro tik puslapiams iš `zones-pages.txt` (`add_zones.py --output`).
+   - Kitoms knygoms užtenka 5–6 filtrų tik išvardytiems puslapiams. Kiekvienas paleidimas perduoda `--output-project`, todėl projektas išlaiko naują išdėstymą.
    - Valyti tik projekto fill zonomis. Output TIFF failų nekeisti: kitas output juos perrašo ir ženklai grįžta.
-7. Po output: peržiūrėti pakeistų puslapių output failus. Jei ženklas liko, pridėti naują zoną (5 žingsnis) ir paleisti output tam puslapiui.
+7. Po output: `output_check.py` (vienas puslapio dydis knygoje, atsidarantys TIFF, neprarastos zonos), paskui `out_sheet.py` output puslapiams. Jei ženklas liko, pridėti naują zoną (5 žingsnis) ir paleisti output tam puslapiui.
 
 Knyga be viršelio skenuotės: viršelio vaizdą (pvz. iš knygyno svetainės) įdėti į knygos katalogą.
 Tada st-mcp `project_add_front_cover(project, image)` prideda jį kaip pirmą puslapį ir paleidžia jam 1–5 etapus.
 Knygos puslapių poslinkį `st-review/page-offset.json` nustatyti į 0.
 
 Bendri įrankiai yra st-mcp: `check_pages(kind="size")`, `pages_fit_text_column`, `pages_snap_content(points=...)`,
-`page_preview(grid, roi, zones)`, `page_add_fill_zone` ir `project_add_front_cover`. Šie skriptai juos paleidžia visoms serijos knygoms.
+`check_pages(kind="output")`, `page_preview(grid, roi, zones)`, `page_add_fill_zone(fit, dry_run)` ir `project_add_front_cover`. Šie skriptai juos paleidžia visoms serijos knygoms.

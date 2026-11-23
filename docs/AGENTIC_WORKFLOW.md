@@ -155,7 +155,10 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    prasideda žemiau nei įprastai) → `bottom`; iliustracijų puslapiai →
    `vcenter` (spalvotos ar pilkos nuotraukų įklijos ir B/W raižiniai,
    žemesni už teksto bloką); trumpi puslapiai (skyrių
-   pabaigos, sąrašai) ir pilni teksto puslapiai be numerio juostos → `top`;
+   pabaigos, sąrašai) → `top`, jei tekstas prasideda ties įprasta pilnų
+   puslapių viršaus linija, `bottom`, jei baigiasi ties įprasta apačia,
+   kitaip → `voriginal`. Taip pustitulis ar nuleista pradžia lieka
+   spausdintoje vietoje. Pilni teksto puslapiai be numerio juostos → `top`;
    kiti → `bottom`. Jei peržiūrose matosi lentelės ar diagramos, pridėti
    `review_full_pages=true`: jis išvardija aukštus puslapius su mažai
    eilučių, pvz. pasuktas lenteles. Peržiūrėti `top` ir `vcenter` puslapius, pavienius
@@ -171,6 +174,11 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    Dukart spragtelėti su `pages_snap_content(points=[{page, x, y, side}])`,
    kaip GUI: kraštas prilimpa prie spausdinto teksto. Antspaudą, lipduką ar
    ranka rašytą įrašą, kuris lieka rėme, uždengti `page_add_fill_zone`.
+   Duoti grubų rėmą su `fit=true` ir `dry_run=true`: įrankis priglaudžia
+   zoną prie ženklo rašalo. Nepalikti zonos, kurios `crossings` yra ant
+   spausdinto teksto. Crossing – rašalas abipus zonos krašto.
+   Puslapis iš `check_pages(kind="size")` su `stray_ink` toje pusėje turi
+   tik mažą rašalo grupę: peržiūrėti ir prilipdyti prie jo `point`.
    Trinti tik tai, kas nespausdinta, ir palikti 5 px tarp zonos ir
    artimiausios spausdintos raidės. Planuojamas zonas pirma patikrinti su
    `page_preview(zones=[...])`. Ženklas, kuris liečia spausdintą tekstą,
@@ -178,9 +186,10 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    paveikslas, lentelė, turinys) lieka, bet su `review_note` priežastimi.
    Output daryti tik tada, kai sąraše nėra nepaaiškinto puslapio.
    Tada `run_stages(4, 6)`,
-   `export_summary`, patikrinti, ar visi teksto puslapiai vienodo dydžio
-   (`pages_list(sort_by="content_width", descending=true)`). Peržiūrėti 8–16
-   išvesties puslapių.
+   `export_summary` ir vartai po output: `check_pages(kind="output")`.
+   Kiekvienas puslapis turi turėti atsidarantį TIFF, o visi puslapiai su
+   knygos dydžiu – vieną TIFF dydį. Kitas dydis rodo seną išdėstymą:
+   paleisti 5–6 etapus visai knygai. Peržiūrėti 8–16 išvesties puslapių.
 10. **Peržiūros lapas:** `review_sheet(project)` įrašo
     `out-agentas/review/index.html`. Puslapyje — kiekvieno išvesties
     puslapio miniatiūra ir content box peržiūra kiekvienam puslapiui su

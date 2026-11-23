@@ -149,7 +149,10 @@ GUI.
    the top stays `top`. Section starts (the text starts lower than usual) go
    to `bottom`. Picture pages go to `vcenter`: color or grayscale photo
    plates, and B/W engravings that are lower than the text block. Short
-   pages (chapter ends, lists) and full text pages without the page-number
+   pages (chapter ends, lists) go to `top` when their text starts on the
+   usual top line of the full pages. They go to `bottom` when their text
+   ends on the usual bottom line, and else to `voriginal`. Thus a half-title or a lowered
+   start keeps its printed place. Full text pages without the page-number
    band go to `top`. Other pages go to `bottom`. When the
    previews show tables or diagrams, add `review_full_pages=true`: it lists
    full-height pages with few text lines, such as rotated tables. Preview the `top` and `vcenter` pages, and
@@ -165,6 +168,11 @@ GUI.
    `pages_snap_content(points=[{page, x, y, side}])`, as in the GUI, so that
    the edge snaps to the printed text. Cover a stamp, a sticker or a
    handwritten note that stays inside the box with `page_add_fill_zone`.
+   Give a rough box with `fit=true` and `dry_run=true`: the tool fits the
+   zone to the ink of the mark. Do not keep a zone that has `crossings`
+   on printed text. A crossing shows ink on both sides of a zone edge.
+   A page from `check_pages(kind="size")` with `stray_ink` has only a small
+   ink group at that side: preview it, and snap to its `point`.
    Remove only what is not printed, and keep 5 px between a zone and the
    nearest printed letter. Check the planned zones first with
    `page_preview(zones=[...])`. A mark that touches printed text stays
@@ -172,9 +180,11 @@ GUI.
    contents) stays, with a `review_note` that gives the reason. Make the
    output only when the list has no page without a reason.
    Then `run_stages(4, 6)`,
-   `export_summary`, and check that all body pages have the same size
-   (`pages_list(sort_by="content_width", descending=true)`). Look at 8–16
-   output pages (corrected ones, picture pages, covers).
+   `export_summary`, and run the gate after the output:
+   `check_pages(kind="output")`. Each page must have a readable TIFF, and
+   all pages that match the book size must have one TIFF size. Another
+   size shows an old page layout: run stages 5–6 for the whole book.
+   Look at 8–16 output pages (corrected ones, picture pages, covers).
 10. **Review sheet:** `review_sheet(project)` writes
     `out-agentas/review/index.html`. The page shows a thumbnail of each output
     page and the content box preview of each page with an agent decision.
