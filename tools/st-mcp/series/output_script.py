@@ -71,7 +71,9 @@ def main(argv=None) -> int:
     rev = series / "st-review"
     full: list[str] = []
     for f in args.full:
-        full += [b for b in Path(f).read_text(encoding="utf-8").splitlines() if b and b not in full]
+        for b in Path(f).read_text(encoding="utf-8").splitlines():
+            if b and b not in full:
+                full.append(b)
     pages: OrderedDict[str, list[str]] = OrderedDict()
     for f in args.pages:
         for line in Path(f).read_text(encoding="utf-8").splitlines():

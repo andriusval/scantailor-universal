@@ -1042,14 +1042,15 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
     # The usual top and bottom lines in mm show where a short page must sit to line up with the full pages.
     usual_gaps = {}
     for side in ("left", "right", "single"):
+        # Without a page rect both gaps are 0, so the rule cannot see the lines and must not decide.
         g = [gaps_mm(c) for pid, c in body
-             if p.page(pid).side == side and c["content_mm"]["height"] > 0.95 * med_h]
+             if p.page(pid).side == side and c["content_mm"]["height"] > 0.95 * med_h and c.get("page_rect_px")]
         usual_gaps[side] = (statistics.median(a for a, _ in g), statistics.median(b for _, b in g)) if g else None
 
     def on_line(pid: str, c: dict) -> str | None:
         u = usual_gaps.get(p.page(pid).side)
-        if u is None:
-            return None
+        if u is None or not c.get("page_rect_px"):
+            return "unknown"
         top, bottom = gaps_mm(c)
         if abs(top - u[0]) <= line_tolerance_mm:
             return "top"
@@ -1068,7 +1069,7 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
     decided = {"vcenter": [], "top_small_header": [], "vcenter_picture": [], "bottom_section_start": [],
                "voriginal_small_block": [], "top_short": [], "bottom_short": [], "voriginal_hanging": [],
                "top_no_number_band": [], "bottom": 0}
-    half_titles, near_empty, full_few_lines = [], [], []
+    half_titles, near_empty, full_few_lines, no_page_rect = [], [], [], []
     ids: dict[str, list[str]] = {k: [] for k in list(decided) + ["half_titles", "near_empty", "full_few_lines"]}
     for i, (pid, c) in enumerate(body):
         h = c["content_mm"]["height"]
@@ -1100,7 +1101,7 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
             decided["vcenter_picture"].append(lab)
             ids["vcenter_picture"].append(pid)
         elif h < missing_number_ratio * med_h and offset > section_start_offset:
-            if text_lines(pid) >= 3 and on_line(pid, c) == "bottom":
+            if text_lines(pid) >= 3 and on_line(pid, c) in ("bottom", "unknown"):
                 align = "bottom"
                 key = "bottom_section_start"
             elif text_lines(pid) >= 3:
@@ -1113,6 +1114,9 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
             ids[key].append(pid)
         elif h < short_ratio * med_h:
             line = on_line(pid, c)
+            if line == "unknown":
+                line = "top"
+                no_page_rect.append(lab)
             align = line or "voriginal"
             key = {"top": "top_short", "bottom": "bottom_short"}.get(line, "voriginal_hanging")
             decided[key].append(lab)
@@ -1154,6 +1158,7 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
             notes.add(pid, "removal", "removal candidate (not removed)", 0.4, why)
     return {"median_height_mm": med_h, "median_text_lines": med_lines, **decided,
             "skipped_no_page_layout": no_layout,
+            "short_pages_without_page_rect": no_page_rect,
             "review": {"full_height_few_lines": full_few_lines,
                        "small_blocks": decided["voriginal_small_block"],
                        "note": "rotated tables: preview them, vcenter is usual; section starts and small "
@@ -1275,7 +1280,11 @@ def _check_output(p: Project, ids: list[str]) -> dict:
         try:
             with Image.open(f) as im:
                 im.load()
-                sizes[pid] = (im.size, round(float((im.info.get("dpi") or (0, 0))[0])))
+                size = im.size
+                # A page turned by 90 or 270 degrees has width and height swapped, and that is not another size.
+                if int(p.output(pid).get("output_rotation") or 0) % 180 == 90:
+                    size = (size[1], size[0])
+                sizes[pid] = (size, round(float((im.info.get("dpi") or (0, 0))[0])))
         except Exception as e:  # noqa: BLE001
             unreadable.append({"page": pg.label, "error": str(e)[:120]})
     groups: dict[int, Counter] = {}

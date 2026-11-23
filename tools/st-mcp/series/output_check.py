@@ -21,10 +21,14 @@ def lost_zones(series: Path, lists: list[str]) -> list[str]:
     for name in lists:
         for it in json.loads(Path(name).read_text(encoding="utf-8")):
             p = Project(series / it["book"] / PROJECT)
-            have = zone_rects(p, p.find_page(it["label"]).id)
-            for z in it["zones"]:
+            pid = p.find_page(it["label"]).id
+            have = zone_rects(p, pid)
+            tr = p.transform(pid)
+            for raw in it["zones"]:
+                # add_zones.py writes each zone clipped to the page, so the list must be clipped the same way.
+                z = (max(0, raw[0]), max(0, raw[1]), min(tr.width, raw[2]), min(tr.height, raw[3]))
                 if not any(all(abs(a - b) <= 4 for a, b in zip(z, h)) for h in have):
-                    out.append(f"{it['book']} {it['label']} {z}")
+                    out.append(f"{it['book']} {it['label']} {raw}")
     return out
 
 

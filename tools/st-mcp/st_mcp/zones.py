@@ -30,17 +30,18 @@ def fit_to_ink(gray: np.ndarray, rough: tuple[float, float, float, float], grow_
     lim = [z[0] - grow_px, z[1] - grow_px, z[2] + grow_px, z[3] + grow_px]
     for _ in range(grow_px // 10 + 1):
         moved = False
+        # Each step stays on the page, because a negative index makes an empty or a wrapped slice.
         if z[0] > max(0, lim[0]) and m[z[1]:z[3], max(0, z[0] - 15):z[0]].sum() > 3:
-            z[0] -= 10
+            z[0] = max(0, z[0] - 10)
             moved = True
         if z[2] < min(w - 1, lim[2]) and m[z[1]:z[3], z[2] + 1:z[2] + 16].sum() > 3:
-            z[2] += 10
+            z[2] = min(w - 1, z[2] + 10)
             moved = True
         if z[1] > max(0, lim[1]) and m[max(0, z[1] - 15):z[1], z[0]:z[2]].sum() > 3:
-            z[1] -= 10
+            z[1] = max(0, z[1] - 10)
             moved = True
         if z[3] < min(h - 1, lim[3]) and m[z[3] + 1:z[3] + 16, z[0]:z[2]].sum() > 3:
-            z[3] += 10
+            z[3] = min(h - 1, z[3] + 10)
             moved = True
         if not moved:
             break

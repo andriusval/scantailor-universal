@@ -20,6 +20,14 @@ class ZonesTest(unittest.TestCase):
         self.assertGreaterEqual(z[2], 330)
         self.assertLessEqual(z[1], 100)
 
+    def test_fit_at_the_page_edge_stays_on_the_page_and_still_grows_down(self):
+        g = page()
+        g[100:140, 0:80] = 0
+        g[140:200, 0:80] = 150
+        z = zones.fit_to_ink(g, (0, 90, 90, 145))
+        self.assertEqual(z[0], 0)
+        self.assertGreaterEqual(z[3], 200)
+
     def test_fit_gives_none_without_ink(self):
         self.assertIsNone(zones.fit_to_ink(page(), (10, 10, 50, 50)))
 
