@@ -1,8 +1,8 @@
 # Series scripts
 
 Scripts for one book series. They apply the rules of two projects that a person corrected by hand.
-The box rules use only the book median and the ink of the page; no step uses OCR.
-An agent removes the library marks: it looks at page images and writes fill zones (see `stamp-agent.md`).
+No step uses OCR. An agent looks at the page images (see `stamp-agent.md`).
+It snaps the box edges of the pages larger than the book median to the printed text. It covers the library marks with fill zones.
 
 Run the scripts with a `python3` that has `scipy`, from `tools/st-mcp`.
 They find `scantailor-universal-cli` as st-mcp does (`ST_CLI`, the build folder or `PATH`), and they need the `zbar` library for the ISBN barcode.
@@ -20,12 +20,15 @@ The ScanTailor CLI gives the same result on each system, so the steps run on eac
    - Report: `<series>/st-review/series-fix.json` (small pages, flags), log `series-fix.log`.
 3. `python3 series/review_sheets.py <series>` makes one image for each book in `st-review/sheets/`.
    The image shows the covers, the title page and the small pages (box below 70 % of the median). Correct with the st-mcp tools.
-4. `python3 series/fit_box.py <series>` finds the text pages with a box wider than the book median by more than 3 mm or taller by more than 3 % (`check_pages(kind="size")`).
-   A stamp or a handwritten library mark made such a box larger.
-   - The new box has the median size plus 1 mm on each cut side, at the place with the most ink (`page_set_content` `mode=median`).
-   - The script writes before and after sheets to `st-review/fit-box-plan/`. Give a page that is really larger (title picture, table, contents) with `--skip "<book>|<label>"`.
-   - `--apply` keeps `projektas.before-fit.ScanTailor`, writes the boxes, runs filters 4-5 and lists the changed books in `st-review/fit-books.txt`.
-5. An agent removes the library marks on printed pages 3, 4 and 17 and on the back cover with fill zones: `stamp-agent.md`, `stamp_sheet.py`, `add_zones.py`.
+4. Size gate, by an agent (`stamp-agent.md`, part 1). `python3 series/size_gate.py <series>` lists the text pages with a box larger than the book median.
+   The limits are those of `check_pages(kind="size")`: 3 mm more width, or 3 % more height.
+   A stamp or a handwritten library mark made such a box larger. The list does not cut a box.
+   - The agent looks at each page and chooses a point on the outermost printed text of the side with the mark.
+   - `--snap <points.json>` snaps the edges at these points, as a double-click in the GUI.
+     It uses the CLI option `--content-snap`, as st-mcp `pages_snap_content(points=...)` does.
+   - The book goes into `st-review/fit-books.txt`. A page that is really larger (title picture, table, contents) stays.
+5. The agent covers the library marks on printed pages 3, 4 and 17 and on the back cover with fill zones.
+   See `stamp-agent.md`, part 2, and the scripts `stamp_sheet.py` and `add_zones.py`.
    The zones are in original image px, so every output run applies them and the GUI shows them (Output, Fill zones).
 6. Output (filters 5-6), only when the person tells you to: st-mcp `run_stages(5, 6)`, `series_fix.run_cli`, or `st-prepare-books.ps1 -Root <series> -OutputOnly`.
    - A book in `fit-books.txt` needs a full output run, because a changed box changes the page size of the whole book.

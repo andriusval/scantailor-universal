@@ -162,9 +162,11 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    pataisyti per `pages_set_layout`.
    **Dydžio vartai prieš output:** `check_pages(kind="size")` išvardija
    teksto puslapius, kurių rėmas platesnis už knygos medianą daugiau kaip
-   3 mm arba aukštesnis daugiau kaip 3 %. Kiekvieną peržiūrėti. Rėmą
-   nukirpti iki knygos medianos (`page_set_content`, `mode=median`): rėmas
-   lieka ten, kur daugiausia rašalo, t. y. ant teksto. Antspaudą ar įrašą,
+   3 mm arba aukštesnis daugiau kaip 3 %. Vartai tik išvardija puslapius:
+   rėmo niekada nekirpti aklai iki medianos. Kiekvieną puslapį peržiūrėti
+   ir rasti pusę su ženklu. Dukart spragtelėti ant tos pusės kraštinio
+   spausdinto teksto su `pages_snap_content(points=[{page, x, y, side}])`,
+   kaip GUI: kraštas prilimpa prie spausdinto teksto. Antspaudą ar įrašą,
    kuris lieka rėme (pvz. šalia puslapio numerio), uždengti
    `page_add_fill_zone`. Tikrai didesnis puslapis (titulinio
    paveikslas, lentelė, turinys) lieka, bet su `review_note` priežastimi.
@@ -258,8 +260,8 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `job_status(job_id, wait_s?)` | Progresas / rezultatas |
 | `pages_list(project, sort_by, descending, limit, offset)` | Lentelė: id, label, content dydis + z-score, paraštės, lygiavimas, match size, spalvų režimas, DPI, vėliavos (`outlier_width`, `outlier_height`, `empty_content`, `cover_candidate`) |
 | `page_preview(project, page, engine?)` / `pages_preview(project, pages, engine?)` | Puslapis(-iai) su content box overlay; `engine="cli"` — piešia pats ScanTailor (CLI `--render-preview`), kaip GUI |
-| `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|median\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
-| `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5 |
+| `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
+| `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], points?, wait_s?)` | GUI dvigubo spragtelėjimo snap per `--content-snap`, paleidžia 4–5 etapus; `points` – savi spragtelėjimai ant spausdinto teksto |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
 | `project_diff(original, corrected, record?)` | Skirtumai tarp agento projekto ir žmogaus pataisyto, puslapiais; `record=true` juos dar įrašo į pataisymų žurnalą |
 | `corrections_record(original, corrected, book?, log?)` | Prideda žmogaus pataisymus į pataisymų žurnalą (JSONL): vienas įrašas kiekvienam pakeistam puslapio parametrui, be pasikartojimų |

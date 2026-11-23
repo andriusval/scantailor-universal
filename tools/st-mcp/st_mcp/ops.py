@@ -408,14 +408,19 @@ def _cli_supports(option: str) -> bool:
     return f"--{option}" in _cli_help_cache[cli]
 
 
-def pages_snap_content(project: str, pages: str | list[str], sides: str | list[str] = "auto",
-                       wait_s: float = 0) -> dict:
+def pages_snap_content(project: str, pages: str | list[str] = "", sides: str | list[str] = "auto",
+                       points: list[dict] | None = None, wait_s: float = 0) -> dict:
     """Shrink content boxes to the text with ScanTailor's own double-click adjustment (the GUI
     feature from ScanTailor Advanced, run through the CLI option --content-snap): for each side, a
     'double-click' on the outermost text makes ScanTailor snap that box edge to the ink there, so
     junk between the edge and the text drops out. Use it when check_pages reports junk at the box
     sides (thin_*_column_isolated, thin_*_line_isolated, box_exceeds_text).
     sides: 'auto' (the sides check_pages flags as junk), 'all', or a list of left|right|top|bottom.
+    points: your own double-clicks instead of pages/sides, a list of {page, x, y, side} in page px
+    (page_preview coordinates). Put the point on the outermost PRINTED text of that side, for example
+    the first letter of a line for side=left, or the page number for side=bottom: the edge then snaps to
+    that text, and a stamp, a sticker or handwriting beyond it goes out of the box. Use it for the pages
+    of check_pages(kind="size"). A point outside the box adds the ink there to the box.
     Runs stages 4-5 in the background (returns a job, like run_stages); preview the pages afterwards."""
     if not _cli_supports("content-snap"):
         raise RuntimeError(f"{find_cli()} does not know --content-snap: build the CLI from branch "
@@ -436,7 +441,20 @@ def pages_snap_content(project: str, pages: str | list[str], sides: str | list[s
         except ValueError:
             return path.as_posix()
 
-    for i in _resolve_pages(p, pages):
+    for pt in points or []:
+        pg = p.find_page(str(pt["page"]))
+        side = pt.get("side", "nearest")
+        if pg.image.file_page > 0:
+            skipped.append({"page": pg.label, "why": "multi-page image files are not supported"})
+            continue
+        sub_ = {"left": ":L", "right": ":R"}.get(pg.side, "")
+        reqs.append(f"{image_ref(pg.image.path)}{sub_}@{float(pt['x'])},{float(pt['y'])}:{side}")
+        prev = next((x for x in plan if x["page"] == pg.label), None)
+        if prev is None:
+            prev = {"page": pg.label, "snaps": []}
+            plan.append(prev)
+        prev["snaps"].append({"side": side, "at": {"x": pt["x"], "y": pt["y"]}})
+    for i in (_resolve_pages(p, pages) if pages and not points else []):
         pg = p.page(i)
         if pg.image.file_page > 0:
             skipped.append({"page": pg.label, "why": "multi-page image files are not supported"})
@@ -475,7 +493,7 @@ def pages_snap_content(project: str, pages: str | list[str], sides: str | list[s
     with review.Notes(p) as notes:
         for x, pid in zip(plan, snapped_ids):
             notes.add(pid, "content", "edges snapped to the text: " + ", ".join(s["side"] for s in x["snaps"]),
-                      0.75, "junk at the box sides (check_pages)")
+                      0.75, "points chosen on the printed text" if points else "junk at the box sides (check_pages)")
     res = run_stages(project, 4, 5, content_snap=";".join(reqs), wait_s=wait_s, pages=snapped_ids)
     res.update({"snapped": plan, "skipped": skipped,
                 "next": "when the job is done: pages_preview on these pages; check_pages(kind=content)"})
@@ -694,9 +712,6 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
     where ScanTailor's text-oriented detection crops or misses the image.
     mode=include_numbers: extend the box to page numbers that check_pages reports as missed
     ("looks like a page number missed by the content box").
-    mode=median: cut the box to the book median width and height (body pages with page layout), at the
-    place with the most ink. A side that is not larger than the median stays. Use it for the pages of
-    check_pages(kind="size"): the text stays, a stamp or a note at its side goes out of the box.
     mode=manual: set x/y/width/height, and/or grow (+) or shrink (-) individual edges with expand_*.
     Afterwards run_stages(4, 5) (or (4, 6)) so margins/output pick it up.
     """
@@ -745,11 +760,6 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
             rect = checks.detect_cover_rect(p, pg.id)
             if rect is None:
                 raise RuntimeError("could not find a cover on a darker background; use mode=full or manual")
-        elif mode == "median":
-            med = _median_px(p, pg.id)
-            rect = checks.median_rect(p, pg.id, med["width_px"], med["height_px"], med["pad_px"])
-            if rect is None:
-                raise RuntimeError("no content box to cut (empty or unprocessed content)")
         elif mode == "manual":
             cur = before.get("content_rect_px") or dict(pr)
             rect = {"x": cur["x"] if x is None else x, "y": cur["y"] if y is None else y,
@@ -760,7 +770,7 @@ def page_set_content(project: str, page: str, mode: str = "manual", x: float | N
             rect["y"] -= expand_top
             rect["height"] += expand_top + expand_bottom
         else:
-            raise ValueError("mode must be auto|empty|manual|full|cover|tighten|median|include_numbers|all_content")
+            raise ValueError("mode must be auto|empty|manual|full|cover|tighten|include_numbers|all_content")
         # Clip each edge to the page separately, so that a clip does not move the opposite edge.
         rx0, ry0 = max(pr["x"], rect["x"]), max(pr["y"], rect["y"])
         rx1 = min(pr["x"] + pr["width"], rect["x"] + rect["width"])
@@ -1159,21 +1169,6 @@ def pages_set_output(project: str, pages: str | list[str], color_mode: str | Non
 
 SIZE_WIDTH_MM = 3.0
 SIZE_HEIGHT_RATIO = 0.03
-# The pad is far below the size gate, so a cut box never shows up in check_pages(kind="size") again.
-MEDIAN_PAD_MM = 1.0
-
-
-def _median_px(p: Project, page_id: str) -> dict:
-    import statistics
-    body = _body_pages(p)
-    if len(body) < 3:
-        raise RuntimeError("too few text pages with content and page layout; run stages 1-5 first")
-    # Page px per mm comes from the text pages, because a page without a layout run has no size in mm.
-    scale = statistics.median(c["content_rect_px"]["width"] / c["content_mm"]["width"] for _, c in body
-                              if c["content_mm"]["width"] > 0)
-    w = statistics.median(c["content_mm"]["width"] for _, c in body) * scale
-    h = statistics.median(c["content_mm"]["height"] for _, c in body) * scale
-    return {"width_px": w, "height_px": h, "pad_px": MEDIAN_PAD_MM * scale}
 
 
 def _check_size(p: Project, ids: list[str]) -> dict:
@@ -1205,8 +1200,8 @@ def _check_size(p: Project, ids: list[str]) -> dict:
                       f"{', '.join(reasons)} against {med_w} x {med_h} mm: narrow to the text, fill zone for a stamp")
     return {"median_mm": [med_w, med_h], "checked": len(want), "over_median": over,
             "rule": f"box wider than the median by more than {SIZE_WIDTH_MM} mm or taller by more than "
-                    f"{SIZE_HEIGHT_RATIO:.0%}: preview each page. Cut the box to the median size with page_set_content "
-                    "(mode=median); a stamp or a note that stays inside the box gets page_add_fill_zone. "
+                    f"{SIZE_HEIGHT_RATIO:.0%}: preview each page. Snap the edge to the printed text with "
+                    "pages_snap_content(points=...); a stamp or a note that stays inside the box gets page_add_fill_zone. "
                     "A page that is really larger (title picture, table, contents) stays, with a review_note."}
 
 
@@ -1246,8 +1241,10 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
     a stage 6 run with grayscale_first=auto and wins. Preview every page with near_threshold=true.
     kind=size: the gate before stage 6. Lists every body page whose content box is wider than the book's
     median by more than 3 mm, or taller by more than 3 %. Such a box usually holds a stamp, an inventory
-    number or pencil notes beside the text. For each page: cut the box to the median size
-    (page_set_content mode=median), then cover what stays inside the box with page_add_fill_zone.
+    number or pencil notes beside the text. The gate only lists the pages: never cut a box to the median size.
+    For each page: page_preview, find the side with the mark, and double-click the outermost printed text
+    of that side (pages_snap_content with points), so that the edge snaps to the text. Then cover what
+    stays inside the box (a stamp beside the page number) with page_add_fill_zone.
     A wide page that is really wider (title picture, table, contents) stays: write review_note with why.
     kind=orientation: ScanTailor's text-based orientation detector (CLI --detect-orientation) on each scan
     (stage 1 rotation, EXIF tag only as a hint) and on each existing output TIFF (stage 6 output_rotation).

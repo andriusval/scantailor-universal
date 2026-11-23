@@ -25,10 +25,10 @@ COVER_INSET_PX = 8
 SMALL_RATIO = 0.70
 
 
-def run_cli(proj: Path, start: int, end: int, files: list[str], log) -> None:
+def run_cli(proj: Path, start: int, end: int, files: list[str], log, extra: list[str] | None = None) -> None:
     p = Project(proj)
     cmd = [find_cli(), f"--start-filter={start}", f"--end-filter={end}", "--threads=auto",
-           "--pages=" + ";".join(files), f"--output-project={proj}", str(proj), str(p.output_dir)]
+           "--pages=" + ";".join(files), *(extra or []), f"--output-project={proj}", str(proj), str(p.output_dir)]
     r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
                        env={**cli_env(), "OMP_NUM_THREADS": "1"}, cwd=str(proj.parent))
     log.write(f"$ {' '.join(cmd)}\n{r.stdout[-3000:]}{r.stderr[-3000:]}\n")

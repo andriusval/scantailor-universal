@@ -155,9 +155,11 @@ GUI.
    correct single pages with `pages_set_layout`.
    **Size gate before the output:** `check_pages(kind="size")` lists the
    body pages with a box wider than the book median by more than 3 mm, or
-   taller by more than 3 %. Preview each page. Cut the box to the book
-   median (`page_set_content`, `mode=median`). The box then stays on the
-   text, where the most ink is. Cover a stamp or a note that
+   taller by more than 3 %. The gate only lists the pages: never cut a box
+   to the median size. Preview each page and find the side with the mark.
+   Double-click the outermost printed text of that side with
+   `pages_snap_content(points=[{page, x, y, side}])`, as in the GUI, so that
+   the edge snaps to the printed text. Cover a stamp or a note that
    stays inside the box (for example, next to the page number) with
    `page_add_fill_zone`. A page that is really larger (title picture, table,
    contents) stays, with a `review_note` that gives the reason. Make the
@@ -253,8 +255,8 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `job_status(job_id, wait_s?)` | Progress / result |
 | `pages_list(project, sort_by, descending, limit, offset)` | Table: id, label, content size + z-scores, margins, alignment, match size, color mode, DPI, flags (`outlier_width`, `outlier_height`, `empty_content`, `cover_candidate`) |
 | `page_preview(project, page, engine?)` / `pages_preview(project, pages, engine?)` | Page(s) with the content box overlay; `engine="cli"` lets ScanTailor draw them (CLI `--render-preview`), as the GUI shows them |
-| `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|median\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
-| `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5 |
+| `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
+| `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], points?, wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5; `points` are your own clicks on the printed text |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
 | `project_diff(original, corrected, record?)` | Per-page differences between the agent's project and a corrected one; `record=true` also writes them to the corrections log |
 | `corrections_record(original, corrected, book?, log?)` | Appends the person's corrections to the corrections log (JSONL), one record per changed page parameter, without repeats |

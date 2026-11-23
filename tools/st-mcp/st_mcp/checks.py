@@ -501,45 +501,6 @@ def box_excess(project: Project, page_id: str) -> dict | None:
             "justified": tb["justified"], "threshold_px": round(0.6 * float(tb["line_h"]) / k)}
 
 
-def _best_window(profile: np.ndarray, size: int) -> int:
-    n = len(profile)
-    if size >= n:
-        return 0
-    c = np.concatenate([[0.0], np.cumsum(profile, dtype=np.float64)])
-    sums = c[size:] - c[:-size]
-    cand = np.flatnonzero(sums >= sums.max() - 1e-9)
-    total = float(profile.sum())
-    centre = float((np.arange(n) * profile).sum()) / total if total else n / 2
-    # When more windows hold all the ink, the window around the ink centre keeps equal margins.
-    return int(cand[np.argmin(np.abs(cand + size / 2 - centre))])
-
-
-def median_rect(project: Project, page_id: str, width_px: float | None, height_px: float | None,
-                pad_px: float = 0.0) -> dict | None:
-    # The text column has more ink than a stamp or a note at its side, so the window with the most ink is the text.
-    c = project.content(page_id)
-    r = c.get("content_rect_px")
-    if not r or c.get("empty") or r["width"] <= 0 or r["height"] <= 0:
-        return None
-    ink, k = _ink_mask(project, page_id)
-    x0, y0 = int(r["x"] * k), int(r["y"] * k)
-    x1, y1 = int((r["x"] + r["width"]) * k), int((r["y"] + r["height"]) * k)
-    sub = ink[y0:y1, x0:x1]
-    out = {"x": r["x"], "y": r["y"], "width": r["width"], "height": r["height"]}
-    # The pad keeps the edge pixels of the text, because the window is found on a smaller image.
-    if width_px and width_px + 2 * pad_px < r["width"] and sub.size:
-        s = _best_window(sub.sum(axis=0).astype(np.float64), max(1, int(width_px * k)))
-        a = max(r["x"], r["x"] + s / k - pad_px)
-        b = min(r["x"] + r["width"], r["x"] + s / k + width_px + pad_px)
-        out["x"], out["width"] = a, b - a
-    if height_px and height_px + 2 * pad_px < r["height"] and sub.size:
-        s = _best_window(sub.sum(axis=1).astype(np.float64), max(1, int(height_px * k)))
-        a = max(r["y"], r["y"] + s / k - pad_px)
-        b = min(r["y"] + r["height"], r["y"] + s / k + height_px + pad_px)
-        out["y"], out["height"] = a, b - a
-    return out
-
-
 def tighten_rect(project: Project, page_id: str, column_px: float | None = None) -> dict | None:
     """Fit the content box to the text block on all four sides: drops specks and junk at the edges
     (including faint junk next to the text) but keeps page numbers, running heads and real lines.
