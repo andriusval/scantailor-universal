@@ -175,6 +175,40 @@ class Project:
             return None
         return f.find(f"./page[@id='{page_id}']/params")
 
+    # Fill zones of the Output filter are polygons in original image px, so they stay valid when the layout changes.
+    def fill_zones(self, page_id: str) -> list[dict]:
+        f = self.filter_el("output")
+        fz = f.find(f"./page[@id='{page_id}']/fill-zones") if f is not None else None
+        out = []
+        for z in (fz.findall("zone") if fz is not None else []):
+            pts = [(float(q.get("x")), float(q.get("y"))) for q in z.findall("./spline/point")]
+            prop = z.find("./properties/property[@type='FillColorProperty']")
+            out.append({"points": pts, "color": prop.get("color") if prop is not None else "#ffffff"})
+        return out
+
+    def add_fill_zone(self, page_id: str, points: list[tuple[float, float]], color: str = "#ffffff") -> bool:
+        f = self.filter_el("output")
+        page = f.find(f"./page[@id='{page_id}']") if f is not None else None
+        if page is None:
+            raise RuntimeError(f"page {page_id}: output settings missing (run stages 1-5 first)")
+        xs, ys = [p[0] for p in points], [p[1] for p in points]
+        # A second run must not stack the same zone again, so the method does not add a zone with the same bounds within 3 px.
+        for z in self.fill_zones(page_id):
+            zx, zy = [p[0] for p in z["points"]], [p[1] for p in z["points"]]
+            if all(abs(a - b) <= 3 for a, b in zip((min(xs), min(ys), max(xs), max(ys)),
+                                                    (min(zx), min(zy), max(zx), max(zy)))):
+                return False
+        fz = page.find("fill-zones")
+        if fz is None:
+            fz = ET.SubElement(page, "fill-zones", {"pictureZonesSensitivity": "100"})
+        zone = ET.SubElement(fz, "zone")
+        spline = ET.SubElement(zone, "spline")
+        for x, y in points:
+            ET.SubElement(spline, "point", {"x": repr(float(x)), "y": repr(float(y))})
+        props = ET.SubElement(zone, "properties")
+        ET.SubElement(props, "property", {"color": color, "type": "FillColorProperty"})
+        return True
+
     # ------------------------------------------------------------------ read
     def rotation(self, image_id: str) -> int:
         f = self.filter_el("fix-orientation")

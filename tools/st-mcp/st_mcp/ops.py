@@ -1149,6 +1149,64 @@ def pages_set_output(project: str, pages: str | list[str], color_mode: str | Non
             "output_rotation": output_rotation}
 
 
+SIZE_WIDTH_MM = 3.0
+SIZE_HEIGHT_RATIO = 0.03
+
+
+def _check_size(p: Project, ids: list[str]) -> dict:
+    import statistics
+    body = _body_pages(p)
+    if len(body) < 3:
+        raise RuntimeError("too few text pages with content and page layout; run stages 1-5 first")
+    med_w = statistics.median(c["content_mm"]["width"] for _, c in body)
+    med_h = statistics.median(c["content_mm"]["height"] for _, c in body)
+    want = set(ids)
+    over = []
+    with review.Notes(p) as notes:
+        notes.clear(ids, "size")
+        for pid, c in body:
+            if pid not in want:
+                continue
+            mm = c["content_mm"]
+            dw, dh = round(mm["width"] - med_w, 1), round(mm["height"] - med_h, 1)
+            reasons = []
+            if dw > SIZE_WIDTH_MM:
+                reasons.append(f"width +{dw} mm")
+            if mm["height"] > med_h * (1 + SIZE_HEIGHT_RATIO):
+                reasons.append(f"height +{dh} mm")
+            if not reasons:
+                continue
+            over.append({"page": p.page(pid).label, "page_no": p.page(pid).index + 1, "width_mm": mm["width"],
+                         "height_mm": mm["height"], "over": ", ".join(reasons)})
+            notes.add(pid, "size", "box larger than the book median", 0.4,
+                      f"{', '.join(reasons)} against {med_w} x {med_h} mm: narrow to the text, fill zone for a stamp")
+    return {"median_mm": [med_w, med_h], "checked": len(want), "over_median": over,
+            "rule": f"box wider than the median by more than {SIZE_WIDTH_MM} mm or taller by more than "
+                    f"{SIZE_HEIGHT_RATIO:.0%}: preview each page. Narrow the box to the text with page_set_content "
+                    "(tighten or manual); a stamp or a note that stays inside the box gets page_add_fill_zone. "
+                    "A page that is really larger (title picture, table, contents) stays, with a review_note."}
+
+
+def page_add_fill_zone(project: str, page: str, x: float, y: float, width: float, height: float,
+                       color: str = "#ffffff") -> dict:
+    """Paint a rectangle of one page in a flat color in the output (Output filter fill zone), for a
+    library stamp, a sticker or a handwritten note that stays inside the content box.
+    x/y/width/height are page px, the same coordinates as page_preview and page_set_content.
+    The zone is stored in original image px, so every later output run applies it and the GUI shows it
+    (Output, Fill zones). A second call with the same rectangle adds nothing. Run run_stages(6, 6) after."""
+    proj = Path(project).resolve()
+    _ensure_idle(proj)
+    p = Project(proj)
+    pg = p.find_page(page)
+    inv = p.transform(pg.id).xform.inverted()
+    corners = [(x, y), (x + width, y), (x + width, y + height), (x, y + height)]
+    added = p.add_fill_zone(pg.id, [inv.map(c) for c in corners], color)
+    if added:
+        p.save()
+    return {"page": pg.label, "added": bool(added), "zones": len(p.fill_zones(pg.id)),
+            "next": "run_stages(6, 6) for this page, then page_preview to check the output"}
+
+
 def check_pages(project: str, pages: str | list[str] = "all", kind: str = "content") -> dict:
     """Heuristic checks with evidence. kind=content: ink outside the box above/below (missed page numbers,
     headers) and left/right (cut-off text, marginalia), isolated junk at the box's top/bottom lines and
@@ -1163,12 +1221,19 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
     mid-tones after a weak paper tint is removed; below 10 = gray), grayscale, margin to the threshold and
     near_threshold. chroma_estimate is computed here; chroma_output_stage is ScanTailor's own value after
     a stage 6 run with grayscale_first=auto and wins. Preview every page with near_threshold=true.
+    kind=size: the gate before stage 6. Lists every body page whose content box is wider than the book's
+    median by more than 3 mm, or taller by more than 3 %. Such a box usually holds a stamp, an inventory
+    number or pencil notes beside the text. For each page: narrow the box to the text (page_set_content),
+    then cover what stays inside the box (a stamp beside the page number) with page_add_fill_zone.
+    A wide page that is really wider (title picture, table, contents) stays: write review_note with why.
     kind=orientation: ScanTailor's text-based orientation detector (CLI --detect-orientation) on each scan
     (stage 1 rotation, EXIF tag only as a hint) and on each existing output TIFF (stage 6 output_rotation).
     Lists only the scans/pages that need a look: no decision, low confidence, EXIF tag against the text,
     text across the book (sideways table), or a detected rotation that differs from the project."""
     p = _proj(project)
     ids = _resolve_pages(p, pages)
+    if kind == "size":
+        return _check_size(p, ids)
     if kind == "pictures":
         res = [checks.picture_score(p, i) for i in ids]
         flagged = [r for r in res if r["picture_fraction"] > 0.05 or r["line_art_fraction"] > 0.01]
@@ -1794,5 +1859,5 @@ def workflow_guide() -> dict:
 
 TOOLS = [project_create, project_for_windows, project_diff, corrections_record, corrections_stats, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
          pages_preview, image_preview, page_set_content, pages_snap_content, pages_set_layout, pages_fit_text_column, pages_fit_width, pages_align_auto, pages_set_output,
-         check_pages, export_summary, review_note, review_sheet, workflow_guide]
+         page_add_fill_zone, check_pages, export_summary, review_note, review_sheet, workflow_guide]
 IMAGE_TOOLS = {"page_preview", "pages_preview", "image_preview"}
