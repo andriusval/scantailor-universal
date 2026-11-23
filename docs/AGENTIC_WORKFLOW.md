@@ -86,8 +86,8 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
      inventoriaus numeriai paraštėje lieka už rėmo, o brūkšneliai eilučių
      galuose lieka viduje. Peržiūrėti puslapius su dideliu nukirpimu
      (pastaba peržiūrai) ir `taller_pages`: aukštesniame rėme dažniausiai
-     yra antspaudas ar žymė virš teksto ar po juo. Juos taisyti
-     `mode="manual"`.
+     yra antspaudas ar žymė virš teksto ar po juo. Juos taisyti dydžio
+     vartuose (9 žingsnis) savais snap taškais.
 5. **Puslapiai su iliustracijomis:** `check_pages(kind="pictures")`; peržiūrėti
    kiekvieną pažymėtą (padidinus iliustraciją). `all_content` rėmas neapima
    plonų juostų prie lapo kraštų, nugarėlės šešėlio ir popieriaus po parašu.
@@ -159,7 +159,25 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    kiti → `bottom`. Jei peržiūrose matosi lentelės ar diagramos, pridėti
    `review_full_pages=true`: jis išvardija aukštus puslapius su mažai
    eilučių, pvz. pasuktas lenteles. Peržiūrėti `top` ir `vcenter` puslapius, pavienius
-   pataisyti per `pages_set_layout`. Tada `run_stages(4, 6)`,
+   pataisyti per `pages_set_layout`.
+   **Dydžio vartai prieš output:** `check_pages(kind="size")` išvardija
+   teksto puslapius, kurių rėmas platesnis už knygos medianą daugiau kaip
+   3 mm arba aukštesnis daugiau kaip 3 %. Po `pages_fit_text_column`
+   (4 žingsnis) lieka tik puslapiai, kurių nemokamas stulpelio pritaikymas
+   nesutvarkė. Vartai tik išvardija puslapius: rėmo niekada nekirpti aklai
+   iki medianos. Kiekvieną puslapį peržiūrėti su `page_preview(grid=true)`
+   ir rasti pusę su ženklu. Tašką ant tos pusės kraštinio spausdinto teksto
+   nuskaityti iš artimo vaizdo (`page_preview(roi=[x0, y0, x1, y1])`).
+   Dukart spragtelėti su `pages_snap_content(points=[{page, x, y, side}])`,
+   kaip GUI: kraštas prilimpa prie spausdinto teksto. Antspaudą, lipduką ar
+   ranka rašytą įrašą, kuris lieka rėme, uždengti `page_add_fill_zone`.
+   Trinti tik tai, kas nespausdinta, ir palikti 5 px tarp zonos ir
+   artimiausios spausdintos raidės. Planuojamas zonas pirma patikrinti su
+   `page_preview(zones=[...])`. Ženklas, kuris liečia spausdintą tekstą,
+   lieka žmogui. Tikrai didesnis puslapis (titulinio
+   paveikslas, lentelė, turinys) lieka, bet su `review_note` priežastimi.
+   Output daryti tik tada, kai sąraše nėra nepaaiškinto puslapio.
+   Tada `run_stages(4, 6)`,
    `export_summary`, patikrinti, ar visi teksto puslapiai vienodo dydžio
    (`pages_list(sort_by="content_width", descending=true)`). Peržiūrėti 8–16
    išvesties puslapių.
@@ -177,9 +195,10 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
     nuimamas, kai orientacijos detektorius output faile randa stačią tekstą
     (`upright_confirmed`). Puslapis, kuriame teksto detektoriui per mažai,
     arba su `check_pages` radiniu `text_runs_vertically`, lieka sąraše.
-11. `project_for_windows(project)`, jei apdorota per WSL — kad projektą
-    atidarytų Windows GUI. Su šios šakos Windows buildu naudoti
-    `relative=true`: tada projektas atsidaro ir WSL, ir Windows.
+11. `project_for_windows(project)`, jei projektą atidarys GUI kitoje
+    sistemoje nei ta, kurioje jis apdorotas (pvz. apdorota WSL, atidaroma
+    Windows). Su `relative=true` keliai rašomi nuo projekto, todėl projektas
+    atsidaro bet kurioje sistemoje.
     Jis taip pat išsaugo `agentas.orig.ScanTailor` — baigto projekto kopiją.
     Išvalyti agento žurnalus ir paleidimų atsargines kopijas, bet niekada ne
     `.orig`: `project_diff(orig, pataisytas)` vėliau palygina jį su žmogaus
@@ -241,14 +260,15 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 |---|---|
 | `workflow_guide()` | Šis dokumentas (EN) |
 | `project_create(images_dir, project, output_dir?, dpi=300, force_dpi=false)` | Sukuria `.ScanTailor`, sutvarko DPI |
+| `project_add_front_cover(project, image?)` | Prideda viršelio vaizdą (pvz. iš knygyno svetainės) kaip pirmą baigto projekto puslapį; 1–5 etapai tik viršeliui |
 | `project_info(project)` | Puslapių skaičius, DPI, pasukimai, etapų progresas, vykdomas darbas |
 | `image_preview(project, images?)` | Originalūs skenai |
 | `run_stages(project, start, end, orientation?, layout?, layout_direction?, dpi?, content_detection?, wait_s?, pages?, output_rotate?)` | Paleidžia filtrus fone; `pages` — tik šie puslapiai (CLI `--pages`); eiga ir puslapių klaidos iš CLI `--json-progress`; `orientation=auto` ir `output_rotate=auto` naudoja orientacijos detektorių |
 | `job_status(job_id, wait_s?)` | Progresas / rezultatas |
 | `pages_list(project, sort_by, descending, limit, offset)` | Lentelė: id, label, content dydis + z-score, paraštės, lygiavimas, match size, spalvų režimas, DPI, vėliavos (`outlier_width`, `outlier_height`, `empty_content`, `cover_candidate`) |
-| `page_preview(project, page, engine?)` / `pages_preview(project, pages, engine?)` | Puslapis(-iai) su content box overlay; `engine="cli"` — piešia pats ScanTailor (CLI `--render-preview`), kaip GUI |
+| `page_preview(project, page, engine?, grid?, roi?, zones?)` / `pages_preview(project, pages, engine?)` | Puslapis(-iai) su content box overlay; `engine="cli"` — piešia pats ScanTailor (CLI `--render-preview`), kaip GUI; `grid`/`roi`/`zones` – puslapio px tinklelis, artimas vaizdas ir planuojamos zonos |
 | `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
-| `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5 |
+| `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], points?, wait_s?)` | GUI dvigubo spragtelėjimo snap per `--content-snap`, paleidžia 4–5 etapus; `points` – savi spragtelėjimai ant spausdinto teksto |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
 | `project_diff(original, corrected, record?)` | Skirtumai tarp agento projekto ir žmogaus pataisyto, puslapiais; `record=true` juos dar įrašo į pataisymų žurnalą |
 | `corrections_record(original, corrected, book?, log?)` | Prideda žmogaus pataisymus į pataisymų žurnalą (JSONL): vienas įrašas kiekvienam pakeistam puslapio parametrui, be pasikartojimų |
@@ -257,12 +277,13 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `pages_fit_width(project, margin_mm?, percentile?)` | Vienas puslapio plotis: šoninės paraštės 0 puslapiams, platesniems už teksto bloko medianą |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertikalus lygiavimas visiems teksto puslapiams ir šalinimo kandidatai ataskaitai |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?, grayscale_first?, output_rotation?)` | `output`; `grayscale_first` (true, false arba "auto") įrašo `color-or-grayscale@convertToGrayscale="1"` arba `"auto"` (CLI `--grayscale-first`); `output_rotation` (0/90/180/270, pagal laikrodžio rodyklę) pasuka tik išvesties TIFF (CLI `--output-rotate`) |
-| `check_pages(project, pages, kind=content\|pictures\|grayscale\|orientation)` | Heuristikos su įrodymais; `grayscale` duoda kiekvieno puslapio chroma, klasifikaciją ir atstumą iki slenksčio; `text_runs_vertically` žymi šonu išspausdintas lenteles; `orientation` paleidžia detektorių (CLI `--detect-orientation`) skenams ir išvesties failams ir išvardija tuos, kuriuos reikia peržiūrėti |
+| `page_add_fill_zone(project, page, x, y, width, height, color?)` | Output fill zona (puslapio px): antspaudas ar įrašas rėmo viduje; saugoma originalo px, matoma GUI |
+| `check_pages(project, pages, kind=content\|size\|pictures\|grayscale\|orientation)` | Heuristikos su įrodymais; `size` išvardija rėmus, didesnius už medianą (vartai prieš output); `grayscale` duoda kiekvieno puslapio chroma, klasifikaciją ir atstumą iki slenksčio; `text_runs_vertically` žymi šonu išspausdintas lenteles; `orientation` paleidžia detektorių (CLI `--detect-orientation`) skenams ir išvesties failams ir išvardija tuos, kuriuos reikia peržiūrėti |
 | `export_summary(project)` | Išvesties TIFF sąrašas ir kas trūksta |
 | `review_note(project, pages, decision, reason?, confidence?, topic?)` | Įrašo agento sprendimą peržiūros lapui |
 | `review_sheet(project, pages?, thumb_px?, engine?)` | Įrašo `out-agentas/review/index.html`: miniatiūros, sprendimai su patikimumu, abejotini puslapiai pirmi |
 | `pages_straighten_pictures(project, pages)` | Nuotraukų puslapių kampas pagal spaudos stačiakampius |
-| `project_for_windows(project, relative?)` | /mnt/c keliai → C:/ Windows GUI arba reliatyvūs nuo projekto (paskutinis žingsnis per WSL) |
+| `project_for_windows(project, relative?)` | Projekto keliai GUI kitoje sistemoje: reliatyvūs nuo projekto arba /mnt/c → C:/ (paskutinis žingsnis) |
 
 ## CLI parinktys, kurias naudoja st-mcp
 
@@ -354,7 +375,7 @@ Jei puslapio kaukių nepavyko įrašyti, `--json-progress` duoda įvykį `warnin
 ## Įgyvendinimo planas
 
 1. **P1 — Python MCP serveris** (`tools/st-mcp/`): kviečia `scantailor-universal-cli`,
-   redaguoja projekto XML, peržiūras piešia Pillow. Greitai, veikia ir Windows, ir Linux.
+   redaguoja projekto XML, peržiūras piešia Pillow. Greitai, veikia kiekvienoje sistemoje, kurioje veikia CLI.
 2. **P2 — native C++ komandos** `scantailor-universal-cli <subcommand> --json`
    tiems patiems įrankiams, peržiūras renderina `src/core` (tiksliai kaip GUI),
    apdorojimas po vieną puslapį (dabar CLI visada apdoroja visus); MCP

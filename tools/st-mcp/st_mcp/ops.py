@@ -23,7 +23,7 @@ from PIL import Image
 
 from . import checks, corrections, review
 from .masks import cli_masks_available, dump_masks
-from .preview import contact_sheet, render_image, render_page
+from .preview import contact_sheet, grid_view, render_image, render_page
 from .project import COLOR_MODES, Project
 
 STAGES = {1: "fix_orientation", 2: "page_split", 3: "deskew", 4: "select_content",
@@ -408,14 +408,19 @@ def _cli_supports(option: str) -> bool:
     return f"--{option}" in _cli_help_cache[cli]
 
 
-def pages_snap_content(project: str, pages: str | list[str], sides: str | list[str] = "auto",
-                       wait_s: float = 0) -> dict:
+def pages_snap_content(project: str, pages: str | list[str] = "", sides: str | list[str] = "auto",
+                       points: list[dict] | None = None, wait_s: float = 0) -> dict:
     """Shrink content boxes to the text with ScanTailor's own double-click adjustment (the GUI
     feature from ScanTailor Advanced, run through the CLI option --content-snap): for each side, a
     'double-click' on the outermost text makes ScanTailor snap that box edge to the ink there, so
     junk between the edge and the text drops out. Use it when check_pages reports junk at the box
     sides (thin_*_column_isolated, thin_*_line_isolated, box_exceeds_text).
     sides: 'auto' (the sides check_pages flags as junk), 'all', or a list of left|right|top|bottom.
+    points: your own double-clicks instead of pages/sides, a list of {page, x, y, side} in page px
+    (page_preview coordinates). Put the point on the outermost PRINTED text of that side, for example
+    the first letter of a line for side=left, or the page number for side=bottom: the edge then snaps to
+    that text, and a stamp, a sticker or handwriting beyond it goes out of the box. Use it for the pages
+    of check_pages(kind="size"). A point outside the box adds the ink there to the box.
     Runs stages 4-5 in the background (returns a job, like run_stages); preview the pages afterwards."""
     if not _cli_supports("content-snap"):
         raise RuntimeError(f"{find_cli()} does not know --content-snap: build the CLI from branch "
@@ -436,7 +441,20 @@ def pages_snap_content(project: str, pages: str | list[str], sides: str | list[s
         except ValueError:
             return path.as_posix()
 
-    for i in _resolve_pages(p, pages):
+    for pt in points or []:
+        pg = p.find_page(str(pt["page"]))
+        side = pt.get("side", "nearest")
+        if pg.image.file_page > 0:
+            skipped.append({"page": pg.label, "why": "multi-page image files are not supported"})
+            continue
+        sub_ = {"left": ":L", "right": ":R"}.get(pg.side, "")
+        reqs.append(f"{image_ref(pg.image.path)}{sub_}@{float(pt['x'])},{float(pt['y'])}:{side}")
+        prev = next((x for x in plan if x["page"] == pg.label), None)
+        if prev is None:
+            prev = {"page": pg.label, "snaps": []}
+            plan.append(prev)
+        prev["snaps"].append({"side": side, "at": {"x": pt["x"], "y": pt["y"]}})
+    for i in (_resolve_pages(p, pages) if pages and not points else []):
         pg = p.page(i)
         if pg.image.file_page > 0:
             skipped.append({"page": pg.label, "why": "multi-page image files are not supported"})
@@ -475,7 +493,7 @@ def pages_snap_content(project: str, pages: str | list[str], sides: str | list[s
     with review.Notes(p) as notes:
         for x, pid in zip(plan, snapped_ids):
             notes.add(pid, "content", "edges snapped to the text: " + ", ".join(s["side"] for s in x["snaps"]),
-                      0.75, "junk at the box sides (check_pages)")
+                      0.75, "points chosen on the printed text" if points else "junk at the box sides (check_pages)")
     res = run_stages(project, 4, 5, content_snap=";".join(reqs), wait_s=wait_s, pages=snapped_ids)
     res.update({"snapped": plan, "skipped": skipped,
                 "next": "when the job is done: pages_preview on these pages; check_pages(kind=content)"})
@@ -585,12 +603,22 @@ def _use_cli_preview(engine: str) -> bool:
     return False
 
 
-def page_preview(project: str, page: str, max_px: int = 1200, engine: str = "auto") -> Image.Image:
+def page_preview(project: str, page: str, max_px: int = 1200, engine: str = "auto", grid: bool = False,
+                 roi: list[float] | None = None, zones: list[list[float]] | None = None) -> Image.Image:
     """The page as in the GUI's Select Content view (deskewed, cropped) with the content box.
     engine: 'auto' (ScanTailor draws it through CLI --render-preview when available, else Python),
-    'cli' or 'python' (fast, st-mcp's own copy of the geometry)."""
+    'cli' or 'python' (fast, st-mcp's own copy of the geometry).
+    grid=true: a page px grid with labels (a line each 25, 50 or 100 px, a number each 100 px), the
+    content box in green and the fill zones of the project in blue. Read the points for
+    pages_snap_content(points=...) and the rectangles for page_add_fill_zone from it.
+    roi=[x0, y0, x1, y1] (page px, implies grid): a close view of that part, for exact coordinates.
+    zones=[[x0, y0, x1, y1], ...] (implies grid): draw planned fill zones in red, to check before
+    page_add_fill_zone that no zone touches printed text."""
     p = _proj(project)
     pid = p.find_page(page).id
+    if grid or roi or zones:
+        return grid_view(p, pid, tuple(roi) if roi else None, max_px if roi else min(max_px, 1000),
+                         max(max_px, 1400) if not roi else max_px, zones)
     if _use_cli_preview(engine):
         return _cli_previews(p, [pid], max_px)[pid]
     return render_page(p, pid, max_px=max_px)
@@ -941,10 +969,11 @@ def pages_fit_text_column(project: str, tolerance_mm: float = 0.5, height_ratio:
                 continue
             p.set_content(pid, {"x": x0, "y": rect["y"], "width": x1 - x0, "height": rect["height"]})
             new_w = round((x1 - x0) / px_per_mm, 1)
-            narrowed.append({"page": lab, "width_mm_before": mm["width"], "width_mm_after": new_w,
-                             "cut_px_left": round(x0 - rect["x"]), "cut_px_right": round(rect["x"] + rect["width"] - x1)})
             # A cut of more than 3 mm on one side can remove a side note, so the preview must confirm it.
             big = new_w < med_w - 2 or max(x0 - rect["x"], rect["x"] + rect["width"] - x1) > 3 * px_per_mm
+            narrowed.append({"page": lab, "width_mm_before": mm["width"], "width_mm_after": new_w,
+                             "cut_px_left": round(x0 - rect["x"]), "cut_px_right": round(rect["x"] + rect["width"] - x1),
+                             "large_cut": bool(big)})
             notes.add(pid, "content", "content box: text column", 0.55 if big else 0.8,
                       f"{mm['width']} -> {new_w} mm, text column {med_w} mm" + ("; large cut: preview" if big else ""))
         p.save()
@@ -1149,6 +1178,139 @@ def pages_set_output(project: str, pages: str | list[str], color_mode: str | Non
             "output_rotation": output_rotation}
 
 
+SIZE_WIDTH_MM = 3.0
+SIZE_HEIGHT_RATIO = 0.03
+
+
+def _check_size(p: Project, ids: list[str]) -> dict:
+    import statistics
+    # Covers and picture pages have a color output, so only the B/W text pages give the median, as in pages_fit_text_column.
+    body = [(pid, c) for pid, c in _body_pages(p) if p.output(pid).get("color_mode") in (None, "bw")]
+    if len(body) < 3:
+        raise RuntimeError("too few text pages with content and page layout; run stages 1-5 first")
+    med_w = statistics.median(c["content_mm"]["width"] for _, c in body)
+    med_h = statistics.median(c["content_mm"]["height"] for _, c in body)
+    want = set(ids)
+    over = []
+    with review.Notes(p) as notes:
+        notes.clear(ids, "size")
+        for pid, c in body:
+            if pid not in want:
+                continue
+            mm = c["content_mm"]
+            dw, dh = round(mm["width"] - med_w, 1), round(mm["height"] - med_h, 1)
+            reasons = []
+            if dw > SIZE_WIDTH_MM:
+                reasons.append(f"width +{dw} mm")
+            if mm["height"] > med_h * (1 + SIZE_HEIGHT_RATIO):
+                reasons.append(f"height +{dh} mm")
+            if not reasons:
+                continue
+            over.append({"page": p.page(pid).label, "page_no": p.page(pid).index + 1, "width_mm": mm["width"],
+                         "height_mm": mm["height"], "over": ", ".join(reasons)})
+            notes.add(pid, "size", "box larger than the book median", 0.4,
+                      f"{', '.join(reasons)} against {med_w} x {med_h} mm: narrow to the text, fill zone for a stamp")
+    return {"median_mm": [med_w, med_h], "checked": len(want), "over_median": over,
+            "rule": f"box wider than the median by more than {SIZE_WIDTH_MM} mm or taller by more than "
+                    f"{SIZE_HEIGHT_RATIO:.0%}: preview each page. Snap the edge to the printed text with "
+                    "pages_snap_content(points=...); a stamp or a note that stays inside the box gets page_add_fill_zone. "
+                    "A page that is really larger (title picture, table, contents) stays, with a review_note."}
+
+
+def page_add_fill_zone(project: str, page: str, x: float, y: float, width: float, height: float,
+                       color: str = "#ffffff") -> dict:
+    """Paint a rectangle of one page in a flat color in the output (Output filter fill zone), for a
+    library stamp, a sticker or a handwritten note that stays inside the content box.
+    x/y/width/height are page px, the same coordinates as page_preview and page_set_content.
+    The zone is stored in original image px, so every later output run applies it and the GUI shows it
+    (Output, Fill zones). A second call with the same rectangle adds nothing. Run run_stages(6, 6) after."""
+    proj = Path(project).resolve()
+    _ensure_idle(proj)
+    p = Project(proj)
+    pg = p.find_page(page)
+    inv = p.transform(pg.id).xform.inverted()
+    corners = [(x, y), (x + width, y), (x + width, y + height), (x, y + height)]
+    added = p.add_fill_zone(pg.id, [inv.map(c) for c in corners], color)
+    if added:
+        p.save()
+    return {"page": pg.label, "added": bool(added), "zones": len(p.fill_zones(pg.id)),
+            "next": "run_stages(6, 6) for this page, then page_preview to check the output"}
+
+
+def _wait_job(res: dict) -> dict:
+    # A job that is still running writes the project later, so the caller must wait for its end.
+    while res.get("state") == "running":
+        res = job_status(res["job_id"], wait_s=60)
+    return res
+
+
+def project_add_front_cover(project: str, image: str = "001.jpg") -> dict:
+    """Add a cover image as the first page of a finished project, for a book without a cover scan
+    (for example a cover from a book shop site). Put the image in the folder of the scans first.
+    The cover gets rotation 0, a single page, the whole image as content box, margins 0, no match size,
+    Color 300 DPI. All other pages keep their settings and fill zones. Runs stages 1-5 for the cover
+    only and waits for them; if a stage fails, the project goes back to the copy made before.
+    Afterwards run_stages(6, 6, pages=[the cover]) makes its output file.
+    The printed page numbers then move by one against the project pages."""
+    import xml.etree.ElementTree as ET
+    proj = Path(project).resolve()
+    _ensure_idle(proj)
+    p = Project(proj)
+    r = p.root
+    folder = p.local_path(r.find("./directories/directory").get("path"))
+    src = folder / image
+    if not src.exists():
+        raise FileNotFoundError(f"{src} not found: put the cover image in the folder of the scans")
+    if any(im.path.name == image for im in p.images.values()):
+        raise RuntimeError(f"the project already has {image}")
+    pages_before, zones_before = len(p.pages), len(r.findall("./filters/output/page/fill-zones/zone"))
+    backup = proj.with_suffix(proj.suffix + ".before-cover")
+    shutil.copy2(proj, backup)
+    ids = [int(e.get("id")) for sec in ("files/file", "images/image", "pages/page") for e in r.findall(sec)]
+    fid, iid, pid = (str(max(ids) + k) for k in (1, 2, 3))
+    with Image.open(src) as im:
+        size, dpi = im.size, im.info.get("dpi", (300, 300))
+    fe = ET.Element("file", {"name": image, "dirId": r.find("./directories/directory").get("id"), "id": fid})
+    ie = ET.Element("image", {"subPages": "1", "fileImage": "0", "id": iid, "fileId": fid})
+    ET.SubElement(ie, "size", {"height": str(size[1]), "width": str(size[0])})
+    ET.SubElement(ie, "dpi", {"vertical": str(round(dpi[1])), "horizontal": str(round(dpi[0]))})
+    ET.SubElement(ie, "grayscale", {"value": "0"})
+    pe = ET.Element("page", {"id": pid, "imageId": iid, "subPage": "single"})
+    # The book order comes from the order of these lists, so the cover goes first.
+    for sec, el in (("files", fe), ("images", ie), ("pages", pe)):
+        r.find(sec).insert(0, el)
+    p.set_rotation(iid, 0)
+    p.set_split_layout(iid, "single-uncut")
+    p.save()
+    res = _wait_job(run_stages(str(proj), 1, 5, pages=[pid]))
+    if res.get("state") != "ok":
+        shutil.copy2(backup, proj)
+        return {"error": "stages 1-5 of the cover failed; the project is back as before", "job": res}
+    p = Project(proj)
+    # The CLI writes the project again with new page ids, so the file name finds the cover page.
+    pid = next(pg.id for pg in p.pages if pg.image.path.name == image)
+    pt = p.transform(pid)
+    # The image is the cover only, without the scanner lid, so the content box is the whole image.
+    p.set_content(pid, {"x": 0.0, "y": 0.0, "width": float(pt.width), "height": float(pt.height)})
+    p.set_layout(pid, margins_mm={"left": 0, "top": 0, "right": 0, "bottom": 0},
+                 align_v="top", align_h="hcenter", match_size=False)
+    p.set_output(pid, color_mode="color", dpi=300)
+    p.save()
+    res = _wait_job(run_stages(str(proj), 4, 5, pages=[pid]))
+    if res.get("state") != "ok":
+        shutil.copy2(backup, proj)
+        return {"error": "stages 4-5 of the cover failed; the project is back as before", "job": res}
+    p = Project(proj)
+    zones_after = len(p.root.findall("./filters/output/page/fill-zones/zone"))
+    if len(p.pages) != pages_before + 1 or zones_after != zones_before or p.pages[0].image.path.name != image:
+        shutil.copy2(backup, proj)
+        raise RuntimeError(f"check failed: pages {pages_before}->{len(p.pages)}, zones {zones_before}->{zones_after}; "
+                           "the project is back as before")
+    return {"cover_page": p.pages[0].label, "pages": len(p.pages), "fill_zones_kept": zones_after,
+            "backup": str(backup), "job": res,
+            "next": f"run_stages(6, 6, pages=['{p.pages[0].label}']) for the cover output"}
+
+
 def check_pages(project: str, pages: str | list[str] = "all", kind: str = "content") -> dict:
     """Heuristic checks with evidence. kind=content: ink outside the box above/below (missed page numbers,
     headers) and left/right (cut-off text, marginalia), isolated junk at the box's top/bottom lines and
@@ -1163,12 +1325,21 @@ def check_pages(project: str, pages: str | list[str] = "all", kind: str = "conte
     mid-tones after a weak paper tint is removed; below 10 = gray), grayscale, margin to the threshold and
     near_threshold. chroma_estimate is computed here; chroma_output_stage is ScanTailor's own value after
     a stage 6 run with grayscale_first=auto and wins. Preview every page with near_threshold=true.
+    kind=size: the gate before stage 6. Lists every body page whose content box is wider than the book's
+    median by more than 3 mm, or taller by more than 3 %. Such a box usually holds a stamp, an inventory
+    number or pencil notes beside the text. The gate only lists the pages: never cut a box to the median size.
+    For each page: page_preview, find the side with the mark, and double-click the outermost printed text
+    of that side (pages_snap_content with points), so that the edge snaps to the text. Then cover what
+    stays inside the box (a stamp beside the page number) with page_add_fill_zone.
+    A wide page that is really wider (title picture, table, contents) stays: write review_note with why.
     kind=orientation: ScanTailor's text-based orientation detector (CLI --detect-orientation) on each scan
     (stage 1 rotation, EXIF tag only as a hint) and on each existing output TIFF (stage 6 output_rotation).
     Lists only the scans/pages that need a look: no decision, low confidence, EXIF tag against the text,
     text across the book (sideways table), or a detected rotation that differs from the project."""
     p = _proj(project)
     ids = _resolve_pages(p, pages)
+    if kind == "size":
+        return _check_size(p, ids)
     if kind == "pictures":
         res = [checks.picture_score(p, i) for i in ids]
         flagged = [r for r in res if r["picture_fraction"] > 0.05 or r["line_art_fraction"] > 0.01]
@@ -1792,7 +1963,7 @@ def workflow_guide() -> dict:
     return {"workflow": text}
 
 
-TOOLS = [project_create, project_for_windows, project_diff, corrections_record, corrections_stats, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
+TOOLS = [project_create, project_add_front_cover, project_for_windows, project_diff, corrections_record, corrections_stats, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
          pages_preview, image_preview, page_set_content, pages_snap_content, pages_set_layout, pages_fit_text_column, pages_fit_width, pages_align_auto, pages_set_output,
-         check_pages, export_summary, review_note, review_sheet, workflow_guide]
+         page_add_fill_zone, check_pages, export_summary, review_note, review_sheet, workflow_guide]
 IMAGE_TOOLS = {"page_preview", "pages_preview", "image_preview"}

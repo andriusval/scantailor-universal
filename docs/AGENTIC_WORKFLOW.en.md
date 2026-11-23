@@ -82,7 +82,8 @@ GUI.
      numbers in the side margin drop out, and hyphens at the line ends stay
      in. Preview the pages with a large cut (review note). Also preview the
      `taller_pages`, because their box often holds a stamp or a mark above
-     or below the text. Correct these with `mode="manual"`.
+     or below the text. Correct these in the size gate (step 9) with your
+     own snap points.
 5. **Picture pages:** `check_pages(kind="pictures")`; preview every flagged
    page (zoom into the illustration). The box of `all_content` does not
    include thin strips at the page edges, the spine shadow or the paper
@@ -152,7 +153,25 @@ GUI.
    band go to `top`. Other pages go to `bottom`. When the
    previews show tables or diagrams, add `review_full_pages=true`: it lists
    full-height pages with few text lines, such as rotated tables. Preview the `top` and `vcenter` pages, and
-   correct single pages with `pages_set_layout`. Then `run_stages(4, 6)`,
+   correct single pages with `pages_set_layout`.
+   **Size gate before the output:** `check_pages(kind="size")` lists the
+   body pages with a box wider than the book median by more than 3 mm, or
+   taller by more than 3 %. After `pages_fit_text_column` (step 4) it lists
+   only the pages that the free column fit could not fix. The gate only
+   lists the pages: never cut a box to the median size. Preview each page
+   with `page_preview(grid=true)` and find the side with the mark. Read the
+   point on the outermost printed text of that side from a close view
+   (`page_preview(roi=[x0, y0, x1, y1])`). Double-click it with
+   `pages_snap_content(points=[{page, x, y, side}])`, as in the GUI, so that
+   the edge snaps to the printed text. Cover a stamp, a sticker or a
+   handwritten note that stays inside the box with `page_add_fill_zone`.
+   Remove only what is not printed, and keep 5 px between a zone and the
+   nearest printed letter. Check the planned zones first with
+   `page_preview(zones=[...])`. A mark that touches printed text stays
+   for a person. A page that is really larger (title picture, table,
+   contents) stays, with a `review_note` that gives the reason. Make the
+   output only when the list has no page without a reason.
+   Then `run_stages(4, 6)`,
    `export_summary`, and check that all body pages have the same size
    (`pages_list(sort_by="content_width", descending=true)`). Look at 8–16
    output pages (corrected ones, picture pages, covers).
@@ -170,9 +189,10 @@ GUI.
     the orientation detector finds upright text in the output file
     (`upright_confirmed`). A page with too little text for the detector, or
     with a `text_runs_vertically` finding of `check_pages`, stays on the list.
-11. `project_for_windows(project)` when the project was processed under WSL,
-    so that the Windows GUI opens it. With a Windows build from this branch,
-    use `relative=true`: the project then opens under WSL and Windows.
+11. `project_for_windows(project)` when the GUI on a different system opens
+    the project (for example, processed under WSL and opened on Windows).
+    With `relative=true`, the paths are relative to the project, so the
+    project opens on each system.
     It also keeps `agentas.orig.ScanTailor`, a copy of the finished project.
     Remove the job logs and the run backups. Never remove the `.orig` copy.
     Later, `project_diff(orig, corrected)` compares it with the corrections
@@ -236,14 +256,15 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 |---|---|
 | `workflow_guide()` | This document |
 | `project_create(images_dir, project, output_dir?, dpi=300, force_dpi=false)` | Creates the `.ScanTailor`, handles DPI |
+| `project_add_front_cover(project, image?)` | Adds a cover image (for example from a book shop) as the first page of a finished project; stages 1–5 for the cover only |
 | `project_info(project)` | Page count, DPI, rotations, stage progress, running job |
 | `image_preview(project, images?)` | Original scans |
 | `run_stages(project, start, end, orientation?, layout?, layout_direction?, dpi?, content_detection?, wait_s?, pages?, output_rotate?)` | Runs filters in the background; `pages` limits the run to some pages (CLI `--pages`); progress and page errors come from CLI `--json-progress`; `orientation=auto` and `output_rotate=auto` use the orientation detector |
 | `job_status(job_id, wait_s?)` | Progress / result |
 | `pages_list(project, sort_by, descending, limit, offset)` | Table: id, label, content size + z-scores, margins, alignment, match size, color mode, DPI, flags (`outlier_width`, `outlier_height`, `empty_content`, `cover_candidate`) |
-| `page_preview(project, page, engine?)` / `pages_preview(project, pages, engine?)` | Page(s) with the content box overlay; `engine="cli"` lets ScanTailor draw them (CLI `--render-preview`), as the GUI shows them |
+| `page_preview(project, page, engine?, grid?, roi?, zones?)` / `pages_preview(project, pages, engine?)` | Page(s) with the content box overlay; `engine="cli"` lets ScanTailor draw them (CLI `--render-preview`), as the GUI shows them; `grid`/`roi`/`zones` give a page px grid, a close view and planned fill zones |
 | `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
-| `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5 |
+| `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], points?, wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5; `points` are your own clicks on the printed text |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |
 | `project_diff(original, corrected, record?)` | Per-page differences between the agent's project and a corrected one; `record=true` also writes them to the corrections log |
 | `corrections_record(original, corrected, book?, log?)` | Appends the person's corrections to the corrections log (JSONL), one record per changed page parameter, without repeats |
@@ -252,12 +273,13 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `pages_fit_width(project, margin_mm?, percentile?)` | One page width: side margins 0 for pages wider than the median text block |
 | `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertical alignment for all body pages, plus removal candidates for the report |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?, grayscale_first?, output_rotation?)` | `output`; `grayscale_first` (true, false or "auto") writes `color-or-grayscale@convertToGrayscale="1"` or `"auto"` (CLI `--grayscale-first`); `output_rotation` (0/90/180/270, clockwise) turns only the output TIFF (CLI `--output-rotate`) |
-| `check_pages(project, pages, kind=content\|pictures\|grayscale\|orientation)` | Heuristics with evidence; `grayscale` gives the chroma per page, the classification and the margin to the threshold; `text_runs_vertically` marks sideways tables; `orientation` runs the detector (CLI `--detect-orientation`) on the scans and the output files and lists the ones that need a look |
+| `page_add_fill_zone(project, page, x, y, width, height, color?)` | Output fill zone (page px) for a stamp or a note inside the box; stored in original image px, shown in the GUI |
+| `check_pages(project, pages, kind=content\|size\|pictures\|grayscale\|orientation)` | Heuristics with evidence; `size` lists the boxes larger than the median (the gate before the output); `grayscale` gives the chroma per page, the classification and the margin to the threshold; `text_runs_vertically` marks sideways tables; `orientation` runs the detector (CLI `--detect-orientation`) on the scans and the output files and lists the ones that need a look |
 | `export_summary(project)` | Output TIFF list and anything missing |
 | `review_note(project, pages, decision, reason?, confidence?, topic?)` | Records a decision of the agent for the review sheet |
 | `review_sheet(project, pages?, thumb_px?, engine?)` | Writes `out-agentas/review/index.html`: thumbnails, decisions with confidence, doubtful pages first |
 | `pages_straighten_pictures(project, pages)` | Re-measure skew of photo pages from the printed rectangles |
-| `project_for_windows(project, relative?)` | Write /mnt/c paths as C:/ for the Windows GUI, or as paths relative to the project (last step under WSL) |
+| `project_for_windows(project, relative?)` | Write the project paths for the GUI on a different system: relative to the project, or /mnt/c as C:/ (last step) |
 
 ## CLI options for st-mcp
 
@@ -348,7 +370,7 @@ If the CLI cannot write the masks of a page, it sends the `--json-progress` even
 
 1. **P1 — Python MCP server** (`tools/st-mcp/`): calls `scantailor-universal-cli`,
    edits project XML, renders previews with Pillow. Fast to build; runs on
-   Windows and Linux.
+   each system that runs the CLI.
 2. **P2 — native C++ commands** `scantailor-universal-cli <subcommand> --json`
    for the same tools, previews rendered by `src/core` (exactly like the GUI),
    per-page processing (the CLI currently always processes all pages); the MCP

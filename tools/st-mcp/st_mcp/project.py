@@ -5,6 +5,7 @@ XML is preserved untouched, so the project stays openable in the GUI.
 """
 from __future__ import annotations
 
+import math
 import os
 import re
 import shutil
@@ -174,6 +175,52 @@ class Project:
         if f is None:
             return None
         return f.find(f"./page[@id='{page_id}']/params")
+
+    # Fill zones of the Output filter are polygons in original image px, so they stay valid when the layout changes.
+    def fill_zones(self, page_id: str) -> list[dict]:
+        f = self.filter_el("output")
+        fz = f.find(f"./page[@id='{page_id}']/fill-zones") if f is not None else None
+        out = []
+        for z in (fz.findall("zone") if fz is not None else []):
+            pts = [(float(q.get("x")), float(q.get("y"))) for q in z.findall("./spline/point")]
+            shape = "polygon"
+            el = z.find("ellipse")
+            if not pts and el is not None:
+                # The GUI also draws ellipse zones, so a polygon of 24 points gives them bounds and an outline.
+                c, dx, dy = (el.find(n) for n in ("center", "dx", "dy"))
+                cx, cy = float(c.get("x")), float(c.get("y"))
+                ax, ay, bx, by = float(dx.get("x")), float(dx.get("y")), float(dy.get("x")), float(dy.get("y"))
+                pts = [(cx + math.cos(a) * ax + math.sin(a) * bx, cy + math.cos(a) * ay + math.sin(a) * by)
+                       for a in (2 * math.pi * i / 24 for i in range(24))]
+                shape = "ellipse"
+            prop = z.find("./properties/property[@type='FillColorProperty']")
+            out.append({"points": pts, "shape": shape, "color": prop.get("color") if prop is not None else "#ffffff"})
+        return out
+
+    def add_fill_zone(self, page_id: str, points: list[tuple[float, float]], color: str = "#ffffff") -> bool:
+        f = self.filter_el("output")
+        page = f.find(f"./page[@id='{page_id}']") if f is not None else None
+        if page is None:
+            raise RuntimeError(f"page {page_id}: output settings missing (run stages 1-5 first)")
+        xs, ys = [p[0] for p in points], [p[1] for p in points]
+        # A second run must not stack the same zone again, so the method does not add a zone with the same bounds within 3 px.
+        for z in self.fill_zones(page_id):
+            if not z["points"]:
+                continue
+            zx, zy = [p[0] for p in z["points"]], [p[1] for p in z["points"]]
+            if all(abs(a - b) <= 3 for a, b in zip((min(xs), min(ys), max(xs), max(ys)),
+                                                    (min(zx), min(zy), max(zx), max(zy)))):
+                return False
+        fz = page.find("fill-zones")
+        if fz is None:
+            fz = ET.SubElement(page, "fill-zones", {"pictureZonesSensitivity": "100"})
+        zone = ET.SubElement(fz, "zone")
+        spline = ET.SubElement(zone, "spline")
+        for x, y in points:
+            ET.SubElement(spline, "point", {"x": repr(float(x)), "y": repr(float(y))})
+        props = ET.SubElement(zone, "properties")
+        ET.SubElement(props, "property", {"color": color, "type": "FillColorProperty"})
+        return True
 
     # ------------------------------------------------------------------ read
     def rotation(self, image_id: str) -> int:
