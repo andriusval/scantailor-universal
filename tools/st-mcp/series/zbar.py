@@ -1,4 +1,4 @@
-# Minimal ctypes binding to the system libzbar, so that the scripts decode barcodes without extra packages.
+# A small ctypes layer over the system libzbar lets the scripts decode barcodes without extra Python packages.
 from __future__ import annotations
 
 import ctypes

@@ -100,6 +100,7 @@ def main(argv=None) -> int:
     out = series / "st-review"
     report_path = out / "apply-fixes.json"
     report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else {}
+    failed = 0
     with open(out / "apply-fixes.log", "a", encoding="utf-8") as log:
         for n, (name, items) in enumerate(sorted(by_book.items()), 1):
             log.write(f"\n# {time.strftime('%Y-%m-%d %H:%M:%S')} {name}\n")
@@ -112,7 +113,8 @@ def main(argv=None) -> int:
                                                 "fixes": res})
             report_path.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
             print(f"{n}/{len(by_book)} {status} {name[:45]}: {res}", flush=True)
-    return 0
+            failed += status == "failed"
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

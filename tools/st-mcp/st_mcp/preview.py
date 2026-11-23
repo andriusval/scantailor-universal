@@ -69,7 +69,8 @@ def grid_view(project: Project, page_id: str, roi: tuple | None = None, max_w: i
     od = ImageDraw.Draw(over)
     fwd = project.transform(page_id).xform
     for z in project.fill_zones(page_id):
-        od.polygon([fwd.map(tuple(c)) for c in z["points"]], fill=(0, 0, 255, 60))
+        if len(z["points"]) >= 3:
+            od.polygon([fwd.map(tuple(c)) for c in z["points"]], fill=(0, 0, 255, 60))
     img = Image.alpha_composite(img, over).convert("RGB")
     d = ImageDraw.Draw(img)
     c = project.content(page_id).get("content_rect_px")
@@ -79,6 +80,8 @@ def grid_view(project: Project, page_id: str, roi: tuple | None = None, max_w: i
         d.rectangle([x0, y0, x1, y1], outline=(255, 0, 0), width=3)
     x0, y0, x1, y1 = roi or (0, 0, img.width, img.height)
     x0, y0, x1, y1 = max(0, int(x0)), max(0, int(y0)), min(img.width, int(x1)), min(img.height, int(y1))
+    if x1 <= x0 or y1 <= y0:
+        raise ValueError(f"roi is outside the page ({img.width} x {img.height} page px)")
     crop = img.crop((x0, y0, x1, y1))
     k = min(1.0, max_w / crop.width, max_h / crop.height)
     crop = crop.resize((max(1, round(crop.width * k)), max(1, round(crop.height * k))))

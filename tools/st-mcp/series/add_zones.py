@@ -47,6 +47,8 @@ def main(argv=None) -> int:
         proj = book / PROJECT
         p = Project(proj)
         pg = p.find_page(it["label"])
+        if not it.get("zones"):
+            raise ValueError(f"{it['book']} {it['label']}: the zone list is empty")
         tr = p.transform(pg.id)
         zones = [(max(0, a), max(0, b), min(tr.width, c), min(tr.height, d)) for a, b, c, d in it["zones"]]
         if args.apply:

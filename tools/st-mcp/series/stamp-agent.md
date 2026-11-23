@@ -1,57 +1,57 @@
-# Agent task: size gate and library marks for a series
+# Agento užduotis: dydžio vartai ir bibliotekos ženklai serijoje
 
-The general rules are in `docs/AGENTIC_WORKFLOW.en.md`, step 9 (size gate): snap points on printed text, fill zones only on what is not printed.
-This file gives the series part: the scripts that do the work for all books, and the pages where libraries put their marks.
-Do this work after `series_fix.py` and `review_sheets.py`, before the output step.
+Bendros taisyklės yra `docs/AGENTIC_WORKFLOW.md` 9 žingsnyje (dydžio vartai): snap taškai ant spausdinto teksto, fill zonos tik ant to, kas nespausdinta.
+Šis failas aprašo serijos dalį: skriptus, kurie dirba visoms knygoms, ir puslapius, kur bibliotekos deda ženklus.
+Šį darbą daryti po `series_fix.py` ir `review_sheets.py`, prieš output.
 
-## Part 1: boxes larger than the book median
+## 1 dalis: rėmai, didesni už knygos medianą
 
-1. Run `python3 series/size_gate.py <series>`.
-   - It first runs `pages_fit_text_column` on each book: the side edges move to the text column without a model.
-   - Then it writes the pages that stay larger than the median to `st-review/size-gate.json`, with the pages that got a cut of more than 3 mm.
-   - It draws each page with a page px grid in `st-review/size-sheets/`.
-2. For each page, find the side where a stamp, a sticker or handwriting made the box larger.
-   Read a point on the outermost printed text of that side from a close view:
+1. Paleisti `python3 series/size_gate.py <series>`.
+   - Pirma kiekvienai knygai paleidžiamas `pages_fit_text_column`: šoniniai kraštai pastumiami prie teksto skilties be modelio.
+   - Paskui į `st-review/size-gate.json` įrašomi puslapiai, kurie lieka didesni už medianą, ir puslapiai, kur nukirpta daugiau nei 3 mm.
+   - Kiekvienas puslapis nupiešiamas su puslapio px tinkleliu į `st-review/size-sheets/`.
+2. Kiekviename puslapyje rasti pusę, kur antspaudas, lipdukas ar ranka rašytas tekstas padidino rėmą.
+   Tašką ant tos pusės kraštinio spausdinto teksto nuskaityti iš artimo vaizdo:
    `python3 series/stamp_sheet.py <series> --only <book> --label <label> --roi x0,y0,x1,y1`.
-3. A page that is really larger (title picture, table, contents) stays as it is. Say this in the report.
-4. Write the points into one JSON file: `[{"book": "...", "page": "<label>", "x": 1428, "y": 2033, "side": "right"}]`.
-5. Run `python3 series/size_gate.py <series> --snap <points.json>`.
-   It keeps `projektas.before-snap.ScanTailor`, snaps the edges, runs filters 4-5 and draws the pages again (`*_after.png`).
-6. Look at the after images: the box edge is on the printed text, and no printed text is outside the box.
-   If an edge snapped to the wrong ink, choose a better point and snap again.
+3. Tikrai didesnis puslapis (titulinio paveikslas, lentelė, turinys) lieka toks, koks yra. Tai parašyti ataskaitoje.
+4. Taškus surašyti į vieną JSON failą: `[{"book": "...", "page": "<label>", "x": 1428, "y": 2033, "side": "right"}]`.
+5. Paleisti `python3 series/size_gate.py <series> --snap <points.json>`.
+   Jis pasilieka `projektas.before-snap.ScanTailor`, prilipdo kraštus, paleidžia 4–5 filtrus ir iš naujo nupiešia puslapius (`*_after.png`).
+6. Peržiūrėti „po“ vaizdus: rėmo kraštas yra ant spausdinto teksto, ir už rėmo neliko spausdinto teksto.
+   Jei kraštas prilipo prie ne to rašalo, pasirinkti geresnį tašką ir prilipdyti dar kartą.
 
-`size_gate.py` adds each changed book to `st-review/fit-books.txt`, because the book needs a full output run.
+`size_gate.py` kiekvieną pakeistą knygą įrašo į `st-review/fit-books.txt`, nes knygai reikia pilno output.
 
-## Part 2: library marks
+## 2 dalis: bibliotekos ženklai
 
-The libraries of this series put their marks on four pages: printed pages 3, 4 and 17, and the back cover.
+Šios serijos bibliotekos ženklus deda keturiuose puslapiuose: spausdintuose 3, 4 ir 17 puslapiuose ir galiniame viršelyje.
 
-### Find the pages
+### Rasti puslapius
 
-1. Run `python3 series/stamp_sheet.py <series> --only <book>`.
-   It draws printed pages 3, 4, 17 and the back cover with a page px grid.
-   The content box is green, and the fill zones in the project are blue.
-2. Read the printed page number on the image. If the page is not the expected page, run the tool again with `--around 2` and find the correct page.
-   - If the printed number is one less than the project page, the front cover scan is possibly missing. Say this in the report of the book.
-   - A cover image from a book shop goes in with st-mcp `project_add_front_cover`. Then set the page offset of the book to 0 in `st-review/page-offset.json`.
-   - Use `--label <page label>` for a page that you found.
-3. Only the part of the page in the content box goes into the output. Ignore the marks outside the green box.
+1. Paleisti `python3 series/stamp_sheet.py <series> --only <book>`.
+   Jis nupiešia spausdintus 3, 4, 17 puslapius ir galinį viršelį su puslapio px tinkleliu.
+   Rėmas žalias, o projekto fill zonos mėlynos.
+2. Vaizde perskaityti spausdintą puslapio numerį. Jei tai ne tas puslapis, paleisti įrankį dar kartą su `--around 2` ir rasti tinkamą.
+   - Jei spausdintas numeris vienu mažesnis už projekto puslapį, gal trūksta priekinio viršelio skenuotės. Tai parašyti knygos ataskaitoje.
+   - Viršelio vaizdą iš knygyno įdėti su st-mcp `project_add_front_cover`. Tada knygos poslinkį `st-review/page-offset.json` nustatyti į 0.
+   - Rastam puslapiui naudoti `--label <page label>`.
+3. Į output patenka tik ta puslapio dalis, kuri yra rėme. Ženklų už žalio rėmo nepaisyti.
 
-### Choose, check and write the zones
+### Pasirinkti, patikrinti ir įrašyti zonas
 
-1. Read each zone `[x0, y0, x1, y1]` (page px) from a close view (`--roi`). Cover the full mark with a margin of 5 to 10 px.
-2. Write all the zones of the series into one JSON file: `[{"book": "...", "label": "...", "zones": [[x0, y0, x1, y1]]}]`.
-   For a sticker on a colored back cover, add `"color": "#rrggbb"` with the color of the cover around it.
-3. Run `python3 series/add_zones.py <series> <zones.json>`. It writes the check sheets to `st-review/zones-check/` and changes no project.
-4. Look at each sheet: the red zone covers the mark, and no printed letter is in a red zone. Correct the JSON and check again.
-5. Run `python3 series/add_zones.py <series> <zones.json> --apply`.
-   It keeps `projektas.before-zones.ScanTailor`, writes the zones and adds the pages to `st-review/zones-pages.txt`.
-6. Run the output only when the person tells you to. Then add `--output`: it runs filter 6 for these pages only.
+1. Kiekvieną zoną `[x0, y0, x1, y1]` (puslapio px) nuskaityti iš artimo vaizdo (`--roi`). Uždengti visą ženklą su 5–10 px atsarga.
+2. Visas serijos zonas surašyti į vieną JSON failą: `[{"book": "...", "label": "...", "zones": [[x0, y0, x1, y1]]}]`.
+   Lipdukui ant spalvoto galinio viršelio pridėti `"color": "#rrggbb"` su aplinkine viršelio spalva.
+3. Paleisti `python3 series/add_zones.py <series> <zones.json>`. Jis įrašo patikros lapus į `st-review/zones-check/` ir projektų nekeičia.
+4. Peržiūrėti kiekvieną lapą: raudona zona dengia ženklą, ir jokia spausdinta raidė nepatenka į raudoną zoną. Pataisyti JSON ir patikrinti dar kartą.
+5. Paleisti `python3 series/add_zones.py <series> <zones.json> --apply`.
+   Jis pasilieka `projektas.before-zones.ScanTailor`, įrašo zonas ir prideda puslapius į `st-review/zones-pages.txt`.
+6. Output leisti tik tada, kai žmogus liepia. Tada pridėti `--output`: jis paleidžia 6 filtrą tik šiems puslapiams.
 
-## Report
+## Ataskaita
 
-For each book give:
-- the pages with a snapped box, and the larger pages that stay;
-- the pages with zones and what they cover;
-- the marks that touch printed text (for a person);
-- the books where the expected page was not at its project number (possibly a missing cover).
+Kiekvienai knygai nurodyti:
+- puslapius su prilipdytu rėmu ir didesnius puslapius, kurie lieka;
+- puslapius su zonomis ir ką jos dengia;
+- ženklus, kurie liečia spausdintą tekstą (žmogui);
+- knygas, kur laukiamas puslapis buvo ne savo projekto numeriu (gal trūksta viršelio).

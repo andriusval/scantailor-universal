@@ -1,43 +1,44 @@
-# Series scripts
+# Serijos skriptai
 
-Scripts for one book series. They apply the rules of two projects that a person corrected by hand.
-No step uses OCR. An agent looks at the page images (see `stamp-agent.md`).
-It snaps the box edges of the pages larger than the book median to the printed text. It covers the library marks with fill zones.
+Skriptai vienai knygų serijai. Jie taiko taisykles iš dviejų projektų, kuriuos žmogus pataisė ranka.
+Nė vienas žingsnis nenaudoja OCR. Puslapių vaizdus žiūri agentas (žr. `stamp-agent.md`).
+Agentas prilipdo už knygos medianą didesnių puslapių rėmų kraštus prie spausdinto teksto, o bibliotekos ženklus uždengia fill zonomis.
 
-Run the scripts with a `python3` that has `scipy`, from `tools/st-mcp`.
-They find `scantailor-universal-cli` as st-mcp does (`ST_CLI`, the build folder or `PATH`), and they need the `zbar` library for the ISBN barcode.
-The ScanTailor CLI gives the same result on each system, so the steps run on each system.
+Skriptus leisti iš `tools/st-mcp` su `python3`, kuriame yra `scipy` (`pip install -e .[series]`).
+`scantailor-universal-cli` jie randa taip pat kaip st-mcp (`ST_CLI`, build katalogas arba `PATH`).
+ISBN brūkšniniam kodui reikia sisteminės `zbar` bibliotekos (Ubuntu: `libzbar0`).
+ScanTailor CLI visose sistemose duoda tą patį rezultatą, todėl žingsniai veikia bet kurioje sistemoje.
 
-## Order
+## Tvarka
 
-1. Make `projektas.ScanTailor` in each book folder with filters 1-5: st-mcp `project_create` and `run_stages(1, 5)`, or `st-prepare-books.ps1 -Root <series>` in PowerShell.
-2. `python3 series/series_fix.py <series> --skip <book> ...` changes each project:
-   - It keeps the automatic project as `projektas.auto.ScanTailor`. A second run starts from that copy.
-   - Covers (first and last image): rotation 0, single page without a cut, filters 1-5 again.
-   - Front cover: the content box is the cover edge (found on the dark scanner lid), margins 0, no match, Color 300.
-   - Back cover: the content box is the ISBN barcode. The margins keep the barcode position on the cover. Match, left and bottom, Color 300.
-   - Other pages: vertical auto alignment, horizontal centre, match, B/W 600.
-   - Report: `<series>/st-review/series-fix.json` (small pages, flags), log `series-fix.log`.
-3. `python3 series/review_sheets.py <series>` makes one image for each book in `st-review/sheets/`.
-   The image shows the covers, the title page and the small pages (box below 70 % of the median). Correct with the st-mcp tools.
-4. Size gate (`stamp-agent.md`, part 1). `python3 series/size_gate.py <series>` first runs `pages_fit_text_column` on each book.
-   Then it lists the text pages with a box that stays larger than the book median, with the limits of `check_pages(kind="size")`.
-   - The agent looks at each page and chooses a point on the outermost printed text of the side with the mark.
-   - `--snap <points.json>` snaps the edges at these points, as a double-click in the GUI.
-     It uses the CLI option `--content-snap`, as st-mcp `pages_snap_content(points=...)` does.
-   - The changed books go into `st-review/fit-books.txt`. A page that is really larger (title picture, table, contents) stays.
-5. The agent covers the library marks on printed pages 3, 4 and 17 and on the back cover with fill zones.
-   See `stamp-agent.md`, part 2, and the scripts `stamp_sheet.py` and `add_zones.py`.
-   The zones are in original image px, so every output run applies them and the GUI shows them (Output, Fill zones).
-6. Output (filters 5-6), only when the person tells you to: st-mcp `run_stages(5, 6)`, `series_fix.run_cli`, or `st-prepare-books.ps1 -Root <series> -OutputOnly`.
-   - A book in `fit-books.txt` needs a full output run, because a changed box changes the page size of the whole book.
-   - Other books need filter 6 only for the pages in `zones-pages.txt` (`add_zones.py --output`).
-   - Clean only with fill zones in the project. Do not change the output TIFF files: a later output run writes them again and the marks come back.
-7. After the output: look at the output files of the changed pages. A mark that is still there gets a new zone (step 5) and a new output run for that page.
+1. Kiekvieno knygos katalogo `projektas.ScanTailor` su 1–5 filtrais: st-mcp `project_create` ir `run_stages(1, 5)` arba `st-prepare-books.ps1 -Root <series>` per PowerShell.
+2. `python3 series/series_fix.py <series> --skip <book> ...` pakeičia kiekvieną projektą:
+   - Automatinį projektą pasilieka kaip `projektas.auto.ScanTailor`. Antras paleidimas pradeda nuo šios kopijos.
+   - Viršeliai (pirmas ir paskutinis vaizdas): pasukimas 0, vienas puslapis be pjūvio, 1–5 filtrai iš naujo.
+   - Priekinis viršelis: rėmas – viršelio kraštas (randamas ant tamsaus skenerio dangčio), paraštės 0, be match, Color 300.
+   - Galinis viršelis: rėmas – ISBN brūkšninis kodas. Paraštės išlaiko kodo vietą viršelyje. Match, kairė ir apačia, Color 300.
+   - Kiti puslapiai: vertikalus auto lygiavimas, horizontaliai centre, match, B/W 600.
+   - Ataskaita: `<series>/st-review/series-fix.json` (maži puslapiai, žymės), žurnalas `series-fix.log`.
+3. `python3 series/review_sheets.py <series>` padaro po vieną vaizdą kiekvienai knygai į `st-review/sheets/`.
+   Vaizde – viršeliai, titulinis ir maži puslapiai (rėmas mažesnis nei 70 % medianos). Taisyti st-mcp įrankiais.
+4. Dydžio vartai (`stamp-agent.md`, 1 dalis). `python3 series/size_gate.py <series>` pirma kiekvienai knygai paleidžia `pages_fit_text_column`.
+   Paskui išvardija teksto puslapius, kurių rėmas lieka didesnis už knygos medianą, pagal `check_pages(kind="size")` ribas.
+   - Agentas peržiūri kiekvieną puslapį ir pasirenka tašką ant kraštinio spausdinto teksto toje pusėje, kur yra ženklas.
+   - `--snap <points.json>` prilipdo kraštus šiuose taškuose, kaip GUI dvigubas spragtelėjimas.
+     Naudojama CLI parinktis `--content-snap`, kaip ir st-mcp `pages_snap_content(points=...)`.
+   - Pakeistos knygos įrašomos į `st-review/fit-books.txt`. Tikrai didesnis puslapis (titulinio paveikslas, lentelė, turinys) lieka.
+5. Agentas uždengia bibliotekos ženklus spausdintuose 3, 4 ir 17 puslapiuose ir galiniame viršelyje fill zonomis.
+   Žr. `stamp-agent.md` 2 dalį ir skriptus `stamp_sheet.py` bei `add_zones.py`.
+   Zonos saugomos originalaus vaizdo px, todėl kiekvienas output jas pritaiko, o GUI jas rodo (Output, Fill zones).
+6. Output (5–6 filtrai), tik kai žmogus liepia: st-mcp `run_stages(5, 6)`, `series_fix.run_cli` arba `st-prepare-books.ps1 -Root <series> -OutputOnly`.
+   - Knygai iš `fit-books.txt` reikia pilno output, nes pakeistas rėmas keičia visos knygos puslapio dydį.
+   - Kitoms knygoms užtenka 6 filtro tik puslapiams iš `zones-pages.txt` (`add_zones.py --output`).
+   - Valyti tik projekto fill zonomis. Output TIFF failų nekeisti: kitas output juos perrašo ir ženklai grįžta.
+7. Po output: peržiūrėti pakeistų puslapių output failus. Jei ženklas liko, pridėti naują zoną (5 žingsnis) ir paleisti output tam puslapiui.
 
-A book without a cover scan: put a cover image (for example from a book shop) in the book folder.
-Then st-mcp `project_add_front_cover(project, image)` adds it as the first page and runs stages 1-5 for it.
-Set the page offset of the book to 0 in `st-review/page-offset.json`.
+Knyga be viršelio skenuotės: viršelio vaizdą (pvz. iš knygyno svetainės) įdėti į knygos katalogą.
+Tada st-mcp `project_add_front_cover(project, image)` prideda jį kaip pirmą puslapį ir paleidžia jam 1–5 etapus.
+Knygos puslapių poslinkį `st-review/page-offset.json` nustatyti į 0.
 
-The general tools are in st-mcp: `check_pages(kind="size")`, `pages_fit_text_column`, `pages_snap_content(points=...)`,
-`page_preview(grid, roi, zones)`, `page_add_fill_zone` and `project_add_front_cover`. The scripts here run them for all books of a series.
+Bendri įrankiai yra st-mcp: `check_pages(kind="size")`, `pages_fit_text_column`, `pages_snap_content(points=...)`,
+`page_preview(grid, roi, zones)`, `page_add_fill_zone` ir `project_add_front_cover`. Šie skriptai juos paleidžia visoms serijos knygoms.

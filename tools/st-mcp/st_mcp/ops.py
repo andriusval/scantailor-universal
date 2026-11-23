@@ -969,10 +969,11 @@ def pages_fit_text_column(project: str, tolerance_mm: float = 0.5, height_ratio:
                 continue
             p.set_content(pid, {"x": x0, "y": rect["y"], "width": x1 - x0, "height": rect["height"]})
             new_w = round((x1 - x0) / px_per_mm, 1)
-            narrowed.append({"page": lab, "width_mm_before": mm["width"], "width_mm_after": new_w,
-                             "cut_px_left": round(x0 - rect["x"]), "cut_px_right": round(rect["x"] + rect["width"] - x1)})
             # A cut of more than 3 mm on one side can remove a side note, so the preview must confirm it.
             big = new_w < med_w - 2 or max(x0 - rect["x"], rect["x"] + rect["width"] - x1) > 3 * px_per_mm
+            narrowed.append({"page": lab, "width_mm_before": mm["width"], "width_mm_after": new_w,
+                             "cut_px_left": round(x0 - rect["x"]), "cut_px_right": round(rect["x"] + rect["width"] - x1),
+                             "large_cut": bool(big)})
             notes.add(pid, "content", "content box: text column", 0.55 if big else 0.8,
                       f"{mm['width']} -> {new_w} mm, text column {med_w} mm" + ("; large cut: preview" if big else ""))
         p.save()
@@ -1183,7 +1184,8 @@ SIZE_HEIGHT_RATIO = 0.03
 
 def _check_size(p: Project, ids: list[str]) -> dict:
     import statistics
-    body = _body_pages(p)
+    # Covers and picture pages have a color output, so only the B/W text pages give the median, as in pages_fit_text_column.
+    body = [(pid, c) for pid, c in _body_pages(p) if p.output(pid).get("color_mode") in (None, "bw")]
     if len(body) < 3:
         raise RuntimeError("too few text pages with content and page layout; run stages 1-5 first")
     med_w = statistics.median(c["content_mm"]["width"] for _, c in body)
@@ -1235,12 +1237,20 @@ def page_add_fill_zone(project: str, page: str, x: float, y: float, width: float
             "next": "run_stages(6, 6) for this page, then page_preview to check the output"}
 
 
-def project_add_front_cover(project: str, image: str = "001.jpg", wait_s: float = 900) -> dict:
+def _wait_job(res: dict) -> dict:
+    # A job that is still running writes the project later, so the caller must wait for its end.
+    while res.get("state") == "running":
+        res = job_status(res["job_id"], wait_s=60)
+    return res
+
+
+def project_add_front_cover(project: str, image: str = "001.jpg") -> dict:
     """Add a cover image as the first page of a finished project, for a book without a cover scan
     (for example a cover from a book shop site). Put the image in the folder of the scans first.
     The cover gets rotation 0, a single page, the whole image as content box, margins 0, no match size,
     Color 300 DPI. All other pages keep their settings and fill zones. Runs stages 1-5 for the cover
-    only and waits; afterwards run_stages(6, 6, pages=[the cover]) makes its output file.
+    only and waits for them; if a stage fails, the project goes back to the copy made before.
+    Afterwards run_stages(6, 6, pages=[the cover]) makes its output file.
     The printed page numbers then move by one against the project pages."""
     import xml.etree.ElementTree as ET
     proj = Path(project).resolve()
@@ -1254,7 +1264,8 @@ def project_add_front_cover(project: str, image: str = "001.jpg", wait_s: float 
     if any(im.path.name == image for im in p.images.values()):
         raise RuntimeError(f"the project already has {image}")
     pages_before, zones_before = len(p.pages), len(r.findall("./filters/output/page/fill-zones/zone"))
-    shutil.copy2(proj, proj.with_suffix(proj.suffix + ".before-cover"))
+    backup = proj.with_suffix(proj.suffix + ".before-cover")
+    shutil.copy2(proj, backup)
     ids = [int(e.get("id")) for sec in ("files/file", "images/image", "pages/page") for e in r.findall(sec)]
     fid, iid, pid = (str(max(ids) + k) for k in (1, 2, 3))
     with Image.open(src) as im:
@@ -1271,9 +1282,10 @@ def project_add_front_cover(project: str, image: str = "001.jpg", wait_s: float 
     p.set_rotation(iid, 0)
     p.set_split_layout(iid, "single-uncut")
     p.save()
-    res = run_stages(str(proj), 1, 5, pages=[pid], wait_s=wait_s)
+    res = _wait_job(run_stages(str(proj), 1, 5, pages=[pid]))
     if res.get("state") != "ok":
-        return {"error": "stages 1-5 of the cover did not end with ok", "job": res}
+        shutil.copy2(backup, proj)
+        return {"error": "stages 1-5 of the cover failed; the project is back as before", "job": res}
     p = Project(proj)
     # The CLI writes the project again with new page ids, so the file name finds the cover page.
     pid = next(pg.id for pg in p.pages if pg.image.path.name == image)
@@ -1284,15 +1296,18 @@ def project_add_front_cover(project: str, image: str = "001.jpg", wait_s: float 
                  align_v="top", align_h="hcenter", match_size=False)
     p.set_output(pid, color_mode="color", dpi=300)
     p.save()
-    res = run_stages(str(proj), 4, 5, pages=[pid], wait_s=wait_s)
+    res = _wait_job(run_stages(str(proj), 4, 5, pages=[pid]))
     if res.get("state") != "ok":
-        return {"error": "stages 4-5 of the cover did not end with ok", "job": res}
+        shutil.copy2(backup, proj)
+        return {"error": "stages 4-5 of the cover failed; the project is back as before", "job": res}
     p = Project(proj)
     zones_after = len(p.root.findall("./filters/output/page/fill-zones/zone"))
     if len(p.pages) != pages_before + 1 or zones_after != zones_before or p.pages[0].image.path.name != image:
-        raise RuntimeError(f"check failed: pages {pages_before}->{len(p.pages)}, zones {zones_before}->{zones_after}")
+        shutil.copy2(backup, proj)
+        raise RuntimeError(f"check failed: pages {pages_before}->{len(p.pages)}, zones {zones_before}->{zones_after}; "
+                           "the project is back as before")
     return {"cover_page": p.pages[0].label, "pages": len(p.pages), "fill_zones_kept": zones_after,
-            "backup": str(proj.with_suffix(proj.suffix + ".before-cover")), "job": res,
+            "backup": str(backup), "job": res,
             "next": f"run_stages(6, 6, pages=['{p.pages[0].label}']) for the cover output"}
 
 

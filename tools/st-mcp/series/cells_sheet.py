@@ -57,7 +57,7 @@ def main(argv=None) -> int:
             img.thumbnail((span * CELL - 4, CELL - 4))
             ox, oy = cx * CELL, cy * (CELL + LABEL_H)
             sheet.paste(img, (ox + (span * CELL - img.width) // 2, oy + LABEL_H))
-            d.text((ox + 3, oy + 2), f"#{k} {it['kind']} {it['label']}", fill=(255, 255, 0))
+            d.text((ox + 3, oy + 2), f"#{k} {it.get('kind', '')} {it['label']}", fill=(255, 255, 0))
         path = out / f"grid-{s // args.per_sheet + 1:02d}.png"
         sheet.save(path, optimize=True)
         print(path, flush=True)
