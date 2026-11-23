@@ -10,6 +10,12 @@ Principai (perimti iš craft-anything):
 - **Vienas variklis.** GUI, CLI ir MCP naudoja tą patį `src/core` ir tą patį
   `.ScanTailor` projekto XML. Agentas gali sustoti, o žmogus atsidaryti projektą
   GUI ir tęsti (ir atvirkščiai).
+- **Projektas išsaugo kiekvieną paleidimą.** CLI projektą įrašo tik su
+  `--save-project` (atgal į įvesties projektą) arba `--output-project=<failas>`.
+  Paleidimas su projektu be jų palieka faile senus maketo duomenis, ir vėlesnis
+  `--pages` paleidimas duoda kito dydžio puslapius. Jei komandoje išvesties
+  aplanko nėra, jis imamas iš projekto (`--output-dir=<dir>` arba paskutinis
+  argumentas jį pakeičia). Keliai projekto aplanke yra santykiniai tam aplankui.
 - **Tikrinama, ne spėjama.** Kiekvienas sprendimas remiasi peržiūros paveikslėliu
   arba skaičiais iš projekto, ne prielaidomis.
 - **Smulkūs įrankiai.** Ne „apdorok knygą“, o atskiri etapai ir atskiri

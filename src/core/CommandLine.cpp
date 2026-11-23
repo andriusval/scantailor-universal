@@ -24,6 +24,7 @@
 #include <tiff.h>
 
 #include <QDir>
+#include <algorithm>
 #include <QMap>
 #include <QRegularExpression>
 #include <QStringList>
@@ -124,6 +125,8 @@ CommandLine::parseCli(QStringList const& argv)
     opts << "render-preview";
     opts << "render-preview-size";
     opts << "dump-masks";
+    opts << "save-project";
+    opts << "output-dir";
     opts << "tiff-compression";
     opts << "picture-shape";
     opts << "language";
@@ -153,6 +156,11 @@ CommandLine::parseCli(QStringList const& argv)
     shortMap["ld"] = "layout-direction";
     shortMap["o"] = "output-project";
 
+    // With --output-dir, the last argument is an input like the others, so the parser must know about the option first.
+    bool const has_output_dir_option = std::any_of(argv.begin() + 1, argv.end(), [](QString const& arg) {
+        return arg == "--output-dir" || arg.startsWith("--output-dir=");
+    });
+
     // skip first argument (scantailor)
     for (int i = 1; i < argv.size(); i++) {
 #ifdef DEBUG
@@ -181,6 +189,12 @@ CommandLine::parseCli(QStringList const& argv)
                     std::cout << "Unknown switch '" << key.toStdString() << "'" << std::endl;
                     continue;
                 }
+                // Without a value, these options would use the word "true" as a file or directory name.
+                if (key == "output-project" || key == "output-dir") {
+                    std::cout << "Error: --" << key.toStdString() << " needs a value, as in --" << key.toStdString() << "=<name>" << std::endl;
+                    m_error = true;
+                    continue;
+                }
                 m_options[key] = "true";
                 break;
             }
@@ -206,6 +220,11 @@ CommandLine::parseCli(QStringList const& argv)
                     m_error = true;
                     continue;
                 }
+                if (key == "output-project") {
+                    std::cout << "Error: -o needs a value, as in -o=<project_name>" << std::endl;
+                    m_error = true;
+                    continue;
+                }
                 m_options[key] = "true";
                 break;
             }
@@ -219,7 +238,7 @@ CommandLine::parseCli(QStringList const& argv)
 
             // handle input images and output directory
             QFileInfo file(argv[i]);
-            if (i == (argv.size() - 1)) {
+            if (i == (argv.size() - 1) && !has_output_dir_option) {
                 // A lone argument stays an error, because it is often a file name with a typo.
                 bool const have_input = !m_projectFile.isEmpty() || !m_files.empty() || !m_images.empty();
                 if (!m_gui && have_input && !file.exists() && QDir().mkpath(file.filePath())) {
@@ -252,6 +271,16 @@ CommandLine::parseCli(QStringList const& argv)
             }
 
         } while (false);
+    }
+
+    // The name --output-dir is the same as in the CLI of ScanTailor Advanced.
+    if (contains("output-dir")) {
+        if (m_options.value("output-dir").isEmpty()) {
+            std::cout << "Error: --output-dir needs a directory, as in --output-dir=<dir>" << std::endl;
+            m_error = true;
+        } else {
+            CommandLine::m_outputDirectory = m_options.value("output-dir");
+        }
     }
 
     setup();
@@ -473,6 +502,8 @@ CommandLine::printHelp()
     std::cout << "\t--start-filter=<1...6>\t\t\t-- default: 4" << std::endl;
     std::cout << "\t--end-filter=<1...6>\t\t\t-- default: 6" << std::endl;
     std::cout << "\t--output-project=, -o=<project_name>" << std::endl;
+    std::cout << "\t--output-dir=<dir>\t\t\t-- the same as the output_directory argument; made if missing" << std::endl;
+    std::cout << "\t--save-project[=<project_name>]\t\t-- without a name: write back to the input project" << std::endl;
     std::cout << "\t--render-preview=<directory>\t\t-- after the last filter, write a PNG for each page to the directory:" << std::endl;
     std::cout << "\t\t\t\t\t\t   the image after filters 1-3 with the page box and the content box of filter 4" << std::endl;
     std::cout << "\t\t--render-preview-size=<pixels>\t-- maximum length of the long side of a preview; default: 1200" << std::endl;
@@ -821,11 +852,16 @@ CommandLine::fetchOrientation()
 QString
 CommandLine::fetchOutputProjectFile()
 {
-    if (!hasOutputProject()) {
-        return QString();
+    if (contains("output-project")) {
+        return m_options.value("output-project");
     }
-
-    return m_options.value("output-project");
+    // The name --save-project is the same as in the CLI of ScanTailor Advanced.
+    if (contains("save-project")) {
+        QString const value(m_options.value("save-project"));
+        // Without a file name, the switch saves the result back to the input project.
+        return value == "true" ? m_projectFile : value;
+    }
+    return QString();
 }
 
 int

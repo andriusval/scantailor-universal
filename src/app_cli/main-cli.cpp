@@ -18,6 +18,7 @@
 */
 
 #include <QCoreApplication>
+#include <QDir>
 #include "settings/ini_keys.h"
 #include <QString>
 #include <QStringList>
@@ -167,7 +168,9 @@ int main(int argc, char** argv)
         return detectOrientation(cli.getDetectOrientationList());
     }
 
-    if (cli.hasHelp() || cli.outputDirectory().isEmpty() || (cli.images().size() == 0 && cli.projectFile().isEmpty())) {
+    // A project has its own output directory, so only a run on images needs one on the command line.
+    bool const no_output = cli.outputDirectory().isEmpty() && cli.projectFile().isEmpty();
+    if (cli.hasHelp() || no_output || (cli.images().size() == 0 && cli.projectFile().isEmpty())) {
         cli.printHelp();
         if (json && !cli.hasHelp()) {
             printRunError(QStringLiteral("no input images or no output directory"));
@@ -195,6 +198,21 @@ int main(int argc, char** argv)
 
     if (cli.hasThreads() && cli.getThreads() < 1) {
         std::cerr << "Use --threads=<N> with N = 0 or more, or --threads=auto." << std::endl;
+        return 1;
+    }
+
+    // The check comes before the processing, so that a missing file name does not lose the result of a long run.
+    if (cli.isProjectSaveRequested() && !cli.hasOutputProject()) {
+        std::cerr << "No project file to save to: give a name, or use a project as the input." << std::endl;
+        if (json) {
+            printRunError(QStringLiteral("no project file to save to"));
+        }
+        return 1;
+    }
+
+    // The parser only reads the options, so the CLI makes the directory of --output-dir here.
+    if (!cli.outputDirectory().isEmpty() && !QDir().mkpath(cli.outputDirectory())) {
+        std::cerr << "Cannot make the output directory: " << cli.outputDirectory().toStdString() << std::endl;
         return 1;
     }
 
@@ -240,8 +258,10 @@ int main(int argc, char** argv)
     }
 
     try {
-        if (cli.hasOutputProject() && !cbatch->saveProject(cli.outputProjectFile()) && json) {
-            printRunError(QStringLiteral("cannot write the project file"), cbatch.get());
+        if (cli.hasOutputProject() && !cbatch->saveProject(cli.outputProjectFile())) {
+            if (json) {
+                printRunError(QStringLiteral("cannot write the project file"), cbatch.get());
+            }
             return 1;
         }
     } catch (std::exception const& e) {

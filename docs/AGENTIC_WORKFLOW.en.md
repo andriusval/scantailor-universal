@@ -8,6 +8,13 @@ Principles (borrowed from craft-anything):
 - **One engine.** GUI, CLI and MCP share `src/core` and the same `.ScanTailor`
   project XML. The agent can stop and a person can open the project in the GUI
   and carry on, or the other way round.
+- **The project keeps each run.** The CLI writes the project only with
+  `--save-project` (back to the input project) or `--output-project=<file>`.
+  Without these options, the file keeps the old layout data. A later
+  `--pages` run then gives pages with a different size. The
+  output directory comes from the project when the command line has none
+  (`--output-dir=<dir>` or the last argument overrides it). Paths inside the
+  project folder are relative to that folder.
 - **Checked, not guessed.** Every decision is based on a preview image or on
   numbers from the project, never on assumptions.
 - **Small tools.** Not "process the book" but separate stages and separate
