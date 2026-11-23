@@ -64,9 +64,6 @@ def sheet_for(book: Path, r: dict, out: Path, cell: int) -> Path:
         cells.append((f"NO COVER last p{len(p.pages)} {p.pages[-1].label}",
                       render_page(p, p.pages[-1].id, max_px=cell * 2), 1))
     off = int(r.get("offset", 0))
-    if len(p.pages) > 17 + off:
-        pg17 = p.pages[16 + off]
-        cells.append((f"P17 bottom {pg17.label}", bottom_crop(render_page(p, pg17.id, max_px=cell * 4)), 2))
     if len(p.pages) > 3 + off:
         pg3 = p.pages[2 + off]
         cells.append((f"p3 TITLE {pg3.label}", render_page(p, pg3.id, max_px=cell * 2), 1))

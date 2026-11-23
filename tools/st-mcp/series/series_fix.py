@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import statistics
 import subprocess
@@ -16,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from st_mcp.ops import cli_env, find_cli  # noqa: E402
 from st_mcp.project import Project  # noqa: E402
 
-from series.detect import barcode_rect_page, cover_rect_page, snap_number_bottom  # noqa: E402
+from series.detect import barcode_rect_page, cover_rect_page  # noqa: E402
 
 PROJECT = "projektas.ScanTailor"
 BACKUP = "projektas.auto.ScanTailor"
@@ -24,7 +23,6 @@ MM_PER_INCH = 25.4
 # The user's boxes are about 10 px inside the detected cover edge, where the scan shows a shadow.
 COVER_INSET_PX = 8
 SMALL_RATIO = 0.70
-STAMP_PAGES = (4, 17)
 
 
 def run_cli(proj: Path, start: int, end: int, files: list[str], log) -> None:
@@ -140,33 +138,9 @@ def fix_book(book: Path, log) -> dict:
         if w < 8 or h < 8 or (w < 50 and h < 22):
             p.set_content(pg.id, {"x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0})
             emptied.append(pg.label)
-    # A library stamp sits next to or under the page number of page 17, so the box must end at the number.
     refs = list(cover_files) + [page_ref(pg) for pg in p.pages if pg.label in emptied]
-    # Without the front cover scan, page 17 of the project is not printed page 17.
     if front is None:
-        flags.append("page 17: find it by hand (no front cover)")
-    elif len(p.pages) >= 18:
-        pg17 = p.pages[16]
-        c = p.content(pg17.id)
-        rect = c.get("content_rect_px")
-        dpi17 = pg17.image.dpi_y or 300
-        heights = []
-        for pg in p.pages:
-            cc = p.content(pg.id)
-            if pg.id not in cover_ids and pg.side == pg17.side and pg.id != pg17.id and cc.get("content_rect_px") and not cc.get("empty"):
-                heights.append(cc["content_rect_px"]["height"])
-        full = [h for h in heights if h > 0.9 * max(heights)] if heights else []
-        if rect and not c.get("empty") and full:
-            # Full pages of the same side end at their page number, so their height gives the number position.
-            target = rect["y"] + statistics.median(full)
-            nb = snap_number_bottom(p, pg17.id, rect, target, dpi17)
-            if nb is None:
-                flags.append("page 17: page number not found")
-            elif abs(rect["y"] + rect["height"] - nb) > 3:
-                p.set_content(pg17.id, {**rect, "height": nb + 2 - rect["y"]})
-                refs.append(page_ref(pg17))
-        else:
-            flags.append("page 17: no content box or no full pages")
+        flags.append("no front cover scan: the printed page numbers are one less than the project numbers")
     p.save()
     if refs:
         run_cli(proj, 4, 5, refs, log)
@@ -190,11 +164,9 @@ def fix_book(book: Path, log) -> dict:
         w, h = sizes[pg.id]
         if w < SMALL_RATIO * med_w or h < SMALL_RATIO * med_h:
             small.append({"page": pg.index + 1, "id": pg.id, "label": pg.label, "w_mm": w, "h_mm": h})
-    stamp = [{"page": n, "id": p.pages[n - 1].id, "label": p.pages[n - 1].label}
-             for n in STAMP_PAGES if n <= len(p.pages)] if front else []
     return {"book": book.name, "pages": len(p.pages), "front": front.id if front else None,
             "back": back.id if back else None, "median_mm": [med_w, med_h], "small": small,
-            "stamp_pages": stamp, "flags": flags, "emptied": emptied,
+            "flags": flags, "emptied": emptied,
             "back_margins_mm": p.layout(back.id)["margins_mm"] if back else None}
 
 

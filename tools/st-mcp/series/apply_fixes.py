@@ -22,7 +22,7 @@ from series.zbar import decode  # noqa: E402
 
 
 def back_from_sticker(p: Project, page_id: str) -> str:
-    # When a library sticker covers the ISBN, its barcode takes the place of the ISBN box; stamp_zones.py covers it later.
+    # When a library sticker covers the ISBN, its barcode takes the place of the ISBN box; the stamp agent covers it later.
     pg = p.page(page_id)
     br = cover_rect_page(p, page_id)
     if br is None:
