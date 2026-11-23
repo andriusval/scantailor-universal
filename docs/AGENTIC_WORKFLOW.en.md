@@ -82,7 +82,8 @@ GUI.
      numbers in the side margin drop out, and hyphens at the line ends stay
      in. Preview the pages with a large cut (review note). Also preview the
      `taller_pages`, because their box often holds a stamp or a mark above
-     or below the text. Correct these with `mode="manual"`.
+     or below the text. Correct these in the size gate (step 9) with your
+     own snap points.
 5. **Picture pages:** `check_pages(kind="pictures")`; preview every flagged
    page (zoom into the illustration). The box of `all_content` does not
    include thin strips at the page edges, the spine shadow or the paper
@@ -155,13 +156,19 @@ GUI.
    correct single pages with `pages_set_layout`.
    **Size gate before the output:** `check_pages(kind="size")` lists the
    body pages with a box wider than the book median by more than 3 mm, or
-   taller by more than 3 %. The gate only lists the pages: never cut a box
-   to the median size. Preview each page and find the side with the mark.
-   Double-click the outermost printed text of that side with
+   taller by more than 3 %. After `pages_fit_text_column` (step 4) it lists
+   only the pages that the free column fit could not fix. The gate only
+   lists the pages: never cut a box to the median size. Preview each page
+   with `page_preview(grid=true)` and find the side with the mark. Read the
+   point on the outermost printed text of that side from a close view
+   (`page_preview(roi=[x0, y0, x1, y1])`). Double-click it with
    `pages_snap_content(points=[{page, x, y, side}])`, as in the GUI, so that
-   the edge snaps to the printed text. Cover a stamp or a note that
-   stays inside the box (for example, next to the page number) with
-   `page_add_fill_zone`. A page that is really larger (title picture, table,
+   the edge snaps to the printed text. Cover a stamp, a sticker or a
+   handwritten note that stays inside the box with `page_add_fill_zone`.
+   Remove only what is not printed, and keep 5 px between a zone and the
+   nearest printed letter. Check the planned zones first with
+   `page_preview(zones=[...])`. A mark that touches printed text stays
+   for a person. A page that is really larger (title picture, table,
    contents) stays, with a `review_note` that gives the reason. Make the
    output only when the list has no page without a reason.
    Then `run_stages(4, 6)`,
@@ -249,12 +256,13 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 |---|---|
 | `workflow_guide()` | This document |
 | `project_create(images_dir, project, output_dir?, dpi=300, force_dpi=false)` | Creates the `.ScanTailor`, handles DPI |
+| `project_add_front_cover(project, image?)` | Adds a cover image (for example from a book shop) as the first page of a finished project; stages 1–5 for the cover only |
 | `project_info(project)` | Page count, DPI, rotations, stage progress, running job |
 | `image_preview(project, images?)` | Original scans |
 | `run_stages(project, start, end, orientation?, layout?, layout_direction?, dpi?, content_detection?, wait_s?, pages?, output_rotate?)` | Runs filters in the background; `pages` limits the run to some pages (CLI `--pages`); progress and page errors come from CLI `--json-progress`; `orientation=auto` and `output_rotate=auto` use the orientation detector |
 | `job_status(job_id, wait_s?)` | Progress / result |
 | `pages_list(project, sort_by, descending, limit, offset)` | Table: id, label, content size + z-scores, margins, alignment, match size, color mode, DPI, flags (`outlier_width`, `outlier_height`, `empty_content`, `cover_candidate`) |
-| `page_preview(project, page, engine?)` / `pages_preview(project, pages, engine?)` | Page(s) with the content box overlay; `engine="cli"` lets ScanTailor draw them (CLI `--render-preview`), as the GUI shows them |
+| `page_preview(project, page, engine?, grid?, roi?, zones?)` / `pages_preview(project, pages, engine?)` | Page(s) with the content box overlay; `engine="cli"` lets ScanTailor draw them (CLI `--render-preview`), as the GUI shows them; `grid`/`roi`/`zones` give a page px grid, a close view and planned fill zones |
 | `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
 | `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], points?, wait_s?)` | GUI double-click edge snap via `--content-snap`, runs stages 4–5; `points` are your own clicks on the printed text |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |

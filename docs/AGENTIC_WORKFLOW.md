@@ -86,8 +86,8 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
      inventoriaus numeriai paraštėje lieka už rėmo, o brūkšneliai eilučių
      galuose lieka viduje. Peržiūrėti puslapius su dideliu nukirpimu
      (pastaba peržiūrai) ir `taller_pages`: aukštesniame rėme dažniausiai
-     yra antspaudas ar žymė virš teksto ar po juo. Juos taisyti
-     `mode="manual"`.
+     yra antspaudas ar žymė virš teksto ar po juo. Juos taisyti dydžio
+     vartuose (9 žingsnis) savais snap taškais.
 5. **Puslapiai su iliustracijomis:** `check_pages(kind="pictures")`; peržiūrėti
    kiekvieną pažymėtą (padidinus iliustraciją). `all_content` rėmas neapima
    plonų juostų prie lapo kraštų, nugarėlės šešėlio ir popieriaus po parašu.
@@ -162,13 +162,19 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    pataisyti per `pages_set_layout`.
    **Dydžio vartai prieš output:** `check_pages(kind="size")` išvardija
    teksto puslapius, kurių rėmas platesnis už knygos medianą daugiau kaip
-   3 mm arba aukštesnis daugiau kaip 3 %. Vartai tik išvardija puslapius:
-   rėmo niekada nekirpti aklai iki medianos. Kiekvieną puslapį peržiūrėti
-   ir rasti pusę su ženklu. Dukart spragtelėti ant tos pusės kraštinio
-   spausdinto teksto su `pages_snap_content(points=[{page, x, y, side}])`,
-   kaip GUI: kraštas prilimpa prie spausdinto teksto. Antspaudą ar įrašą,
-   kuris lieka rėme (pvz. šalia puslapio numerio), uždengti
-   `page_add_fill_zone`. Tikrai didesnis puslapis (titulinio
+   3 mm arba aukštesnis daugiau kaip 3 %. Po `pages_fit_text_column`
+   (4 žingsnis) lieka tik puslapiai, kurių nemokamas stulpelio pritaikymas
+   nesutvarkė. Vartai tik išvardija puslapius: rėmo niekada nekirpti aklai
+   iki medianos. Kiekvieną puslapį peržiūrėti su `page_preview(grid=true)`
+   ir rasti pusę su ženklu. Tašką ant tos pusės kraštinio spausdinto teksto
+   nuskaityti iš artimo vaizdo (`page_preview(roi=[x0, y0, x1, y1])`).
+   Dukart spragtelėti su `pages_snap_content(points=[{page, x, y, side}])`,
+   kaip GUI: kraštas prilimpa prie spausdinto teksto. Antspaudą, lipduką ar
+   ranka rašytą įrašą, kuris lieka rėme, uždengti `page_add_fill_zone`.
+   Trinti tik tai, kas nespausdinta, ir palikti 5 px tarp zonos ir
+   artimiausios spausdintos raidės. Planuojamas zonas pirma patikrinti su
+   `page_preview(zones=[...])`. Ženklas, kuris liečia spausdintą tekstą,
+   lieka žmogui. Tikrai didesnis puslapis (titulinio
    paveikslas, lentelė, turinys) lieka, bet su `review_note` priežastimi.
    Output daryti tik tada, kai sąraše nėra nepaaiškinto puslapio.
    Tada `run_stages(4, 6)`,
@@ -254,12 +260,13 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 |---|---|
 | `workflow_guide()` | Šis dokumentas (EN) |
 | `project_create(images_dir, project, output_dir?, dpi=300, force_dpi=false)` | Sukuria `.ScanTailor`, sutvarko DPI |
+| `project_add_front_cover(project, image?)` | Prideda viršelio vaizdą (pvz. iš knygyno svetainės) kaip pirmą baigto projekto puslapį; 1–5 etapai tik viršeliui |
 | `project_info(project)` | Puslapių skaičius, DPI, pasukimai, etapų progresas, vykdomas darbas |
 | `image_preview(project, images?)` | Originalūs skenai |
 | `run_stages(project, start, end, orientation?, layout?, layout_direction?, dpi?, content_detection?, wait_s?, pages?, output_rotate?)` | Paleidžia filtrus fone; `pages` — tik šie puslapiai (CLI `--pages`); eiga ir puslapių klaidos iš CLI `--json-progress`; `orientation=auto` ir `output_rotate=auto` naudoja orientacijos detektorių |
 | `job_status(job_id, wait_s?)` | Progresas / rezultatas |
 | `pages_list(project, sort_by, descending, limit, offset)` | Lentelė: id, label, content dydis + z-score, paraštės, lygiavimas, match size, spalvų režimas, DPI, vėliavos (`outlier_width`, `outlier_height`, `empty_content`, `cover_candidate`) |
-| `page_preview(project, page, engine?)` / `pages_preview(project, pages, engine?)` | Puslapis(-iai) su content box overlay; `engine="cli"` — piešia pats ScanTailor (CLI `--render-preview`), kaip GUI |
+| `page_preview(project, page, engine?, grid?, roi?, zones?)` / `pages_preview(project, pages, engine?)` | Puslapis(-iai) su content box overlay; `engine="cli"` — piešia pats ScanTailor (CLI `--render-preview`), kaip GUI; `grid`/`roi`/`zones` – puslapio px tinklelis, artimas vaizdas ir planuojamos zonos |
 | `page_set_content(project, page, mode=manual\|auto\|full\|empty\|cover\|tighten\|include_numbers\|all_content, x,y,width,height, expand_*)` | `select-content` |
 | `pages_snap_content(project, pages, sides=auto\|all\|[left,right,top,bottom], points?, wait_s?)` | GUI dvigubo spragtelėjimo snap per `--content-snap`, paleidžia 4–5 etapus; `points` – savi spragtelėjimai ant spausdinto teksto |
 | `pages_set_layout(project, pages, margins_mm, margin_*, align_v, align_h, match_size)` | `page-layout` |

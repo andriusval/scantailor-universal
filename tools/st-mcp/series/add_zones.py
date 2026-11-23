@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from st_mcp.preview import render_page  # noqa: E402
+from st_mcp.preview import grid_view  # noqa: E402
 from st_mcp.project import Project  # noqa: E402
 
 from series.series_fix import page_ref, run_cli  # noqa: E402
@@ -21,20 +21,10 @@ BACKUP = "projektas.before-zones.ScanTailor"
 
 
 def check_tile(p: Project, pid: str, zones: list, title: str) -> Image.Image:
-    img = render_page(p, pid, max_px=100000, overlay=False, pad=(255, 255, 255)).convert("RGB")
-    d = ImageDraw.Draw(img)
-    c = p.content(pid).get("content_rect_px")
-    if c and c["width"] > 0:
-        d.rectangle([c["x"], c["y"], c["x"] + c["width"], c["y"] + c["height"]], outline=(0, 170, 0), width=4)
-    for x0, y0, x1, y1 in zones:
-        d.rectangle([x0, y0, x1, y1], outline=(255, 0, 0), width=3)
     # The view shows the zones with a ring of the page around them, because the risk is printed text next to a zone.
-    x0 = max(0, min(z[0] for z in zones) - 200)
-    y0 = max(0, min(z[1] for z in zones) - 200)
-    x1 = min(img.width, max(z[2] for z in zones) + 200)
-    y1 = min(img.height, max(z[3] for z in zones) + 200)
-    crop = img.crop((int(x0), int(y0), int(x1), int(y1)))
-    crop.thumbnail((620, 440))
+    roi = (min(z[0] for z in zones) - 200, min(z[1] for z in zones) - 200,
+           max(z[2] for z in zones) + 200, max(z[3] for z in zones) + 200)
+    crop = grid_view(p, pid, roi, 620, 440, zones)
     tile = Image.new("RGB", (630, 465), (40, 40, 40))
     tile.paste(crop, (5, 20))
     ImageDraw.Draw(tile).text((5, 4), title, fill=(255, 255, 0))

@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from st_mcp.preview import render_page  # noqa: E402
+from st_mcp.preview import grid_view  # noqa: E402
 from st_mcp.project import Project  # noqa: E402
 
 PROJECT = "projektas.ScanTailor"
@@ -43,39 +43,6 @@ def targets(p: Project, pages: str, offset: int, around: int) -> list[tuple[int,
             seen.add(i)
             uniq.append((i, what))
     return uniq
-
-
-def grid_view(p: Project, pid: str, roi: tuple | None, max_w: int, max_h: int) -> Image.Image:
-    img = render_page(p, pid, max_px=100000, overlay=False, pad=(255, 255, 255)).convert("RGBA")
-    over = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    od = ImageDraw.Draw(over)
-    fwd = p.transform(pid).xform
-    for z in p.fill_zones(pid):
-        od.polygon([fwd.map(tuple(c)) for c in z["points"]], fill=(0, 0, 255, 60))
-    img = Image.alpha_composite(img, over).convert("RGB")
-    d = ImageDraw.Draw(img)
-    c = p.content(pid).get("content_rect_px")
-    if c and c["width"] > 0:
-        d.rectangle([c["x"], c["y"], c["x"] + c["width"], c["y"] + c["height"]], outline=(0, 170, 0), width=3)
-    x0, y0, x1, y1 = roi or (0, 0, img.width, img.height)
-    x0, y0, x1, y1 = max(0, int(x0)), max(0, int(y0)), min(img.width, int(x1)), min(img.height, int(y1))
-    crop = img.crop((x0, y0, x1, y1))
-    k = min(1.0, max_w / crop.width, max_h / crop.height)
-    crop = crop.resize((max(1, round(crop.width * k)), max(1, round(crop.height * k))))
-    d = ImageDraw.Draw(crop)
-    # A fine grid on a close view and a coarse grid on a whole page keep the labels readable.
-    step = 25 if k >= 0.6 else 50 if k >= 0.3 else 100
-    for g in range((x0 // step + 1) * step, x1, step):
-        x = (g - x0) * k
-        d.line([(x, 0), (x, crop.height)], fill=(255, 0, 0) if g % 100 == 0 else (255, 205, 205))
-        if g % 100 == 0:
-            d.text((x + 2, 2), str(g), fill=(200, 0, 0))
-    for g in range((y0 // step + 1) * step, y1, step):
-        y = (g - y0) * k
-        d.line([(0, y), (crop.width, y)], fill=(255, 0, 0) if g % 100 == 0 else (255, 205, 205))
-        if g % 100 == 0:
-            d.text((2, y + 2), str(g), fill=(200, 0, 0))
-    return crop
 
 
 def main(argv=None) -> int:

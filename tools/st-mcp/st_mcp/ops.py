@@ -23,7 +23,7 @@ from PIL import Image
 
 from . import checks, corrections, review
 from .masks import cli_masks_available, dump_masks
-from .preview import contact_sheet, render_image, render_page
+from .preview import contact_sheet, grid_view, render_image, render_page
 from .project import COLOR_MODES, Project
 
 STAGES = {1: "fix_orientation", 2: "page_split", 3: "deskew", 4: "select_content",
@@ -603,12 +603,22 @@ def _use_cli_preview(engine: str) -> bool:
     return False
 
 
-def page_preview(project: str, page: str, max_px: int = 1200, engine: str = "auto") -> Image.Image:
+def page_preview(project: str, page: str, max_px: int = 1200, engine: str = "auto", grid: bool = False,
+                 roi: list[float] | None = None, zones: list[list[float]] | None = None) -> Image.Image:
     """The page as in the GUI's Select Content view (deskewed, cropped) with the content box.
     engine: 'auto' (ScanTailor draws it through CLI --render-preview when available, else Python),
-    'cli' or 'python' (fast, st-mcp's own copy of the geometry)."""
+    'cli' or 'python' (fast, st-mcp's own copy of the geometry).
+    grid=true: a page px grid with labels (a line each 25, 50 or 100 px, a number each 100 px), the
+    content box in green and the fill zones of the project in blue. Read the points for
+    pages_snap_content(points=...) and the rectangles for page_add_fill_zone from it.
+    roi=[x0, y0, x1, y1] (page px, implies grid): a close view of that part, for exact coordinates.
+    zones=[[x0, y0, x1, y1], ...] (implies grid): draw planned fill zones in red, to check before
+    page_add_fill_zone that no zone touches printed text."""
     p = _proj(project)
     pid = p.find_page(page).id
+    if grid or roi or zones:
+        return grid_view(p, pid, tuple(roi) if roi else None, max_px if roi else min(max_px, 1000),
+                         max(max_px, 1400) if not roi else max_px, zones)
     if _use_cli_preview(engine):
         return _cli_previews(p, [pid], max_px)[pid]
     return render_page(p, pid, max_px=max_px)
@@ -1223,6 +1233,67 @@ def page_add_fill_zone(project: str, page: str, x: float, y: float, width: float
         p.save()
     return {"page": pg.label, "added": bool(added), "zones": len(p.fill_zones(pg.id)),
             "next": "run_stages(6, 6) for this page, then page_preview to check the output"}
+
+
+def project_add_front_cover(project: str, image: str = "001.jpg", wait_s: float = 900) -> dict:
+    """Add a cover image as the first page of a finished project, for a book without a cover scan
+    (for example a cover from a book shop site). Put the image in the folder of the scans first.
+    The cover gets rotation 0, a single page, the whole image as content box, margins 0, no match size,
+    Color 300 DPI. All other pages keep their settings and fill zones. Runs stages 1-5 for the cover
+    only and waits; afterwards run_stages(6, 6, pages=[the cover]) makes its output file.
+    The printed page numbers then move by one against the project pages."""
+    import xml.etree.ElementTree as ET
+    proj = Path(project).resolve()
+    _ensure_idle(proj)
+    p = Project(proj)
+    r = p.root
+    folder = p.local_path(r.find("./directories/directory").get("path"))
+    src = folder / image
+    if not src.exists():
+        raise FileNotFoundError(f"{src} not found: put the cover image in the folder of the scans")
+    if any(im.path.name == image for im in p.images.values()):
+        raise RuntimeError(f"the project already has {image}")
+    pages_before, zones_before = len(p.pages), len(r.findall("./filters/output/page/fill-zones/zone"))
+    shutil.copy2(proj, proj.with_suffix(proj.suffix + ".before-cover"))
+    ids = [int(e.get("id")) for sec in ("files/file", "images/image", "pages/page") for e in r.findall(sec)]
+    fid, iid, pid = (str(max(ids) + k) for k in (1, 2, 3))
+    with Image.open(src) as im:
+        size, dpi = im.size, im.info.get("dpi", (300, 300))
+    fe = ET.Element("file", {"name": image, "dirId": r.find("./directories/directory").get("id"), "id": fid})
+    ie = ET.Element("image", {"subPages": "1", "fileImage": "0", "id": iid, "fileId": fid})
+    ET.SubElement(ie, "size", {"height": str(size[1]), "width": str(size[0])})
+    ET.SubElement(ie, "dpi", {"vertical": str(round(dpi[1])), "horizontal": str(round(dpi[0]))})
+    ET.SubElement(ie, "grayscale", {"value": "0"})
+    pe = ET.Element("page", {"id": pid, "imageId": iid, "subPage": "single"})
+    # The book order comes from the order of these lists, so the cover goes first.
+    for sec, el in (("files", fe), ("images", ie), ("pages", pe)):
+        r.find(sec).insert(0, el)
+    p.set_rotation(iid, 0)
+    p.set_split_layout(iid, "single-uncut")
+    p.save()
+    res = run_stages(str(proj), 1, 5, pages=[pid], wait_s=wait_s)
+    if res.get("state") != "ok":
+        return {"error": "stages 1-5 of the cover did not end with ok", "job": res}
+    p = Project(proj)
+    # The CLI writes the project again with new page ids, so the file name finds the cover page.
+    pid = next(pg.id for pg in p.pages if pg.image.path.name == image)
+    pt = p.transform(pid)
+    # The image is the cover only, without the scanner lid, so the content box is the whole image.
+    p.set_content(pid, {"x": 0.0, "y": 0.0, "width": float(pt.width), "height": float(pt.height)})
+    p.set_layout(pid, margins_mm={"left": 0, "top": 0, "right": 0, "bottom": 0},
+                 align_v="top", align_h="hcenter", match_size=False)
+    p.set_output(pid, color_mode="color", dpi=300)
+    p.save()
+    res = run_stages(str(proj), 4, 5, pages=[pid], wait_s=wait_s)
+    if res.get("state") != "ok":
+        return {"error": "stages 4-5 of the cover did not end with ok", "job": res}
+    p = Project(proj)
+    zones_after = len(p.root.findall("./filters/output/page/fill-zones/zone"))
+    if len(p.pages) != pages_before + 1 or zones_after != zones_before or p.pages[0].image.path.name != image:
+        raise RuntimeError(f"check failed: pages {pages_before}->{len(p.pages)}, zones {zones_before}->{zones_after}")
+    return {"cover_page": p.pages[0].label, "pages": len(p.pages), "fill_zones_kept": zones_after,
+            "backup": str(proj.with_suffix(proj.suffix + ".before-cover")), "job": res,
+            "next": f"run_stages(6, 6, pages=['{p.pages[0].label}']) for the cover output"}
 
 
 def check_pages(project: str, pages: str | list[str] = "all", kind: str = "content") -> dict:
@@ -1877,7 +1948,7 @@ def workflow_guide() -> dict:
     return {"workflow": text}
 
 
-TOOLS = [project_create, project_for_windows, project_diff, corrections_record, corrections_stats, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
+TOOLS = [project_create, project_add_front_cover, project_for_windows, project_diff, corrections_record, corrections_stats, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
          pages_preview, image_preview, page_set_content, pages_snap_content, pages_set_layout, pages_fit_text_column, pages_fit_width, pages_align_auto, pages_set_output,
          page_add_fill_zone, check_pages, export_summary, review_note, review_sheet, workflow_guide]
 IMAGE_TOOLS = {"page_preview", "pages_preview", "image_preview"}
