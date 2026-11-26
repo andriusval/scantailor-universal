@@ -155,20 +155,21 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    teksto bloko pločio mediana + po 10 mm iš šonų. Platesniems puslapiams
    šoninės paraštės 0: „match size“ ir horizontalus centravimas juos vis
    tiek išdėsto bendrame puslapyje. Paleisti po paskutinio rėmo pakeitimo.
-9. **Lygiavimas:** `pages_align_auto(project)`. Įžanginiai puslapiai
-   (titulinis, metrikos, dedikacija, epigrafas) → `vcenter`, bet mažas
-   logotipas viršuje lieka `top`; skyrių ir sąrašų pradžios (tekstas
-   prasideda žemiau nei įprastai) → `bottom`; iliustracijų puslapiai →
-   `vcenter` (spalvotos ar pilkos nuotraukų įklijos ir B/W raižiniai,
-   žemesni už teksto bloką); trumpi puslapiai (skyrių
-   pabaigos, sąrašai) → `top`, jei tekstas prasideda ties įprasta pilnų
-   puslapių viršaus linija, `bottom`, jei baigiasi ties įprasta apačia,
-   kitaip → `voriginal`. Taip pustitulis ar nuleista pradžia lieka
-   spausdintoje vietoje. Pilni teksto puslapiai be numerio juostos → `top`;
-   kiti → `bottom`. Jei peržiūrose matosi lentelės ar diagramos, pridėti
-   `review_full_pages=true`: jis išvardija aukštus puslapius su mažai
-   eilučių, pvz. pasuktas lenteles. Peržiūrėti `top` ir `vcenter` puslapius, pavienius
-   pataisyti per `pages_set_layout`.
+9. **Lygiavimas:** `pages_align_auto(project)`. Grupės pagal turinio
+   aukštį (knygos mediana) ir teksto vietą (įprastos pilnų puslapių viršaus
+   ir apačios linijos). Pilni puslapiai → į puslapio numerio pusę (`top` arba
+   `bottom`, `number_position=auto` ją nustato iš pilnų puslapių pavyzdžio).
+   Iliustracijų puslapiai → `vcenter`. Retas tekstas (titulinis, pustitulis,
+   epigrafas, dedikacija) → `vcenter`. Tekstas prasideda ties įprasta viršaus
+   linija → `top`: skyrių pabaigos ir pilni teksto puslapiai be numerio
+   juostos. Tekstas prasideda žemiau ir baigiasi ties įprasta apačia →
+   `bottom`: skyrių pradžios. Kiti maži blokai (skyrių ar dalių pavadinimai,
+   metrikos) → `vcenter`. Peržiūrėti puslapius, šiek tiek žemesnius už
+   medianą, ir `review` sąrašą: skyrių pradžios, kurių aukštis toli nuo kitų
+   pradžių aukščio, eina ten. Taisyklės galioja visai knygai, pavienius
+   puslapius taisyti per `pages_set_layout`. Jei peržiūrose matosi lentelės
+   ar diagramos, pridėti `review_full_pages=true`: jis išvardija aukštus
+   puslapius su mažai eilučių, pvz. pasuktas lenteles.
    **Dydžio vartai prieš output:** `check_pages(kind="size")` išvardija
    teksto puslapius, kurių rėmas platesnis už knygos medianą daugiau kaip
    3 mm arba aukštesnis daugiau kaip 3 %. Po `pages_fit_text_column`
@@ -290,7 +291,7 @@ CLI: `python -m st_mcp <tool> key=value …` (peržiūros: `out=failas.png`).
 | `corrections_stats(log?, book?, top?)` | Pataisymai pagal kategoriją ir knygą, dažniausios kategorijos su workflow taisykle |
 | `pages_fit_text_column(project, tolerance_mm?, height_ratio?)` | Susiaurina rėmus, platesnius už knygos teksto stulpelį; išvardija puslapius su aukštesniu rėmu |
 | `pages_fit_width(project, margin_mm?, percentile?)` | Vienas puslapio plotis: šoninės paraštės 0 puslapiams, platesniems už teksto bloko medianą |
-| `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertikalus lygiavimas visiems teksto puslapiams ir šalinimo kandidatai ataskaitai |
+| `pages_align_auto(project, number_position?, title_ratio?)` | Vertikalus lygiavimas visiems teksto puslapiams ir šalinimo kandidatai ataskaitai |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?, grayscale_first?, output_rotation?)` | `output`; `grayscale_first` (true, false arba "auto") įrašo `color-or-grayscale@convertToGrayscale="1"` arba `"auto"` (CLI `--grayscale-first`); `output_rotation` (0/90/180/270, pagal laikrodžio rodyklę) pasuka tik išvesties TIFF (CLI `--output-rotate`) |
 | `page_add_fill_zone(project, page, x, y, width, height, color?)` | Output fill zona (puslapio px): antspaudas ar įrašas rėmo viduje; saugoma originalo px, matoma GUI |
 | `check_pages(project, pages, kind=content\|size\|pictures\|grayscale\|orientation)` | Heuristikos su įrodymais; `size` išvardija rėmus, didesnius už medianą (vartai prieš output); `grayscale` duoda kiekvieno puslapio chroma, klasifikaciją ir atstumą iki slenksčio; `text_runs_vertically` žymi šonu išspausdintas lenteles; `orientation` paleidžia detektorių (CLI `--detect-orientation`) skenams ir išvesties failams ir išvardija tuos, kuriuos reikia peržiūrėti |

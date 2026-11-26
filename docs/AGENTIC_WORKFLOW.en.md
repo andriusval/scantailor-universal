@@ -151,19 +151,21 @@ GUI.
    median text-block width plus 10 mm on each side. Pages with wider content
    receive left and right margins 0. Match size and the centered horizontal
    alignment keep them on the common page. Run it after the last content box change.
-9. **Alignment:** `pages_align_auto(project)`. Front matter (title,
-   copyright, dedication, epigraph) goes to `vcenter`, but a small logo at
-   the top stays `top`. Section starts (the text starts lower than usual) go
-   to `bottom`. Picture pages go to `vcenter`: color or grayscale photo
-   plates, and B/W engravings that are lower than the text block. Short
-   pages (chapter ends, lists) go to `top` when their text starts on the
-   usual top line of the full pages. They go to `bottom` when their text
-   ends on the usual bottom line, and else to `voriginal`. Thus a half-title or a lowered
-   start keeps its printed place. Full text pages without the page-number
-   band go to `top`. Other pages go to `bottom`. When the
-   previews show tables or diagrams, add `review_full_pages=true`: it lists
-   full-height pages with few text lines, such as rotated tables. Preview the `top` and `vcenter` pages, and
-   correct single pages with `pages_set_layout`.
+9. **Alignment:** `pages_align_auto(project)`. The groups come from the
+   content height against the book median and from the place of the text.
+   The usual top and bottom lines of the full pages give that place. Full pages go to the
+   page-number side (`top` or `bottom`; `number_position=auto` reads it from a
+   sample of full pages). Picture pages go to `vcenter`. Sparse text (title,
+   half-title, epigraph, dedication) goes to `vcenter`. Text that starts on the
+   usual top line goes to `top`: chapter ends and full text pages without the
+   page-number band. Text that starts lower and ends on the usual bottom line
+   goes to `bottom`: chapter starts. Other small blocks (chapter or part
+   titles, colophons) go to `vcenter`. Preview the pages a bit lower than the
+   median and the `review` list. Chapter starts far from the usual
+   chapter-start height go to that list. The rules stay the same for the whole
+   book. Correct single pages with `pages_set_layout`. When the previews show
+   tables or diagrams, add `review_full_pages=true`: it lists full-height
+   pages with few text lines, such as rotated tables.
    **Size gate before the output:** `check_pages(kind="size")` lists the
    body pages with a box wider than the book median by more than 3 mm, or
    taller by more than 3 %. After `pages_fit_text_column` (step 4) it lists
@@ -288,7 +290,7 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `corrections_stats(log?, book?, top?)` | Corrections per category and per book, and the most frequent categories with their workflow rule |
 | `pages_fit_text_column(project, tolerance_mm?, height_ratio?)` | Narrows content boxes that are wider than the text column of the book; lists the pages with a taller box |
 | `pages_fit_width(project, margin_mm?, percentile?)` | One page width: side margins 0 for pages wider than the median text block |
-| `pages_align_auto(project, short_ratio?, missing_number_ratio?)` | Vertical alignment for all body pages, plus removal candidates for the report |
+| `pages_align_auto(project, number_position?, title_ratio?)` | Vertical alignment for all body pages, plus removal candidates for the report |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?, grayscale_first?, output_rotation?)` | `output`; `grayscale_first` (true, false or "auto") writes `color-or-grayscale@convertToGrayscale="1"` or `"auto"` (CLI `--grayscale-first`); `output_rotation` (0/90/180/270, clockwise) turns only the output TIFF (CLI `--output-rotate`) |
 | `page_add_fill_zone(project, page, x, y, width, height, color?)` | Output fill zone (page px) for a stamp or a note inside the box; stored in original image px, shown in the GUI |
 | `check_pages(project, pages, kind=content\|size\|pictures\|grayscale\|orientation)` | Heuristics with evidence; `size` lists the boxes larger than the median (the gate before the output); `grayscale` gives the chroma per page, the classification and the margin to the threshold; `text_runs_vertically` marks sideways tables; `orientation` runs the detector (CLI `--detect-orientation`) on the scans and the output files and lists the ones that need a look |

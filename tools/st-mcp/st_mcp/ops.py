@@ -982,31 +982,34 @@ def pages_fit_text_column(project: str, tolerance_mm: float = 0.5, height_ratio:
             "next": "run_stages(4, 5), preview the large cuts and the taller pages, then pages_fit_width"}
 
 
-def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_ratio: float = 0.95,
-                     section_start_offset: float = 0.10, review_full_pages: bool = False,
-                     picture_ratio: float = 0.25, line_tolerance_mm: float = 4.0) -> dict:
-    """Vertical alignment for every body page, and lists of pages a person should check.
-    - Front matter (pages before the first page with at least half the usual number of text lines:
-      title, copyright, dedication, epigraph): vcenter. A small element at the top of such a page
-      (series logo, less than 25 % of the usual height): top.
-    - Section starts (the text block starts lower than usual by more than section_start_offset of
-      the page height, with 3 or more text lines: preface, list or contents start): bottom, even when
-      the page is short, or voriginal when its end is not on the usual bottom line. A small block lower
-      than usual (part title, specks): voriginal, and review.
-    - Short pages (content height below short_ratio of the median: chapter ends, lists): top when the
-      text starts on the usual top line of the full pages (within line_tolerance_mm), bottom when it ends
-      on their usual bottom line, else voriginal: a half-title or a lowered start keeps its printed place.
-    - Full text pages without the page-number band (height below missing_number_ratio of the median
-      but the usual number of lines): top, so that their text lines up with the other pages.
-    - Picture pages: vcenter. These are pages with a color/grayscale output mode (photo plates), and
-      B/W pages lower than the full text block whose line art covers picture_ratio of the content or more.
-    - Other body pages: bottom.
-    Lists for the report (nothing is removed or changed for them): blank pages, half-title candidates,
-    near-empty pages (no text line, tiny box: mark them empty if they hold only specks or a stamp),
+def pages_align_auto(project: str, number_position: str = "auto", full_ratio: float = 0.985,
+                     title_ratio: float = 0.5, sparse_ratio: float = 0.6, line_tolerance_mm: float = 5.0,
+                     picture_ratio: float = 0.25, review_full_pages: bool = False) -> dict:
+    """Vertical alignment for every body page by the groups of a printed book, and lists of pages to check.
+    The groups come from the content height against the book median and from the place of the text
+    on the page (the usual top and bottom lines of the full pages, within line_tolerance_mm; text above
+    the usual top line or below the usual bottom line also counts as on that line):
+    - Full pages (height at least full_ratio of the median, or text within half the tolerance of both
+      usual lines): to the page-number side, top or bottom. number_position=auto takes the side from
+      the page numbers of a sample of full text pages; without a clear majority it stays bottom.
+    - Picture pages (color/grayscale output, or B/W line art on picture_ratio of the content): vcenter.
+    - Front matter (the pages before the first full text page): sparse pages (title, half-title,
+      epigraph, dedication) and blocks lower than title_ratio of the median: vcenter. A page is sparse
+      when its lines per mm are below half of the full pages, or its share of box rows with ink is below
+      sparse_ratio of the full pages.
+    - Text that starts on the usual top line: top. These are chapter ends (any height) and full text
+      pages without the page-number band.
+    - Text that starts lower and ends on the usual bottom line, at least title_ratio of the median high:
+      bottom. These are chapter starts; the ones far from the usual chapter-start height go to review.
+    - All other pages (small blocks off the usual lines: chapter or part titles, colophons): vcenter.
+    The agent previews the pages a bit lower than the median, checks the groups, and corrects single
+    pages with pages_set_layout; the rules stay the same for the whole book.
+    Lists for the report (nothing is removed): blank pages, half-title candidates, near-empty pages,
     and, with review_full_pages=true, full-height text pages with few text lines (rotated tables:
-    vcenter is usual there). review_full_pages analyses every page (about 0.5 s each), so use it when
-    the previews show tables or diagrams. Covers keep their settings. Then run_stages(5, 5)."""
+    vcenter is usual there; about 0.5 s per page). Covers keep their settings. Then run_stages(5, 5)."""
     import statistics
+    if number_position not in ("auto", "top", "bottom"):
+        raise ValueError("number_position must be auto|top|bottom")
     proj = Path(project).resolve()
     _ensure_idle(proj)
     p = Project(proj)
@@ -1014,157 +1017,157 @@ def pages_align_auto(project: str, short_ratio: float = 0.85, missing_number_rat
     body = _body_pages(p, no_layout)
     if len(body) < 3:
         raise RuntimeError("too few pages with content and page layout; run stages 1-5 first")
-    heights = [c["content_mm"]["height"] for _, c in body]
-    med_h = statistics.median(heights)
-    lines: dict[str, int] = {}
+    med_h = statistics.median(c["content_mm"]["height"] for _, c in body)
+    info: dict[str, dict] = {}
 
-    def text_lines(pid: str) -> int:
-        if pid not in lines:
-            lines[pid] = checks.check_page(p, pid).get("text_lines") or 0
-        return lines[pid]
+    def check(pid: str) -> dict:
+        if pid not in info:
+            info[pid] = checks.check_page(p, pid)
+        return info[pid]
 
-    def top_rel(c: dict) -> float:
-        cr, pr = c["content_rect_px"], c.get("page_rect_px") or c["content_rect_px"]
-        return (cr["y"] - pr["y"]) / max(1.0, pr["height"])
-
-    # The usual top of the text block, per page side, because left and right scans sit differently.
-    usual_top = {}
-    for side in ("left", "right", "single"):
-        tops = [top_rel(c) for pid, c in body
-                if p.page(pid).side == side and abs(c["content_mm"]["height"] - med_h) < 0.05 * med_h]
-        usual_top[side] = statistics.median(tops) if tops else None
-
-    def gaps_mm(c: dict) -> tuple[float, float]:
-        cr, pr = c["content_rect_px"], c.get("page_rect_px") or c["content_rect_px"]
+    def gaps_mm(c: dict) -> tuple[float, float] | None:
+        cr, pr = c["content_rect_px"], c.get("page_rect_px")
         k = c["content_mm"]["height"] / max(1.0, cr["height"])
+        if not pr:
+            # Without a page rect the box position on the scan is the only measure, so compare it only with other such pages.
+            return cr["y"] * k, -(cr["y"] + cr["height"]) * k
         return (cr["y"] - pr["y"]) * k, (pr["y"] + pr["height"] - cr["y"] - cr["height"]) * k
 
-    # The usual top and bottom lines in mm show where a short page must sit to line up with the full pages.
-    usual_gaps = {}
+    # Picture plates have no page numbers and no text lines, so only text pages give the usual lines and the sample.
+    full = [(pid, c) for pid, c in body if c["content_mm"]["height"] >= full_ratio * med_h
+            and p.output(pid).get("color_mode") in (None, "bw")]
+    # Left and right scans sit differently on the glass, so each side has its own usual lines.
+    usual: dict[tuple[str, bool], tuple[float, float]] = {}
     for side in ("left", "right", "single"):
-        # Without a page rect both gaps are 0, so the rule cannot see the lines and must not decide.
-        g = [gaps_mm(c) for pid, c in body
-             if p.page(pid).side == side and c["content_mm"]["height"] > 0.95 * med_h and c.get("page_rect_px")]
-        usual_gaps[side] = (statistics.median(a for a, _ in g), statistics.median(b for _, b in g)) if g else None
+        for has_rect in (True, False):
+            g = [gaps_mm(c) for pid, c in full if p.page(pid).side == side and bool(c.get("page_rect_px")) == has_rect]
+            if g:
+                usual[(side, has_rect)] = (statistics.median(a for a, _ in g), statistics.median(b for _, b in g))
+    # A sample from the middle of the book gives the line count and the page-number side, because a full analysis takes long.
+    sample = [pid for pid, _ in full[len(full) // 4: len(full) // 4 + 15]]
+    med_lines = statistics.median(check(pid).get("text_lines") or 0 for pid in sample) if sample else 0
+    votes = [check(pid).get("page_number_in_box") for pid in sample]
+    votes = {k: votes.count(k) for k in ("top", "bottom") if votes.count(k)}
+    top_v, bottom_v = votes.get("top", 0), votes.get("bottom", 0)
+    # One wrong vote can come from a speck, so only a clear majority moves the full pages to the top.
+    auto_side = "top" if top_v >= 3 and top_v >= 2 * bottom_v else "bottom"
+    number_side = number_position if number_position != "auto" else auto_side
+    # The share of rows with ink does not change when tight lines merge, so it tells sparse pages from text better than the line count.
+    med_ink = statistics.median(check(pid).get("ink_rows") or 0 for pid in sample) if sample else 0.0
 
-    def on_line(pid: str, c: dict) -> str | None:
-        u = usual_gaps.get(p.page(pid).side)
-        if u is None or not c.get("page_rect_px"):
-            return "unknown"
-        top, bottom = gaps_mm(c)
-        if abs(top - u[0]) <= line_tolerance_mm:
-            return "top"
-        if abs(bottom - u[1]) <= line_tolerance_mm:
-            return "bottom"
-        return None
+    line_density = med_lines / med_h if med_h else 0.0
 
-    # A sample gives the median number of lines, because the analysis of every page takes long.
-    sample = [pid for pid, _ in body[len(body) // 4: len(body) // 4 + 15]]
-    med_lines = statistics.median(text_lines(pid) for pid in sample) if sample else 0
-    front_end = 0
-    for i, (pid, _) in enumerate(body[: max(1, len(body) // 10)]):
-        if text_lines(pid) >= 0.5 * med_lines:
-            front_end = i
-            break
-    decided = {"vcenter": [], "top_small_header": [], "vcenter_picture": [], "bottom_section_start": [],
-               "voriginal_small_block": [], "top_short": [], "bottom_short": [], "voriginal_hanging": [],
-               "top_no_number_band": [], "bottom": 0}
-    half_titles, near_empty, full_few_lines, no_page_rect = [], [], [], []
-    ids: dict[str, list[str]] = {k: [] for k in list(decided) + ["half_titles", "near_empty", "full_few_lines"]}
+    def sparse(r: dict, h: float) -> bool:
+        # Merged tight lines fool the line count, and pictures fool the ink rows, so either one alone marks a sparse page.
+        return ((r.get("text_lines") or 0) / max(h, 1.0) < 0.5 * line_density
+                or (r.get("ink_rows") or 0) < sparse_ratio * med_ink)
+
+    # Title pages come before the first full text page, so only that front matter needs the sparse test.
+    front_end = next((i for i, (pid, c) in enumerate(body[: max(5, len(body) // 10)])
+                      if c["content_mm"]["height"] >= full_ratio * med_h
+                      and not sparse(check(pid), c["content_mm"]["height"])), 0)
+    groups = {"number_side": [], "vcenter_picture": [], "vcenter_sparse": [], "vcenter_front": [], "top_no_number_band": [],
+              "top_chapter_end": [], "bottom_chapter_start": [], "vcenter_small": [], "top_no_page_rect": []}
+    starts: list[tuple[str, float]] = []
+    review_ids: dict[str, str] = {}
+    half_titles, near_empty, full_few_lines = [], [], []
     for i, (pid, c) in enumerate(body):
         h = c["content_mm"]["height"]
-        lab = p.page(pid).label
-        ut = usual_top.get(p.page(pid).side)
-        offset = top_rel(c) - ut if ut is not None else 0.0
-        area = c["content_mm"]["width"] * h
-        if area < 0.01 * med_h * med_h and text_lines(pid) == 0:
-            near_empty.append(lab)
-            ids["near_empty"].append(pid)
         is_text = p.output(pid).get("color_mode") in (None, "bw")
-        # Only B/W pages lower than the full block need the picture measurement, because it takes time.
-        is_picture = not is_text or (h < 0.97 * med_h
-                                     and checks.picture_score(p, pid)["line_art_fraction"] >= picture_ratio)
-        if i < front_end:
-            if h < 0.25 * med_h and offset < section_start_offset:
-                align = "top"
-                decided["top_small_header"].append(lab)
-                ids["top_small_header"].append(pid)
-            else:
-                align = "vcenter"
-                decided["vcenter"].append(lab)
-                ids["vcenter"].append(pid)
-            if text_lines(pid) <= 5:
-                half_titles.append(lab)
-                ids["half_titles"].append(pid)
-        elif is_picture:
-            align = "vcenter"
-            decided["vcenter_picture"].append(lab)
-            ids["vcenter_picture"].append(pid)
-        elif h < missing_number_ratio * med_h and offset > section_start_offset:
-            if text_lines(pid) >= 3 and on_line(pid, c) in ("bottom", "unknown"):
-                align = "bottom"
-                key = "bottom_section_start"
-            elif text_lines(pid) >= 3:
-                align = "voriginal"
-                key = "voriginal_hanging"
-            else:
-                align = "voriginal"
-                key = "voriginal_small_block"
-            decided[key].append(lab)
-            ids[key].append(pid)
-        elif h < short_ratio * med_h:
-            line = on_line(pid, c)
-            if line == "unknown":
-                line = "top"
-                no_page_rect.append(lab)
-            align = line or "voriginal"
-            key = {"top": "top_short", "bottom": "bottom_short"}.get(line, "voriginal_hanging")
-            decided[key].append(lab)
-            ids[key].append(pid)
-        elif h < missing_number_ratio * med_h and text_lines(pid) >= 0.85 * med_lines:
-            align = "top"
-            decided["top_no_number_band"].append(lab)
-            ids["top_no_number_band"].append(pid)
+        if h >= full_ratio * med_h:
+            key = "vcenter_picture" if not is_text else "number_side"
+            # Picture plates already have their own output mode, so only text-mode pages need this review.
+            if review_full_pages and is_text and (check(pid).get("text_lines") or 0) < 0.5 * med_lines:
+                full_few_lines.append(pid)
+        elif not is_text:
+            key = "vcenter_picture"
         else:
-            align = "bottom"
-            decided["bottom"] += 1
-            # Picture pages already have their own output mode, so only text-mode pages need this review.
-            if review_full_pages and is_text and h >= 0.9 * med_h and text_lines(pid) < 0.5 * med_lines:
-                full_few_lines.append(lab)
-                ids["full_few_lines"].append(pid)
-        p.set_layout(pid, None, align, None, None)
+            r = check(pid)
+            lines = r.get("text_lines") or 0
+            g, u = gaps_mm(c), usual.get((p.page(pid).side, bool(c.get("page_rect_px"))))
+            if c["content_mm"]["width"] * h < 0.01 * med_h * med_h and lines == 0:
+                near_empty.append(pid)
+            if checks.picture_score(p, pid).get("line_art_fraction", 0.0) >= picture_ratio:
+                key = "vcenter_picture"
+            elif i < front_end and sparse(r, h):
+                key = "vcenter_sparse"
+                if lines <= 5:
+                    half_titles.append(pid)
+            elif i < front_end and h < title_ratio * med_h:
+                key = "vcenter_front"
+            elif u is None:
+                key = "top_no_page_rect"
+            # The page-number band is only a few mm high, so a page counts as full only when it is close to both lines.
+            elif g[0] - u[0] <= line_tolerance_mm / 2 and g[1] - u[1] <= line_tolerance_mm / 2:
+                key = "number_side"
+            elif g[0] - u[0] <= line_tolerance_mm:
+                key = "top_no_number_band" if h >= 0.9 * med_h and lines >= 0.85 * med_lines else "top_chapter_end"
+            elif g[1] - u[1] <= line_tolerance_mm and h >= title_ratio * med_h:
+                key = "bottom_chapter_start"
+                starts.append((pid, h))
+            else:
+                key = "vcenter_small"
+                if h >= title_ratio * med_h:
+                    review_ids[pid] = "text block off the usual lines: a chapter start with a cut box?"
+            # A rotated table often has a box a bit lower than the text block, so near-full pages need the review too.
+            if (review_full_pages and h >= 0.9 * med_h and key in ("number_side", "top_no_number_band")
+                    and lines < 0.5 * med_lines):
+                full_few_lines.append(pid)
+        groups[key].append(pid)
+    # Chapter starts of one book have about the same height, so an outlier is often a wrong group or a wrong box.
+    start_h = statistics.median(h for _, h in starts) if starts else 0.0
+    for pid, h in starts:
+        if abs(h - start_h) > 0.1 * med_h:
+            review_ids[pid] = f"chapter start {h:.0f} mm high, other chapter starts {start_h:.0f} mm"
+
+    align_of = {"number_side": number_side, "vcenter_picture": "vcenter", "vcenter_sparse": "vcenter", "vcenter_front": "vcenter",
+                "top_no_number_band": "top", "top_chapter_end": "top", "bottom_chapter_start": "bottom",
+                "vcenter_small": "vcenter", "top_no_page_rect": "top"}
+    why = {"number_side": (0.8, f"full page: aligned to the page-number side ({number_side})"),
+           "vcenter_picture": (0.8, "picture page"),
+           "vcenter_sparse": (0.7, "sparse page: title, half-title, epigraph or dedication"),
+           "vcenter_front": (0.7, "small block in the front matter: title or half-title"),
+           "top_no_number_band": (0.7, "full text page without the page-number band: starts on the usual top line"),
+           "top_chapter_end": (0.8, "chapter end: starts on the usual top line"),
+           "bottom_chapter_start": (0.7, "chapter start: starts lower and ends on the usual bottom line"),
+           "vcenter_small": (0.6, "small block off the usual lines: chapter title, part title or colophon"),
+           "top_no_page_rect": (0.4, "no full page of this side gives the usual lines")}
+    for key, ids in groups.items():
+        for pid in ids:
+            p.set_layout(pid, None, align_of[key], None, None)
     p.save()
-    blank = [pg.label for pg in p.pages if p.content(pg.id).get("empty")]
     blank_ids = [pg.id for pg in p.pages if p.content(pg.id).get("empty")]
-    align_conf = {"vcenter": ("vcenter", 0.7, "front matter"),
-                  "top_small_header": ("top", 0.6, "small element at the top of front matter"),
-                  "vcenter_picture": ("vcenter", 0.8, "picture page"),
-                  "bottom_section_start": ("bottom", 0.6, "section start: the text starts lower than usual"),
-                  "voriginal_small_block": ("voriginal", 0.4, "small block lower than usual: part title or specks?"),
-                  "top_short": ("top", 0.8, "short page that starts on the usual top line"),
-                  "bottom_short": ("bottom", 0.7, "short page that ends on the usual bottom line"),
-                  "voriginal_hanging": ("voriginal", 0.6, "short page off the usual lines: keeps its printed place"),
-                  "top_no_number_band": ("top", 0.6, "full text page without the page-number band")}
     with review.Notes(p) as notes:
         notes.clear([pid for pid, _ in body], "alignment")
         notes.clear([pid for pid, _ in body] + blank_ids, "removal")
-        for key, (al, conf, why) in align_conf.items():
-            for pid in ids[key]:
-                notes.add(pid, "alignment", f"align {al}", conf, why)
-        for pid in ids["full_few_lines"]:
-            notes.add(pid, "alignment", "align bottom", 0.4, SIDEWAYS_DOUBT)
-        for pid, why in ([(x, "blank page") for x in blank_ids] + [(x, "half-title candidate") for x in ids["half_titles"]]
-                         + [(x, "near-empty page: specks or a stamp?") for x in ids["near_empty"]]):
-            notes.add(pid, "removal", "removal candidate (not removed)", 0.4, why)
-    return {"median_height_mm": med_h, "median_text_lines": med_lines, **decided,
+        for key, ids in groups.items():
+            conf, reason = why[key]
+            for pid in ids:
+                if pid in review_ids:
+                    notes.add(pid, "alignment", f"align {align_of[key]}", 0.4, review_ids[pid])
+                elif pid in full_few_lines:
+                    notes.add(pid, "alignment", f"align {align_of[key]}", 0.4, SIDEWAYS_DOUBT)
+                elif key != "number_side":
+                    notes.add(pid, "alignment", f"align {align_of[key]}", conf, reason)
+        for pid, reason in ([(x, "blank page") for x in blank_ids] + [(x, "half-title candidate") for x in half_titles]
+                            + [(x, "near-empty page: specks or a stamp?") for x in near_empty]):
+            notes.add(pid, "removal", "removal candidate (not removed)", 0.4, reason)
+
+    def lab(ids: list[str]) -> list[str]:
+        return [p.page(i).label for i in ids]
+
+    return {"median_height_mm": med_h, "median_text_lines": med_lines,
+            "number_position": number_side, "number_votes": votes,
+            "chapter_start_height_mm": round(start_h, 1),
+            "number_side": len(groups["number_side"]),
+            **{k: lab(v) for k, v in groups.items() if k != "number_side"},
             "skipped_no_page_layout": no_layout,
-            "short_pages_without_page_rect": no_page_rect,
-            "review": {"full_height_few_lines": full_few_lines,
-                       "small_blocks": decided["voriginal_small_block"],
-                       "note": "rotated tables: preview them, vcenter is usual; section starts and small "
-                               "blocks: preview them too, some books keep them at the top"},
-            "report_removal_candidates": {"blank_pages": blank, "half_title_candidates": half_titles,
-                                          "near_empty_pages": near_empty,
+            "review": {"pages": {p.page(i).label: r for i, r in review_ids.items()},
+                       "full_height_few_lines": lab(full_few_lines),
+                       "note": "preview the pages lower than the median and the review pages; "
+                               "rotated tables: vcenter is usual"},
+            "report_removal_candidates": {"blank_pages": lab(blank_ids), "half_title_candidates": lab(half_titles),
+                                          "near_empty_pages": lab(near_empty),
                                           "note": "list these in the final report; the user decides, nothing was removed"},
             "next": "run_stages(5, 5), then preview the top, vcenter and review pages"}
 
@@ -1621,7 +1624,7 @@ def _confirm_upright(p: Project, upright: list[str]) -> list[str]:
         return []
     with review.Notes(p) as notes:
         for i in doubtful:
-            notes.add(i, "alignment", "align bottom", 0.8,
+            notes.add(i, "alignment", f"align {p.layout(i).get('align_v') or 'bottom'}", 0.8,
                       "full height with few text lines; the orientation detector confirmed upright text")
     # Notes.save drops a write error, so report only the pages whose note is on disk.
     return [p.page(i).label for i in doubtful if i not in _sideways_doubts(p, [i])]

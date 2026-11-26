@@ -22,9 +22,11 @@ class RulesTest(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="st-rules-"))
         self.proj = self.tmp / "agentas.ScanTailor"
         shutil.copy(SAMPLE, self.proj)
+        src = Project(SAMPLE)
         p = Project(self.proj)
+        # The copy is in a temporary folder, so each relative path must point to the sample folder.
         for d in p.root.findall("./directories/directory"):
-            d.set("path", str(p.local_path(d.get("path"))))
+            d.set("path", str(src.local_path(d.get("path"))))
         p.root.set("outputDirectory", str(self.tmp / "out-agentas"))
         p.save()
         (self.tmp / "out-agentas").mkdir()
@@ -76,6 +78,17 @@ class RulesTest(unittest.TestCase):
         p.save()
         ops.pages_align_auto(str(self.proj))
         self.assertEqual(Project(self.proj).layout(pid)["align_v"], "vcenter")
+
+    def test_align_auto_puts_full_pages_on_the_page_number_side(self):
+        res = ops.pages_align_auto(str(self.proj), number_position="top")
+        p = Project(self.proj)
+        body = ops._body_pages(p)
+        med = statistics.median(c["content_mm"]["height"] for _, c in body)
+        full = [pid for pid, c in body if c["content_mm"]["height"] >= 0.985 * med
+                and p.output(pid).get("color_mode") in (None, "bw")]
+        self.assertEqual(res["number_position"], "top")
+        self.assertTrue(full)
+        self.assertTrue(all(p.layout(pid)["align_v"] == "top" for pid in full))
 
     def test_text_skew_is_small_on_a_straight_text_page(self):
         p = Project(self.proj)

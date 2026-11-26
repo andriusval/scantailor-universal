@@ -154,7 +154,8 @@ def check_page(project: Project, page_id: str, ink: tuple[np.ndarray, float] | N
     bx1, by1 = int((r["x"] + r["width"]) * k), int((r["y"] + r["height"]) * k)
 
     # text lines inside the box -> typical line height, last/first line geometry
-    lines = [ln for ln in _group(_rows_with_ink(ink, bx0, bx1, by0, by1)) if ln[1] - ln[0] + 1 >= 3]
+    ink_rows = _rows_with_ink(ink, bx0, bx1, by0, by1)
+    lines = [ln for ln in _group(ink_rows) if ln[1] - ln[0] + 1 >= 3]
     line_h = statistics.median([b - a + 1 for a, b in lines]) if lines else 0
 
     # Ink bands above or below the box are often page numbers or page headers.
@@ -255,7 +256,8 @@ def check_page(project: Project, page_id: str, ink: tuple[np.ndarray, float] | N
                          "hint": "sideways table or picture: keep stages 1-5, preview, then "
                                  "pages_set_output(output_rotation=270 if lines run top-to-bottom, else 90)"})
     return {"page_id": pg.id, "label": pg.label, "findings": findings,
-            "text_lines": len(lines), "page_number_in_box": number_pos}
+            "text_lines": len(lines), "ink_rows": round(len(ink_rows) / max(1, by1 - by0), 3),
+            "page_number_in_box": number_pos}
 
 
 def detect_cover_rect(project: Project, page_id: str) -> dict | None:
@@ -353,7 +355,7 @@ def picture_score(project: Project, page_id: str) -> dict:
         r = c["content_rect_px"]
         g = g[int(r["y"] * k):int((r["y"] + r["height"]) * k), int(r["x"] * k):int((r["x"] + r["width"]) * k)]
     if g.size == 0:
-        return {"page_id": pg.id, "label": pg.label, "picture_fraction": 0.0}
+        return {"page_id": pg.id, "label": pg.label, "picture_fraction": 0.0, "line_art_fraction": 0.0}
     paper = np.percentile(g, 90)
     B = 16
     h, w = (g.shape[0] // B) * B, (g.shape[1] // B) * B
