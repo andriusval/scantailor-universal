@@ -991,7 +991,7 @@ def pages_align_auto(project: str, number_position: str = "auto", full_ratio: fl
     the usual top line or below the usual bottom line also counts as on that line):
     - Full pages (height at least full_ratio of the median, or text within half the tolerance of both
       usual lines): to the page-number side, top or bottom. number_position=auto takes the side from
-      the page numbers of a sample of full text pages; without a clear majority it stays bottom.
+      the page numbers of a sample of full text pages: top needs 3 votes and 3 times the bottom votes.
     - Picture pages (color/grayscale output, or B/W line art on picture_ratio of the content): vcenter.
     - Front matter (the pages before the first full text page): sparse pages (title, half-title,
       epigraph, dedication) and blocks lower than title_ratio of the median: vcenter. A page is sparse
@@ -1044,16 +1044,19 @@ def pages_align_auto(project: str, number_position: str = "auto", full_ratio: fl
             if g:
                 usual[(side, has_rect)] = (statistics.median(a for a, _ in g), statistics.median(b for _, b in g))
     # A sample from the whole book gives the line count and the page-number side, because a full analysis takes long.
-    sample = [pid for pid, _ in full[:: max(1, len(full) // 30)]][:30]
-    med_lines = statistics.median(check(pid).get("text_lines") or 0 for pid in sample) if sample else 0
+    n = min(30, len(full))
+    sample = [full[i * len(full) // n][0] for i in range(n)]
+    # Every second sample page is enough for the medians, and it halves the analysis time.
+    med_sample = sample[::2]
+    med_lines = statistics.median(check(pid).get("text_lines") or 0 for pid in med_sample) if sample else 0
     votes = [check(pid).get("page_number_in_box") for pid in sample]
     votes = {k: votes.count(k) for k in ("top", "bottom") if votes.count(k)}
     top_v, bottom_v = votes.get("top", 0), votes.get("bottom", 0)
     # One wrong vote can come from a speck, so only a clear majority moves the full pages to the top.
-    auto_side = "top" if top_v >= max(3, 0.3 * len(sample)) and top_v >= 2 * bottom_v else "bottom"
+    auto_side = "top" if top_v >= 3 and top_v >= 3 * bottom_v else "bottom"
     number_side = number_position if number_position != "auto" else auto_side
     # The share of rows with ink does not change when tight lines merge, so it tells sparse pages from text better than the line count.
-    med_ink = statistics.median(check(pid).get("ink_rows") or 0 for pid in sample) if sample else 0.0
+    med_ink = statistics.median(check(pid).get("ink_rows") or 0 for pid in med_sample) if sample else 0.0
 
     line_density = med_lines / med_h if med_h else 0.0
 
@@ -1172,18 +1175,22 @@ def pages_align_auto(project: str, number_position: str = "auto", full_ratio: fl
             "next": "run_stages(5, 5), then preview the top, vcenter and review pages"}
 
 
-def pages_align_horizontal(project: str, margin_mm: float = 10.0, line_tolerance_mm: float = 5.0) -> dict:
+def pages_align_horizontal(project: str, margin_mm: float = 10.0, far_margin_mm: float = 0.0,
+                           line_tolerance_mm: float = 5.0, picture_ratio: float = 0.25) -> dict:
     """Horizontal alignment by the text edges, for books whose narrow pages keep the left (or right) line
     of the text column, such as poetry. Off by default: use it only when the previews show that the
     narrow pages start on the same left line as the full pages; most prose books do not need it.
     The usual left and right lines come from the text pages at least as wide as the median (one pair per
     page side). Each text page whose left edge is on the usual left line (within line_tolerance_mm, or
-    further out) goes to left; a page only on the usual right line goes to right. Both get margin_mm
-    left and right, so that the text of all these pages starts at the same place in the output (ScanTailor
-    puts all extra width on the other side). A box that reaches past the line by more than the tolerance
+    further out) goes to left; a page only on the usual right line goes to right. Both get margin_mm on
+    the aligned side, so that the text of all these pages starts at the same place in the output (ScanTailor
+    puts all extra width on the other side). The other side gets far_margin_mm (default 0), so that the
+    common page width grows only by margin_mm over the widest text, not by twice that. A box that reaches past the line by more than the tolerance
     gets a smaller margin by that amount, so that the line stays in place. Other pages (centered titles, short centered blocks) keep
-    hcenter. Front matter before the first full text page, covers, color pages and pages without match
-    size keep their settings. Run it after pages_fit_width, then run_stages(5, 6)."""
+    hcenter, with the margins of pages_fit_width (0 when wider than the median text, else margin_mm).
+    Front matter before the first full text page, pages without a usual line, covers, color pages, B/W
+    line-art pages (line art on picture_ratio of the content) and pages without match size keep their
+    settings. Run it after pages_fit_width, then run_stages(5, 6)."""
     import statistics
     proj = Path(project).resolve()
     _ensure_idle(proj)
@@ -1213,27 +1220,33 @@ def pages_align_horizontal(project: str, margin_mm: float = 10.0, line_tolerance
     # Title pages come before the first full text page, and they stay centered.
     front_end = next((i for i, (pid, c) in enumerate(body[: max(5, len(body) // 10)])
                       if c["content_mm"]["width"] >= 0.9 * med_w and c["content_mm"]["height"] >= 0.9 * med_h), 0)
-    groups: dict[str, list[str]] = {"left": [], "right": [], "hcenter": [], "front": [], "no_usual_line": []}
+    groups: dict[str, list[str]] = {"left": [], "right": [], "hcenter": [], "front": [], "picture": [],
+                                    "no_usual_line": []}
     spread: dict[str, list[float]] = {"left": [], "right": []}
     for i, (pid, c) in enumerate(body):
         u = usual.get((p.page(pid).side, bool(c.get("page_rect_px"))))
         if i < front_end:
             groups["front"].append(pid)
             continue
+        # A line-art plate is not text, so its edges say nothing about the text lines.
+        if checks.picture_score(p, pid).get("line_art_fraction", 0.0) >= picture_ratio:
+            groups["picture"].append(pid)
+            continue
         if u is None:
             groups["no_usual_line"].append(pid)
             continue
         g = gaps_mm(c)
         d_left, d_right = g[0] - u[0], g[1] - u[1]
-        margins = {"left": margin_mm, "right": margin_mm}
         if d_left <= line_tolerance_mm:
             key = "left"
+            margins = {"left": margin_mm, "right": far_margin_mm}
             spread["left"].append(d_left)
             # A box that reaches past the line (a numeral or a long first line) gets a smaller margin, so that the text line stays.
             if d_left < -line_tolerance_mm:
                 margins["left"] = max(0.0, margin_mm + d_left)
         elif d_right <= line_tolerance_mm:
             key = "right"
+            margins = {"left": far_margin_mm, "right": margin_mm}
             spread["right"].append(d_right)
             if d_right < -line_tolerance_mm:
                 margins["right"] = max(0.0, margin_mm + d_right)
@@ -1241,7 +1254,9 @@ def pages_align_horizontal(project: str, margin_mm: float = 10.0, line_tolerance
             key = "hcenter"
         groups[key].append(pid)
         if key == "hcenter":
-            p.set_layout(pid, None, None, "hcenter", None)
+            # An earlier run can leave a smaller margin, so the margins go back to the rule of pages_fit_width.
+            m = 0.0 if c["content_mm"]["width"] > med_w else margin_mm
+            p.set_layout(pid, {"left": m, "right": m}, None, "hcenter", None)
         else:
             p.set_layout(pid, margins, None, key, None)
     p.save()
@@ -1258,9 +1273,10 @@ def pages_align_horizontal(project: str, margin_mm: float = 10.0, line_tolerance
     def lab(ids: list[str]) -> list[str]:
         return [p.page(i).label for i in ids]
 
-    return {"median_width_mm": med_w, "margin_mm": margin_mm,
+    return {"median_width_mm": med_w, "margin_mm": margin_mm, "far_margin_mm": far_margin_mm,
             "left": len(groups["left"]), "right": lab(groups["right"]), "hcenter": lab(groups["hcenter"]),
-            "front_matter_kept": lab(groups["front"]), "no_usual_line": lab(groups["no_usual_line"]),
+            "front_matter_kept": lab(groups["front"]), "pictures_kept": lab(groups["picture"]),
+            "no_usual_line": lab(groups["no_usual_line"]),
             "left_offset_mm": [round(min(spread["left"]), 1), round(max(spread["left"]), 1)] if spread["left"] else None,
             "skipped_no_page_layout": no_layout,
             "next": "run_stages(5, 6), then preview narrow pages and the hcenter pages in the output"}

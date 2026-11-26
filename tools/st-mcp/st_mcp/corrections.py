@@ -29,7 +29,7 @@ CATEGORY_RULE = {
     "content_box_numbers": "step 4: missed page numbers or headers (mode=include_numbers)",
     "cover": "step 6: covers and endpapers",
     "margins": "steps 7-8: margins and pages_fit_width",
-    "alignment": "step 9: pages_align_auto",
+    "alignment": "step 9: pages_align_auto (vertical), pages_align_horizontal (horizontal)",
     "match_size": "steps 6-8: match size with other pages",
     "output_mode": "step 5: picture pages, output mode",
     "dpi": "steps 5-6: output DPI",

@@ -98,7 +98,8 @@ class RulesTest(unittest.TestCase):
         self.assertTrue(left)
         # Only a box that reaches past the usual line gets a smaller margin, never a larger one.
         self.assertTrue(all(p.layout(i)["margins_mm"]["left"] <= 12.0 for i in left))
-        self.assertTrue(all(p.layout(i)["margins_mm"]["right"] == 12.0 for i in left))
+        # The far side gets its own margin, so that the page width does not grow by both margins.
+        self.assertTrue(all(p.layout(i)["margins_mm"]["right"] == 0.0 for i in left))
 
     def test_text_skew_is_small_on_a_straight_text_page(self):
         p = Project(self.proj)

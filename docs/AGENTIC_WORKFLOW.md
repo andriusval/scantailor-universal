@@ -174,8 +174,10 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    Naudoti tik tada, kai peržiūros rodo, kad siauri puslapiai prasideda ties
    ta pačia kairiąja linija kaip pilni (dauguma poezijos knygų). Puslapiai
    ties įprasta kairiąja linija → `left`, tik ties dešiniąja → `right`. Jie
-   visi gauna vienodą šoninę paraštę, todėl jų tekstas prasideda toje
-   pačioje vietoje. Kiti puslapiai ir įžanginė dalis lieka `hcenter`.
+   visi gauna vienodą paraštę lygiavimo pusėje, todėl jų tekstas prasideda
+   toje pačioje vietoje. Kita pusė gauna 0, todėl puslapio plotis padidėja
+   tik viena paraštė. Kiti puslapiai → `hcenter`. Įžanginė dalis, raižinių
+   puslapiai ir puslapiai be įprastos linijos lieka nepakeisti.
    Paleisti po `pages_fit_width`, tada 5–6 etapai.
    **Dydžio vartai prieš output:** `check_pages(kind="size")` išvardija
    teksto puslapius, kurių rėmas platesnis už knygos medianą daugiau kaip

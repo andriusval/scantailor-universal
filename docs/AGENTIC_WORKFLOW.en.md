@@ -170,8 +170,10 @@ GUI.
    poetry books, the narrow pages start on the same left line as the full
    pages. Use the tool only when the previews show this. Pages on the usual left line
    go to `left`, and pages only on the usual right line go to `right`. All
-   of them get the same side margin, so that their text starts at the same
-   place. Other pages and the front matter stay `hcenter`. Run it after
+   of them get the same margin on the aligned side, so that their text
+   starts at the same place. The other side gets 0, so the page width grows
+   only by one margin. Other pages go to `hcenter`. The front matter, line-art pages
+   and pages without a usual line keep their settings. Run it after
    `pages_fit_width`. Then run stages 5-6.
    **Size gate before the output:** `check_pages(kind="size")` lists the
    body pages with a box wider than the book median by more than 3 mm, or
