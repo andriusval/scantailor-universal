@@ -1043,14 +1043,14 @@ def pages_align_auto(project: str, number_position: str = "auto", full_ratio: fl
             g = [gaps_mm(c) for pid, c in full if p.page(pid).side == side and bool(c.get("page_rect_px")) == has_rect]
             if g:
                 usual[(side, has_rect)] = (statistics.median(a for a, _ in g), statistics.median(b for _, b in g))
-    # A sample from the middle of the book gives the line count and the page-number side, because a full analysis takes long.
-    sample = [pid for pid, _ in full[len(full) // 4: len(full) // 4 + 15]]
+    # A sample from the whole book gives the line count and the page-number side, because a full analysis takes long.
+    sample = [pid for pid, _ in full[:: max(1, len(full) // 30)]][:30]
     med_lines = statistics.median(check(pid).get("text_lines") or 0 for pid in sample) if sample else 0
     votes = [check(pid).get("page_number_in_box") for pid in sample]
     votes = {k: votes.count(k) for k in ("top", "bottom") if votes.count(k)}
     top_v, bottom_v = votes.get("top", 0), votes.get("bottom", 0)
     # One wrong vote can come from a speck, so only a clear majority moves the full pages to the top.
-    auto_side = "top" if top_v >= 3 and top_v >= 2 * bottom_v else "bottom"
+    auto_side = "top" if top_v >= max(3, 0.3 * len(sample)) and top_v >= 2 * bottom_v else "bottom"
     number_side = number_position if number_position != "auto" else auto_side
     # The share of rows with ink does not change when tight lines merge, so it tells sparse pages from text better than the line count.
     med_ink = statistics.median(check(pid).get("ink_rows") or 0 for pid in sample) if sample else 0.0
