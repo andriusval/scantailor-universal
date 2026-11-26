@@ -1172,6 +1172,100 @@ def pages_align_auto(project: str, number_position: str = "auto", full_ratio: fl
             "next": "run_stages(5, 5), then preview the top, vcenter and review pages"}
 
 
+def pages_align_horizontal(project: str, margin_mm: float = 10.0, line_tolerance_mm: float = 5.0) -> dict:
+    """Horizontal alignment by the text edges, for books whose narrow pages keep the left (or right) line
+    of the text column, such as poetry. Off by default: use it only when the previews show that the
+    narrow pages start on the same left line as the full pages; most prose books do not need it.
+    The usual left and right lines come from the text pages at least as wide as the median (one pair per
+    page side). Each text page whose left edge is on the usual left line (within line_tolerance_mm, or
+    further out) goes to left; a page only on the usual right line goes to right. Both get margin_mm
+    left and right, so that the text of all these pages starts at the same place in the output (ScanTailor
+    puts all extra width on the other side). A box that reaches past the line by more than the tolerance
+    gets a smaller margin by that amount, so that the line stays in place. Other pages (centered titles, short centered blocks) keep
+    hcenter. Front matter before the first full text page, covers, color pages and pages without match
+    size keep their settings. Run it after pages_fit_width, then run_stages(5, 6)."""
+    import statistics
+    proj = Path(project).resolve()
+    _ensure_idle(proj)
+    p = Project(proj)
+    no_layout: list[str] = []
+    body = [(pid, c) for pid, c in _body_pages(p, no_layout) if p.output(pid).get("color_mode") in (None, "bw")]
+    if len(body) < 3:
+        raise RuntimeError("too few text pages with content and page layout; run stages 1-5 first")
+    med_w = statistics.median(c["content_mm"]["width"] for _, c in body)
+    med_h = statistics.median(c["content_mm"]["height"] for _, c in body)
+
+    def gaps_mm(c: dict) -> tuple[float, float]:
+        cr, pr = c["content_rect_px"], c.get("page_rect_px")
+        k = c["content_mm"]["width"] / max(1.0, cr["width"])
+        if not pr:
+            # Without a page rect the box position on the scan is the only measure, so compare it only with other such pages.
+            return cr["x"] * k, -(cr["x"] + cr["width"]) * k
+        return (cr["x"] - pr["x"]) * k, (pr["x"] + pr["width"] - cr["x"] - cr["width"]) * k
+
+    wide = [(pid, c) for pid, c in body if c["content_mm"]["width"] >= med_w]
+    usual: dict[tuple[str, bool], tuple[float, float]] = {}
+    for side in ("left", "right", "single"):
+        for has_rect in (True, False):
+            g = [gaps_mm(c) for pid, c in wide if p.page(pid).side == side and bool(c.get("page_rect_px")) == has_rect]
+            if g:
+                usual[(side, has_rect)] = (statistics.median(a for a, _ in g), statistics.median(b for _, b in g))
+    # Title pages come before the first full text page, and they stay centered.
+    front_end = next((i for i, (pid, c) in enumerate(body[: max(5, len(body) // 10)])
+                      if c["content_mm"]["width"] >= 0.9 * med_w and c["content_mm"]["height"] >= 0.9 * med_h), 0)
+    groups: dict[str, list[str]] = {"left": [], "right": [], "hcenter": [], "front": [], "no_usual_line": []}
+    spread: dict[str, list[float]] = {"left": [], "right": []}
+    for i, (pid, c) in enumerate(body):
+        u = usual.get((p.page(pid).side, bool(c.get("page_rect_px"))))
+        if i < front_end:
+            groups["front"].append(pid)
+            continue
+        if u is None:
+            groups["no_usual_line"].append(pid)
+            continue
+        g = gaps_mm(c)
+        d_left, d_right = g[0] - u[0], g[1] - u[1]
+        margins = {"left": margin_mm, "right": margin_mm}
+        if d_left <= line_tolerance_mm:
+            key = "left"
+            spread["left"].append(d_left)
+            # A box that reaches past the line (a numeral or a long first line) gets a smaller margin, so that the text line stays.
+            if d_left < -line_tolerance_mm:
+                margins["left"] = max(0.0, margin_mm + d_left)
+        elif d_right <= line_tolerance_mm:
+            key = "right"
+            spread["right"].append(d_right)
+            if d_right < -line_tolerance_mm:
+                margins["right"] = max(0.0, margin_mm + d_right)
+        else:
+            key = "hcenter"
+        groups[key].append(pid)
+        if key == "hcenter":
+            p.set_layout(pid, None, None, "hcenter", None)
+        else:
+            p.set_layout(pid, margins, None, key, None)
+    p.save()
+    why = {"left": (0.7, "text starts on the usual left line of the wide pages"),
+           "right": (0.6, "text ends on the usual right line of the wide pages"),
+           "hcenter": (0.6, "text block off the usual left and right lines: a centered title or block")}
+    with review.Notes(p) as notes:
+        notes.clear([pid for pid, _ in body], "alignment_h")
+        for key, (conf, reason) in why.items():
+            for pid in groups[key]:
+                if key != "left":
+                    notes.add(pid, "alignment_h", f"align {key}", conf, reason)
+
+    def lab(ids: list[str]) -> list[str]:
+        return [p.page(i).label for i in ids]
+
+    return {"median_width_mm": med_w, "margin_mm": margin_mm,
+            "left": len(groups["left"]), "right": lab(groups["right"]), "hcenter": lab(groups["hcenter"]),
+            "front_matter_kept": lab(groups["front"]), "no_usual_line": lab(groups["no_usual_line"]),
+            "left_offset_mm": [round(min(spread["left"]), 1), round(max(spread["left"]), 1)] if spread["left"] else None,
+            "skipped_no_page_layout": no_layout,
+            "next": "run_stages(5, 6), then preview narrow pages and the hcenter pages in the output"}
+
+
 def pages_set_output(project: str, pages: str | list[str], color_mode: str | None = None, dpi: int | None = None,
                      despeckle: str | None = None, white_margins: bool | None = None,
                      equalize_illumination: bool | None = None, filling_color: str | None = None,
@@ -2093,6 +2187,6 @@ def workflow_guide() -> dict:
 
 
 TOOLS = [project_create, project_add_front_cover, project_for_windows, project_diff, corrections_record, corrections_stats, pages_straighten_pictures, images_set_geometry, run_stages, job_status, project_info, pages_list, page_preview,
-         pages_preview, image_preview, page_set_content, pages_snap_content, pages_set_layout, pages_fit_text_column, pages_fit_width, pages_align_auto, pages_set_output,
+         pages_preview, image_preview, page_set_content, pages_snap_content, pages_set_layout, pages_fit_text_column, pages_fit_width, pages_align_auto, pages_align_horizontal, pages_set_output,
          page_add_fill_zone, check_pages, export_summary, review_note, review_sheet, workflow_guide]
 IMAGE_TOOLS = {"page_preview", "pages_preview", "image_preview"}

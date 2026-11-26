@@ -90,6 +90,16 @@ class RulesTest(unittest.TestCase):
         self.assertTrue(full)
         self.assertTrue(all(p.layout(pid)["align_v"] == "top" for pid in full))
 
+    def test_align_horizontal_gives_left_pages_one_left_margin(self):
+        res = ops.pages_align_horizontal(str(self.proj), margin_mm=12.0)
+        p = Project(self.proj)
+        left = [pg.id for pg in p.pages if p.layout(pg.id).get("align_h") == "left"]
+        self.assertEqual(len(left), res["left"])
+        self.assertTrue(left)
+        # Only a box that reaches past the usual line gets a smaller margin, never a larger one.
+        self.assertTrue(all(p.layout(i)["margins_mm"]["left"] <= 12.0 for i in left))
+        self.assertTrue(all(p.layout(i)["margins_mm"]["right"] == 12.0 for i in left))
+
     def test_text_skew_is_small_on_a_straight_text_page(self):
         p = Project(self.proj)
         body = ops._body_pages(p)

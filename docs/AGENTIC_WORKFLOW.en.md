@@ -166,6 +166,13 @@ GUI.
    book. Correct single pages with `pages_set_layout`. When the previews show
    tables or diagrams, add `review_full_pages=true`: it lists full-height
    pages with few text lines, such as rotated tables.
+   **Optional, horizontal:** `pages_align_horizontal(project)`. In most
+   poetry books, the narrow pages start on the same left line as the full
+   pages. Use the tool only when the previews show this. Pages on the usual left line
+   go to `left`, and pages only on the usual right line go to `right`. All
+   of them get the same side margin, so that their text starts at the same
+   place. Other pages and the front matter stay `hcenter`. Run it after
+   `pages_fit_width`. Then run stages 5-6.
    **Size gate before the output:** `check_pages(kind="size")` lists the
    body pages with a box wider than the book median by more than 3 mm, or
    taller by more than 3 %. After `pages_fit_text_column` (step 4) it lists
@@ -291,6 +298,7 @@ CLI: `python -m st_mcp <tool> key=value …` (previews: `out=file.png`).
 | `pages_fit_text_column(project, tolerance_mm?, height_ratio?)` | Narrows content boxes that are wider than the text column of the book; lists the pages with a taller box |
 | `pages_fit_width(project, margin_mm?, percentile?)` | One page width: side margins 0 for pages wider than the median text block |
 | `pages_align_auto(project, number_position?, title_ratio?)` | Vertical alignment for all body pages, plus removal candidates for the report |
+| `pages_align_horizontal(project, margin_mm?, line_tolerance_mm?)` | Optional: left or right alignment by the usual text lines, for books such as poetry |
 | `pages_set_output(project, pages, color_mode, dpi, despeckle, white_margins, equalize_illumination, filling_color?, fill_offcut?, grayscale_first?, output_rotation?)` | `output`; `grayscale_first` (true, false or "auto") writes `color-or-grayscale@convertToGrayscale="1"` or `"auto"` (CLI `--grayscale-first`); `output_rotation` (0/90/180/270, clockwise) turns only the output TIFF (CLI `--output-rotate`) |
 | `page_add_fill_zone(project, page, x, y, width, height, color?)` | Output fill zone (page px) for a stamp or a note inside the box; stored in original image px, shown in the GUI |
 | `check_pages(project, pages, kind=content\|size\|pictures\|grayscale\|orientation)` | Heuristics with evidence; `size` lists the boxes larger than the median (the gate before the output); `grayscale` gives the chroma per page, the classification and the margin to the threshold; `text_runs_vertically` marks sideways tables; `orientation` runs the detector (CLI `--detect-orientation`) on the scans and the output files and lists the ones that need a look |
