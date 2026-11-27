@@ -172,9 +172,12 @@ GUI.
    go to `left`, and pages only on the usual right line go to `right`. All
    of them get the same margin on the aligned side, so that their text
    starts at the same place. The other side gets 0, so the page width grows
-   only by one margin. Other pages go to `hcenter`. The front matter, line-art pages
-   and pages without a usual line keep their settings. Run it after
-   `pages_fit_width`. Then run stages 5-6.
+   only by one margin. Other pages go to `hcenter`, with side margins that
+   do not make the page wider than the aligned pages. The front matter,
+   line-art pages and pages without a usual line keep their settings. Run it
+   after `pages_fit_width`. Then run stages 5-6. `pages_fit_width` keeps the
+   margins of `left` and `right` pages, but after a later `pages_fit_width`,
+   run `pages_align_horizontal` again.
    **Size gate before the output:** `check_pages(kind="size")` lists the
    body pages with a box wider than the book median by more than 3 mm, or
    taller by more than 3 %. After `pages_fit_text_column` (step 4) it lists

@@ -176,9 +176,12 @@ galutinę suvestinę; žmogus rezultatą tikrina atsidaręs projektą GUI.
    ties įprasta kairiąja linija → `left`, tik ties dešiniąja → `right`. Jie
    visi gauna vienodą paraštę lygiavimo pusėje, todėl jų tekstas prasideda
    toje pačioje vietoje. Kita pusė gauna 0, todėl puslapio plotis padidėja
-   tik viena paraštė. Kiti puslapiai → `hcenter`. Įžanginė dalis, raižinių
-   puslapiai ir puslapiai be įprastos linijos lieka nepakeisti.
-   Paleisti po `pages_fit_width`, tada 5–6 etapai.
+   tik viena paraštė. Kiti puslapiai → `hcenter`, su tokiomis šoninėmis
+   paraštėmis, kad puslapis nebūtų platesnis už lygiuotus. Įžanginė dalis,
+   raižinių puslapiai ir puslapiai be įprastos linijos lieka nepakeisti.
+   Paleisti po `pages_fit_width`, tada 5–6 etapai. `pages_fit_width`
+   nekeičia `left` ir `right` puslapių paraščių, bet po vėlesnio
+   `pages_fit_width` reikia vėl paleisti `pages_align_horizontal`.
    **Dydžio vartai prieš output:** `check_pages(kind="size")` išvardija
    teksto puslapius, kurių rėmas platesnis už knygos medianą daugiau kaip
    3 mm arba aukštesnis daugiau kaip 3 %. Po `pages_fit_text_column`

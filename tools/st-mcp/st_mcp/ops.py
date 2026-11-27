@@ -880,8 +880,9 @@ def pages_fit_width(project: str, margin_mm: float = 10.0, percentile: float = 5
     content box (a page number, a snap) does not make every page wider.
     The typical width is the given percentile (default: the median) of the content widths of the text
     pages (B/W body pages; covers, picture pages and pages with match size off do not count).
-    Top/bottom margins and alignment do not change. Run it after the last content box change, then
-    run_stages(5, 5). The person's corrections of 4 books follow this rule."""
+    Top/bottom margins and alignment do not change. Pages with left or right alignment keep their
+    side margins, because pages_align_horizontal sets them. Run it after the last content box change,
+    then run_stages(5, 5). The person's corrections of 4 books follow this rule."""
     import statistics
     proj = Path(project).resolve()
     _ensure_idle(proj)
@@ -896,11 +897,16 @@ def pages_fit_width(project: str, margin_mm: float = 10.0, percentile: float = 5
     widths = sorted(c["content_mm"]["width"] for _, c in ref)
     typical = widths[min(len(widths) - 1, int(round(percentile / 100.0 * (len(widths) - 1))))]
     page_w = round(typical + 2 * margin_mm, 1)
-    changed, changed_ids, too_wide = [], [], []
+    changed, changed_ids, too_wide, kept_aligned = [], [], [], []
     for pid, c in body:
         w = c["content_mm"]["width"]
         lr = margin_mm if w <= typical else 0.0
-        cur = p.layout(pid)["margins_mm"]
+        lay = p.layout(pid)
+        cur = lay["margins_mm"]
+        # pages_align_horizontal gives these pages one margin on the aligned side, and the minimum of both sides would remove it.
+        if lay.get("align_h") in ("left", "right"):
+            kept_aligned.append(p.page(pid).label)
+            continue
         # Smaller margins set on purpose (picture pages: 0) stay, because they never widen the page.
         lr = min(lr, cur["left"], cur["right"])
         if abs(cur["left"] - lr) > 0.05 or abs(cur["right"] - lr) > 0.05:
@@ -923,7 +929,9 @@ def pages_fit_width(project: str, margin_mm: float = 10.0, percentile: float = 5
     return {"typical_width_mm": typical, "skipped_no_page_layout": no_layout, "page_width_mm": page_w,
             "median_width_mm": statistics.median(widths), "zero_side_margins": len(changed),
             "wider_than_page": too_wide, "narrowed_margins": changed[:40],
-            "next": "run_stages(5, 5); if a content box changes later, run pages_fit_width again"}
+            "kept_horizontal_alignment": kept_aligned,
+            "next": "run_stages(5, 5); if a content box changes later, run pages_fit_width again"
+                    + (", then pages_align_horizontal again" if kept_aligned else "")}
 
 
 def pages_fit_text_column(project: str, tolerance_mm: float = 0.5, height_ratio: float = 0.015) -> dict:
@@ -1046,8 +1054,8 @@ def pages_align_auto(project: str, number_position: str = "auto", full_ratio: fl
     # A sample from the whole book gives the line count and the page-number side, because a full analysis takes long.
     n = min(30, len(full))
     sample = [full[i * len(full) // n][0] for i in range(n)]
-    # Every second sample page is enough for the medians, and it halves the analysis time.
-    med_sample = sample[::2]
+    # Notes and index pages at the ends of a book often use a smaller font, so the medians come from the middle.
+    med_sample = [pid for k, pid in enumerate(sample) if 0.1 * n <= k < 0.9 * n] or sample
     med_lines = statistics.median(check(pid).get("text_lines") or 0 for pid in med_sample) if sample else 0
     votes = [check(pid).get("page_number_in_box") for pid in sample]
     votes = {k: votes.count(k) for k in ("top", "bottom") if votes.count(k)}
@@ -1178,19 +1186,22 @@ def pages_align_auto(project: str, number_position: str = "auto", full_ratio: fl
 def pages_align_horizontal(project: str, margin_mm: float = 10.0, far_margin_mm: float = 0.0,
                            line_tolerance_mm: float = 5.0, picture_ratio: float = 0.25) -> dict:
     """Horizontal alignment by the text edges, for books whose narrow pages keep the left (or right) line
-    of the text column, such as poetry. Off by default: use it only when the previews show that the
-    narrow pages start on the same left line as the full pages; most prose books do not need it.
-    The usual left and right lines come from the text pages at least as wide as the median (one pair per
-    page side). Each text page whose left edge is on the usual left line (within line_tolerance_mm, or
-    further out) goes to left; a page only on the usual right line goes to right. Both get margin_mm on
-    the aligned side, so that the text of all these pages starts at the same place in the output (ScanTailor
-    puts all extra width on the other side). The other side gets far_margin_mm (default 0), so that the
-    common page width grows only by margin_mm over the widest text, not by twice that. A box that reaches past the line by more than the tolerance
-    gets a smaller margin by that amount, so that the line stays in place. Other pages (centered titles, short centered blocks) keep
-    hcenter, with the margins of pages_fit_width (0 when wider than the median text, else margin_mm).
+    of the text column, such as poetry. Off by default. Use it only when the previews show that the
+    narrow pages start on the same left line as the full pages. Most prose books do not need it.
+    The usual left and right lines come from the text pages after the front matter that are at least as
+    wide as the median (one pair per page side).
+    A text page whose left edge is on the usual left line (within line_tolerance_mm, or further out) goes
+    to left. A page only on the usual right line goes to right.
+    These pages get margin_mm on the aligned side, so their text starts at the same place in the output.
+    The other side gets far_margin_mm (default 0), because ScanTailor puts all extra width there.
+    Thus the common page width grows only by one margin over the widest aligned text.
+    A box that reaches past the line by more than the tolerance gets a smaller margin by that amount.
+    Other pages (centered titles, short centered blocks) get hcenter. Their side margins are at most
+    margin_mm, and they never make the page wider than the aligned pages need.
     Front matter before the first full text page, pages without a usual line, covers, color pages, B/W
     line-art pages (line art on picture_ratio of the content) and pages without match size keep their
-    settings. Run it after pages_fit_width, then run_stages(5, 6)."""
+    settings. If an earlier run aligned such a page left or right, it goes back to hcenter with a note.
+    Run it after pages_fit_width, then run_stages(5, 6). After a later pages_fit_width, run it again."""
     import statistics
     proj = Path(project).resolve()
     _ensure_idle(proj)
@@ -1210,25 +1221,28 @@ def pages_align_horizontal(project: str, margin_mm: float = 10.0, far_margin_mm:
             return cr["x"] * k, -(cr["x"] + cr["width"]) * k
         return (cr["x"] - pr["x"]) * k, (pr["x"] + pr["width"] - cr["x"] - cr["width"]) * k
 
-    wide = [(pid, c) for pid, c in body if c["content_mm"]["width"] >= med_w]
+    # Title pages come before the first full text page, and they stay centered.
+    front_end = next((i for i, (pid, c) in enumerate(body[: max(5, len(body) // 10)])
+                      if c["content_mm"]["width"] >= 0.9 * med_w and c["content_mm"]["height"] >= 0.9 * med_h), 0)
+    # Title pages have their own edges, so the usual lines come only from the pages after them.
+    wide = [(pid, c) for pid, c in body[front_end:] if c["content_mm"]["width"] >= med_w]
     usual: dict[tuple[str, bool], tuple[float, float]] = {}
     for side in ("left", "right", "single"):
         for has_rect in (True, False):
             g = [gaps_mm(c) for pid, c in wide if p.page(pid).side == side and bool(c.get("page_rect_px")) == has_rect]
             if g:
                 usual[(side, has_rect)] = (statistics.median(a for a, _ in g), statistics.median(b for _, b in g))
-    # Title pages come before the first full text page, and they stay centered.
-    front_end = next((i for i, (pid, c) in enumerate(body[: max(5, len(body) // 10)])
-                      if c["content_mm"]["width"] >= 0.9 * med_w and c["content_mm"]["height"] >= 0.9 * med_h), 0)
     groups: dict[str, list[str]] = {"left": [], "right": [], "hcenter": [], "front": [], "picture": [],
                                     "no_usual_line": []}
     spread: dict[str, list[float]] = {"left": [], "right": []}
+    margins_of: dict[str, dict[str, float]] = {}
+    reduced: list[str] = []
     for i, (pid, c) in enumerate(body):
         u = usual.get((p.page(pid).side, bool(c.get("page_rect_px"))))
         if i < front_end:
             groups["front"].append(pid)
             continue
-        # A line-art plate is not text, so its edges say nothing about the text lines.
+        # A line-art plate is not text, so its edges say nothing; plates can have the full text size, so every page gets the test.
         if checks.picture_score(p, pid).get("line_art_fraction", 0.0) >= picture_ratio:
             groups["picture"].append(pid)
             continue
@@ -1238,48 +1252,75 @@ def pages_align_horizontal(project: str, margin_mm: float = 10.0, far_margin_mm:
         g = gaps_mm(c)
         d_left, d_right = g[0] - u[0], g[1] - u[1]
         if d_left <= line_tolerance_mm:
-            key = "left"
-            margins = {"left": margin_mm, "right": far_margin_mm}
-            spread["left"].append(d_left)
-            # A box that reaches past the line (a numeral or a long first line) gets a smaller margin, so that the text line stays.
-            if d_left < -line_tolerance_mm:
-                margins["left"] = max(0.0, margin_mm + d_left)
+            key, near, far = "left", "left", "right"
+            d = d_left
         elif d_right <= line_tolerance_mm:
-            key = "right"
-            margins = {"left": far_margin_mm, "right": margin_mm}
-            spread["right"].append(d_right)
-            if d_right < -line_tolerance_mm:
-                margins["right"] = max(0.0, margin_mm + d_right)
+            key, near, far = "right", "right", "left"
+            d = d_right
         else:
-            key = "hcenter"
+            groups["hcenter"].append(pid)
+            continue
         groups[key].append(pid)
-        if key == "hcenter":
-            # An earlier run can leave a smaller margin, so the margins go back to the rule of pages_fit_width.
-            m = 0.0 if c["content_mm"]["width"] > med_w else margin_mm
+        spread[key].append(d)
+        margins = {near: margin_mm, far: far_margin_mm}
+        # A box that reaches past the line (a numeral or a long first line) gets a smaller margin, so that the text line stays.
+        if d < -line_tolerance_mm:
+            margins[near] = max(0.0, margin_mm + d)
+            reduced.append(pid)
+        margins_of[pid] = margins
+        p.set_layout(pid, margins, None, key, None)
+    width_of = {pid: c["content_mm"]["width"] for pid, c in body}
+    # With match size every page gets the width of the widest page, so the centered pages must fit in the width of the aligned pages.
+    aligned = [width_of[pid] + m["left"] + m["right"] for pid, m in margins_of.items()]
+    target_w = max(aligned) if aligned else med_w + 2 * margin_mm
+
+    def centered_margin(pid: str) -> float:
+        return round(min(margin_mm, max(0.0, (target_w - width_of[pid]) / 2)), 1)
+
+    for pid in groups["hcenter"]:
+        lay = p.layout(pid)
+        m = centered_margin(pid)
+        # A smaller margin from pages_fit_width or from a person stays, but an earlier left/right run does not count.
+        if lay.get("align_h") not in ("left", "right"):
+            m = min(m, lay["margins_mm"]["left"], lay["margins_mm"]["right"])
+        p.set_layout(pid, {"left": m, "right": m}, None, "hcenter", None)
+    # An earlier run with other settings can leave these pages left or right, with the margins of that run.
+    reset: list[str] = []
+    for pid in groups["front"] + groups["picture"] + groups["no_usual_line"]:
+        lay = p.layout(pid)
+        mm = lay["margins_mm"]
+        if lay.get("align_h") in ("left", "right") and abs(mm["left"] - mm["right"]) > 0.05:
+            m = centered_margin(pid)
             p.set_layout(pid, {"left": m, "right": m}, None, "hcenter", None)
-        else:
-            p.set_layout(pid, margins, None, key, None)
+            reset.append(pid)
     p.save()
-    why = {"left": (0.7, "text starts on the usual left line of the wide pages"),
-           "right": (0.6, "text ends on the usual right line of the wide pages"),
+    why = {"right": (0.6, "text ends on the usual right line of the wide pages"),
            "hcenter": (0.6, "text block off the usual left and right lines: a centered title or block")}
     with review.Notes(p) as notes:
         notes.clear([pid for pid, _ in body], "alignment_h")
         for key, (conf, reason) in why.items():
             for pid in groups[key]:
-                if key != "left":
-                    notes.add(pid, "alignment_h", f"align {key}", conf, reason)
+                notes.add(pid, "alignment_h", f"align {key}", conf, reason)
+        for pid in reduced:
+            m = margins_of[pid]
+            notes.add(pid, "alignment_h", "smaller margin", 0.6,
+                      f"box reaches past the usual line; margins {m['left']}/{m['right']} mm keep the text line")
+        for pid in reset:
+            notes.add(pid, "alignment_h", "back to hcenter", 0.5,
+                      "an earlier run aligned this page left or right; now it is not a text page on the usual line")
 
     def lab(ids: list[str]) -> list[str]:
         return [p.page(i).label for i in ids]
 
     return {"median_width_mm": med_w, "margin_mm": margin_mm, "far_margin_mm": far_margin_mm,
-            "left": len(groups["left"]), "right": lab(groups["right"]), "hcenter": lab(groups["hcenter"]),
+            "aligned_page_width_mm": round(target_w, 1),
+            "left": lab(groups["left"]), "right": lab(groups["right"]), "hcenter": lab(groups["hcenter"]),
+            "smaller_margin": lab(reduced), "back_to_hcenter": lab(reset),
             "front_matter_kept": lab(groups["front"]), "pictures_kept": lab(groups["picture"]),
             "no_usual_line": lab(groups["no_usual_line"]),
             "left_offset_mm": [round(min(spread["left"]), 1), round(max(spread["left"]), 1)] if spread["left"] else None,
             "skipped_no_page_layout": no_layout,
-            "next": "run_stages(5, 6), then preview narrow pages and the hcenter pages in the output"}
+            "next": "run_stages(5, 6), then preview the hcenter, right and smaller_margin pages in the output"}
 
 
 def pages_set_output(project: str, pages: str | list[str], color_mode: str | None = None, dpi: int | None = None,

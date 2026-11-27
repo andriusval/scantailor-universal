@@ -94,12 +94,48 @@ class RulesTest(unittest.TestCase):
         res = ops.pages_align_horizontal(str(self.proj), margin_mm=12.0)
         p = Project(self.proj)
         left = [pg.id for pg in p.pages if p.layout(pg.id).get("align_h") == "left"]
-        self.assertEqual(len(left), res["left"])
+        self.assertEqual(len(left), len(res["left"]))
         self.assertTrue(left)
         # Only a box that reaches past the usual line gets a smaller margin, never a larger one.
         self.assertTrue(all(p.layout(i)["margins_mm"]["left"] <= 12.0 for i in left))
         # The far side gets its own margin, so that the page width does not grow by both margins.
         self.assertTrue(all(p.layout(i)["margins_mm"]["right"] == 0.0 for i in left))
+
+    def test_align_horizontal_centered_pages_fit_the_aligned_width(self):
+        res = ops.pages_align_horizontal(str(self.proj))
+        p = Project(self.proj)
+        for label in res["hcenter"]:
+            pid = p.find_page(label).id
+            m = p.layout(pid)["margins_mm"]
+            w = p.content(pid)["content_mm"]["width"]
+            self.assertLessEqual(w + m["left"] + m["right"], max(res["aligned_page_width_mm"], w) + 0.2)
+
+    def test_fit_width_after_align_horizontal_keeps_the_aligned_margins(self):
+        ops.pages_fit_width(str(self.proj))
+        ops.pages_align_horizontal(str(self.proj))
+        before = Project(self.proj)
+        aligned = {pg.id: before.layout(pg.id)["margins_mm"] for pg in before.pages
+                   if before.layout(pg.id).get("align_h") in ("left", "right")}
+        res = ops.pages_fit_width(str(self.proj))
+        after = Project(self.proj)
+        self.assertEqual(len(res["kept_horizontal_alignment"]), len(aligned))
+        for pid, m in aligned.items():
+            self.assertEqual(after.layout(pid)["margins_mm"], m)
+
+    def test_align_horizontal_resets_a_page_that_an_earlier_run_aligned(self):
+        res = ops.pages_align_horizontal(str(self.proj))
+        kept = res["front_matter_kept"] + res["pictures_kept"] + res["no_usual_line"]
+        if not kept:
+            self.skipTest("the sample has no page that the tool keeps")
+        p = Project(self.proj)
+        pid = p.find_page(kept[0]).id
+        p.set_layout(pid, {"left": 10.0, "right": 0.0}, None, "left", None)
+        p.save()
+        res = ops.pages_align_horizontal(str(self.proj))
+        self.assertIn(kept[0], res["back_to_hcenter"])
+        m = Project(self.proj).layout(pid)
+        self.assertEqual(m["align_h"], "hcenter")
+        self.assertEqual(m["margins_mm"]["left"], m["margins_mm"]["right"])
 
     def test_text_skew_is_small_on_a_straight_text_page(self):
         p = Project(self.proj)
